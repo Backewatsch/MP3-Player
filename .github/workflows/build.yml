@@ -2,6 +2,9 @@ name: iOS Build
 
 on:
   push:
+    branches: ["**"]
+    # Versions-Tags (v1.0.21 …) lösen ein Release aus
+    tags: ["v*"]
   workflow_dispatch:
 
 env:
@@ -15,6 +18,13 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Versionsnummer aus Tag übernehmen
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "APP_VERSION=$V" >> "$GITHUB_ENV"
+          echo "APP_BUILD=${V##*.}" >> "$GITHUB_ENV"
 
       - name: XcodeGen installieren
         run: brew install xcodegen
@@ -143,6 +153,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Versionsnummer aus Tag übernehmen
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "APP_VERSION=$V" >> "$GITHUB_ENV"
+          echo "APP_BUILD=${V##*.}" >> "$GITHUB_ENV"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -215,16 +232,23 @@ jobs:
   release:
     name: Release veröffentlichen (für Updates)
     needs: [build, test, android]
-    # Android-Release hängt nur am Android-Test; die iPhone-Tests blockieren nicht
+    # Nur bei Versions-Tags. Der Tag wird vorher angelegt, weil GitHub dem Workflow-Token das Anlegen
+    # von Tags verweigert, sobald sich die Workflow-Datei geändert hat. Die iPhone-Tests blockieren nicht.
     if: >-
-      always() && github.event_name == 'push' &&
-      (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc') &&
+      always() && startsWith(github.ref, 'refs/tags/v') &&
       needs.android.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Versionsnummer aus Tag übernehmen
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "APP_VERSION=$V" >> "$GITHUB_ENV"
+          echo "APP_BUILD=${V##*.}" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@v4
         with:
@@ -252,9 +276,10 @@ jobs:
         run: |
           # Commit-Text ohne Signaturzeilen als Änderungsnotiz
           printf '%s\n' "$COMMIT_MESSAGE" | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md
-          gh release create "v$APP_VERSION" MP3Player.ipa MP3Player.apk altstore-source.json \
+          [ -s notes.md ] || echo "Neue Version $APP_VERSION" > notes.md
+          gh release create "$GITHUB_REF_NAME" MP3Player.ipa MP3Player.apk altstore-source.json \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" \
             --notes-file notes.md \
             --latest
