@@ -10,7 +10,7 @@ settings:
     SWIFT_VERSION: "5.0"
     # LAME (MP3-Encoder) als Swift-Modul `import LAME`
     SWIFT_INCLUDE_PATHS: $(SRCROOT)/ThirdParty/lame/include
-    HEADER_SEARCH_PATHS: $(SRCROOT)/ThirdParty/lame/include
+    HEADER_SEARCH_PATHS: $(SRCROOT)/ThirdParty/lame/include $(SRCROOT)/ThirdParty/lame/libmp3lame
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:

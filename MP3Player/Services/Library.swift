@@ -22,8 +22,12 @@ final class Library: ObservableObject {
     private var importing = Set<String>()
 
     private var needsMetadataUpgrade = false
+    /// Neu gefundene Nicht-MP3-Dateien (z. B. per Finder kopiert) automatisch in MP3 umwandeln
+    let autoConvertToMP3: Bool
+    private var isConverting = false
 
     init(autoScan: Bool = true) {
+        autoConvertToMP3 = autoScan
         load()
         ensureDownloadsPlaylist()
         if autoScan {
@@ -181,6 +185,9 @@ final class Library: ObservableObject {
     /// Wandelt alle Titel, die nicht MP3 sind, nacheinander um.
     /// - Parameter skipping: z. B. der gerade laufende Titel
     func convertAllToMP3(skipping skipID: UUID? = nil) async -> (converted: Int, failed: Int) {
+        guard !isConverting else { return (0, 0) }
+        isConverting = true
+        defer { isConverting = false }
         let todo = convertibleTracks.filter { $0.id != skipID }
         var converted = 0, failed = 0
         for (n, track) in todo.enumerated() {
@@ -243,6 +250,9 @@ final class Library: ObservableObject {
             }
         }
         if changed { save() }
+        if autoConvertToMP3 && !convertibleTracks.isEmpty {
+            Task { _ = await convertAllToMP3() }
+        }
     }
 
     // MARK: Bearbeiten
