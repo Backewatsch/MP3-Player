@@ -122,7 +122,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
             Modifier
                 .fillMaxSize()
                 .cyberBackground()
-                .background(Brush.verticalGradient(listOf(Accent.copy(alpha = 0.30f), AccentPurple.copy(alpha = 0.18f), Color.Transparent))),
+                .background(Brush.verticalGradient(listOf(Accent.copy(alpha = 0.12f), AccentPurple.copy(alpha = 0.08f), Color.Transparent))),
         ) {
             if (track == null) {
                 EmptyHint("Nichts wird abgespielt", "Wähle einen Titel in der Mediathek.")
@@ -138,7 +138,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 // Cover mit Neon-Rahmen
                 Box(
-                    Modifier.border(2.dp, Brush.linearGradient(listOf(NeonCyan, Accent)),
+                    Modifier.border(1.5.dp, Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.6f), Accent.copy(alpha = 0.6f))),
                         androidx.compose.foundation.shape.CutCornerShape(topStart = 24.dp, bottomEnd = 24.dp)).padding(6.dp),
                 ) { Artwork(track, 290.dp, 20.dp) }
                 Spacer(Modifier.height(28.dp))

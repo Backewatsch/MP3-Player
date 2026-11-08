@@ -211,10 +211,10 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
 object StartPage {
     const val OFFLINE = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{font-family:monospace;margin:0;padding:48px 24px;background:#05030a;color:#ede7ff;text-align:center}
-h1{font-size:22px;letter-spacing:2px;text-transform:uppercase;text-shadow:-2px 0 #00f0ff,2px 0 #ff2bd6}
-p{color:#9c94c8;line-height:1.5} .err{color:#ff3b5c;letter-spacing:2px}
-.ok{margin-top:28px;padding:14px;background:#0d0a1c;border:1px solid rgba(0,240,255,.55);color:#00f0ff}</style>
+<style>body{font-family:monospace;margin:0;padding:48px 24px;background:#07060b;color:#cfc9de;text-align:center}
+h1{font-size:22px;letter-spacing:2px;text-transform:uppercase;text-shadow:-1px 0 rgba(79,175,187,.5),1px 0 rgba(194,80,159,.5)}
+p{color:#7e7898;line-height:1.5} .err{color:#d9566b;letter-spacing:2px}
+.ok{margin-top:28px;padding:14px;background:#0e0c15;border:1px solid rgba(79,175,187,.28);color:#4fafbb}</style>
 </head><body><div class="err">&gt; ERROR 0x00 // NO SIGNAL</div><h1>Keine Internetverbindung</h1>
 <p>Zum Herunterladen brauchst du Internet. Sobald du wieder online bist, tippe auf „Neu laden“.</p>
 <div class="ok">🎵 Deine Musik in der <b>Mediathek</b> funktioniert auch offline.</div></body></html>"""
@@ -227,19 +227,18 @@ p{color:#9c94c8;line-height:1.5} .err{color:#ff3b5c;letter-spacing:2px}
     const val HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
- body{font-family:monospace;margin:0;padding:22px 16px 40px;color:#ede7ff;
-   background:#05030a linear-gradient(rgba(0,240,255,.05) 1px,transparent 1px) 0 0/40px 40px,
-   linear-gradient(90deg,rgba(0,240,255,.05) 1px,transparent 1px) 0 0/40px 40px}
- .sys{color:#f7f000;font-size:13px;letter-spacing:1px}
- h1{font-size:28px;margin:6px 0 4px;letter-spacing:3px;text-transform:uppercase;color:#fff;
-   text-shadow:-2px 0 #00f0ff,2px 0 #ff2bd6}
- p{color:#9c94c8;line-height:1.5;margin:6px 0 18px}
- a.card{display:block;padding:14px 16px;margin:12px 0;text-decoration:none;color:inherit;background:#0d0a1c;
-   border:1px solid rgba(0,240,255,.55);clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
-   box-shadow:0 0 14px rgba(255,43,214,.25) inset}
- a.card b{display:block;font-size:16px;color:#00f0ff;letter-spacing:1px;text-transform:uppercase}
- a.card span{font-size:13px;color:#9c94c8}
- .hint{font-size:13px;padding:12px 14px;border-left:3px solid #ff2bd6;background:rgba(255,43,214,.10);margin-top:22px}
+ body{font-family:monospace;margin:0;padding:22px 16px 40px;color:#cfc9de;
+   background:#07060b linear-gradient(rgba(79,175,187,.03) 1px,transparent 1px) 0 0/40px 40px,
+   linear-gradient(90deg,rgba(79,175,187,.03) 1px,transparent 1px) 0 0/40px 40px}
+ .sys{color:#c8b85a;font-size:13px;letter-spacing:1px}
+ h1{font-size:28px;margin:6px 0 4px;letter-spacing:3px;text-transform:uppercase;color:#dcd6ea;
+   text-shadow:-1px 0 rgba(79,175,187,.5),1px 0 rgba(194,80,159,.5)}
+ p{color:#7e7898;line-height:1.5;margin:6px 0 18px}
+ a.card{display:block;padding:14px 16px;margin:12px 0;text-decoration:none;color:inherit;background:#0e0c15;
+   border:1px solid rgba(79,175,187,.28);clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)}
+ a.card b{display:block;font-size:16px;color:#4fafbb;letter-spacing:1px;text-transform:uppercase}
+ a.card span{font-size:13px;color:#7e7898}
+ .hint{font-size:13px;padding:12px 14px;border-left:3px solid #c2509f;background:rgba(194,80,159,.07);margin-top:22px}
 </style></head><body>
 <div class="sys">&gt; SYSTEM ONLINE_ // NETRUNNER-MODUS</div>
 <h1>Musik finden</h1>

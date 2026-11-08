@@ -13,18 +13,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// ---------- Cyberpunk-Farben ----------
-/** Haupt-Akzent: Neon-Magenta */
-val Accent = Color(0xFFFF2BD6)
-/** Zweiter Akzent: Neon-Cyan */
-val NeonCyan = Color(0xFF00F0FF)
-/** Signal-Gelb für Hervorhebungen */
-val NeonYellow = Color(0xFFF7F000)
-val AccentPurple = Color(0xFF7B2CFF)
-val CyberBlack = Color(0xFF05030A)
-val CyberPanel = Color(0xFF0D0A1C)
-val CyberPanelHigh = Color(0xFF16112E)
-val CyberLine = Color(0xFF2A2350)
+// ---------- Cyberpunk-Farben (gedämpft, augenschonend) ----------
+/** Haupt-Akzent: gedämpftes Neon-Magenta */
+val Accent = Color(0xFFC2509F)
+/** Zweiter Akzent: gedämpftes Cyan */
+val NeonCyan = Color(0xFF4FAFBB)
+/** Gedämpftes Signal-Gelb für Hervorhebungen */
+val NeonYellow = Color(0xFFC8B85A)
+val AccentPurple = Color(0xFF5A3A9A)
+val CyberBlack = Color(0xFF07060B)
+val CyberPanel = Color(0xFF0E0C15)
+val CyberPanelHigh = Color(0xFF15121F)
+val CyberLine = Color(0xFF26223A)
 
 private val colors = darkColorScheme(
     primary = Accent,
@@ -33,22 +33,22 @@ private val colors = darkColorScheme(
     onSecondary = Color.Black,
     secondaryContainer = CyberPanelHigh,
     onSecondaryContainer = NeonCyan,
-    primaryContainer = Color(0xFF3A0A33),
+    primaryContainer = Color(0xFF2A1226),
     onPrimaryContainer = Accent,
     tertiary = NeonYellow,
     background = CyberBlack,
-    onBackground = Color(0xFFEDE7FF),
+    onBackground = Color(0xFFCFC9DE),
     surface = CyberPanel,
-    onSurface = Color(0xFFEDE7FF),
+    onSurface = Color(0xFFCFC9DE),
     surfaceVariant = CyberPanel,
-    onSurfaceVariant = Color(0xFF9C94C8),
+    onSurfaceVariant = Color(0xFF7E7898),
     surfaceContainer = CyberPanel,
     surfaceContainerHigh = CyberPanelHigh,
     surfaceContainerHighest = CyberPanelHigh,
     surfaceContainerLow = CyberBlack,
-    outline = NeonCyan.copy(alpha = 0.5f),
+    outline = NeonCyan.copy(alpha = 0.35f),
     outlineVariant = CyberLine,
-    error = Color(0xFFFF3B5C),
+    error = Color(0xFFD9566B),
 )
 
 /** Terminal-Schrift für Überschriften und Beschriftungen */

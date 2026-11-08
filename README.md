@@ -31,7 +31,7 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 - MP3-Kodierung mit dem Open-Source-Encoder **LAME 3.100** (LGPL, siehe `ThirdParty/`)
 - Grenzen: Streams (blob:/MediaSource, z. B. YouTube, Spotify) und Formate, die iOS nicht lesen kann (WebM, OGG), lassen sich nicht umwandeln
 
-**Design**: Cyberpunk – Neon-Magenta/Cyan/Gelb auf Schwarz, Neon-Raster und Scanlines, abgeschrägte Ecken, Terminal-Schrift und Glitch-Überschriften (Android)
+**Design**: dunkles, augenschonendes Cyberpunk – gedämpftes Magenta/Cyan/Gelb auf Schwarz, dezentes Raster, abgeschrägte Ecken, Terminal-Schrift und Glitch-Überschriften (Android)
 
 **Bibliothek & Playlists**
 - Suche nach Titel/Interpret, Titel-Infos bearbeiten, löschen

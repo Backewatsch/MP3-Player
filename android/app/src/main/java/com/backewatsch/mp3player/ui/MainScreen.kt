@@ -90,13 +90,13 @@ fun MainScreen() {
                     MiniPlayer(onOpen = { nav.showNowPlaying = true })
                     // Neon-Linie über der Navigationsleiste
                     Box(Modifier.fillMaxWidth().height(1.dp).background(
-                        androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Accent, NeonCyan, Accent))))
+                        androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Accent.copy(alpha = 0.4f), NeonCyan.copy(alpha = 0.4f), Accent.copy(alpha = 0.4f)))))
                     NavigationBar(containerColor = CyberBlack.copy(alpha = 0.96f)) {
                         val colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = NeonCyan, selectedTextColor = NeonCyan,
                             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = NeonCyan.copy(alpha = 0.14f))
+                            indicatorColor = NeonCyan.copy(alpha = 0.10f))
                         NavigationBarItem(
                             selected = nav.tab == TAB_START, onClick = { nav.tab = TAB_START },
                             icon = { Icon(Icons.Default.Home, null) }, label = { Text("Start") },

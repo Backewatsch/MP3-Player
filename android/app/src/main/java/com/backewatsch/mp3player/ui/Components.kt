@@ -71,18 +71,18 @@ fun Artwork(track: Track?, size: Dp, corner: Dp = 6.dp) {
     } else {
         Box(
             Modifier.size(size).clip(shape)
-                .background(Brush.linearGradient(listOf(AccentPurple, Accent, NeonCyan)))
+                .background(Brush.linearGradient(listOf(Color(0xFF2B1F4A), Color(0xFF5C2A55), Color(0xFF235A63))))
                 .drawBehind {
                     // feines Raster über dem Verlauf
                     val step = this.size.width / 6
                     for (i in 1 until 6) {
-                        drawLine(Color.White.copy(alpha = 0.12f), Offset(step * i, 0f), Offset(step * i, this.size.height), 1f)
-                        drawLine(Color.White.copy(alpha = 0.12f), Offset(0f, step * i), Offset(this.size.width, step * i), 1f)
+                        drawLine(Color.White.copy(alpha = 0.06f), Offset(step * i, 0f), Offset(step * i, this.size.height), 1f)
+                        drawLine(Color.White.copy(alpha = 0.06f), Offset(0f, step * i), Offset(this.size.width, step * i), 1f)
                     }
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.MusicNote, null, tint = Color.White.copy(alpha = 0.95f), modifier = Modifier.size(size * 0.45f))
+            Icon(Icons.Default.MusicNote, null, tint = Color(0xFFCFC9DE).copy(alpha = 0.8f), modifier = Modifier.size(size * 0.45f))
         }
     }
 }
@@ -144,7 +144,7 @@ fun Card(content: @Composable () -> Unit) {
             .fillMaxWidth()
             .clip(shape)
             .background(Brush.verticalGradient(listOf(CyberPanelHigh, CyberPanel)))
-            .border(1.dp, Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.7f), Accent.copy(alpha = 0.5f))), shape),
+            .border(1.dp, Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.30f), Accent.copy(alpha = 0.22f))), shape),
         verticalArrangement = Arrangement.Top,
     ) { content() }
 }
@@ -155,14 +155,14 @@ fun GlitchText(
     text: String,
     style: TextStyle,
     modifier: Modifier = Modifier,
-    color: Color = Color.White,
+    color: Color = Color(0xFFDCD6EA),
     maxLines: Int = 1,
 ) {
     Box(modifier) {
-        Text(text, style = style, color = NeonCyan.copy(alpha = 0.85f), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.offset(x = (-1.5).dp, y = 0.5.dp))
-        Text(text, style = style, color = Accent.copy(alpha = 0.85f), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.offset(x = 1.5.dp, y = (-0.5).dp))
+        Text(text, style = style, color = NeonCyan.copy(alpha = 0.45f), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.offset(x = (-1).dp, y = 0.5.dp))
+        Text(text, style = style, color = Accent.copy(alpha = 0.45f), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.offset(x = 1.dp, y = (-0.5).dp))
         Text(text, style = style, color = color, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -170,27 +170,22 @@ fun GlitchText(
 /** Cyberpunk-Hintergrund: Neon-Raster, Leuchten und Scanlines */
 fun Modifier.cyberBackground(): Modifier = this.drawBehind {
     drawRect(CyberBlack)
-    drawRect(Brush.radialGradient(listOf(Accent.copy(alpha = 0.16f), Color.Transparent),
+    drawRect(Brush.radialGradient(listOf(Accent.copy(alpha = 0.07f), Color.Transparent),
         center = Offset(size.width * 0.85f, 0f), radius = size.width * 0.9f))
-    drawRect(Brush.radialGradient(listOf(NeonCyan.copy(alpha = 0.10f), Color.Transparent),
+    drawRect(Brush.radialGradient(listOf(NeonCyan.copy(alpha = 0.05f), Color.Transparent),
         center = Offset(0f, size.height), radius = size.width * 1.1f))
     val step = 48.dp.toPx()
     var x = 0f
     while (x < size.width) {
-        drawLine(NeonCyan.copy(alpha = 0.045f), Offset(x, 0f), Offset(x, size.height), 1f)
+        drawLine(NeonCyan.copy(alpha = 0.022f), Offset(x, 0f), Offset(x, size.height), 1f)
         x += step
     }
     var y = 0f
     while (y < size.height) {
-        drawLine(NeonCyan.copy(alpha = 0.045f), Offset(0f, y), Offset(size.width, y), 1f)
+        drawLine(NeonCyan.copy(alpha = 0.022f), Offset(0f, y), Offset(size.width, y), 1f)
         y += step
     }
-    var s = 0f
-    val gap = 4.dp.toPx()
-    while (s < size.height) {
-        drawLine(Color.Black.copy(alpha = 0.22f), Offset(0f, s), Offset(size.width, s), 1f)
-        s += gap
-    }
+    // (keine Scanlines – schont die Augen)
 }
 
 @Composable
