@@ -98,7 +98,7 @@ iOS erlaubt nicht, dass eine selbst installierte App sich selbst ersetzt. Update
 > **Voraussetzung:** Das GitHub-Repository muss **öffentlich** sein. Aus einem privaten Repository können iPhone und AltStore die Releases nicht herunterladen (GitHub → *Settings → General → Danger Zone → Change visibility*).
 
 **So funktioniert es:**
-1. Bei jedem Push baut und testet GitHub die App. Sobald die Android-Tests bestehen, veröffentlicht GitHub automatisch ein Release `v1.0.<Build>` mit `MP3Player.apk` und `MP3Player.ipa`. (Technischer Hinweis: GitHub verweigert dem Workflow neue Tags auf Commits mit geänderter Workflow-Datei; der Tag zeigt daher auf den Commit des vorherigen Releases – die Dateien stammen trotzdem aus dem aktuellen Build. Alternativ kann man selbst einen Tag `v…` pushen.)
+1. Bei jedem Push baut und testet GitHub die App. Sobald die Android-Tests bestehen, veröffentlicht GitHub automatisch ein Release `v1.0.<Build>` mit `MP3Player.apk` und `MP3Player.ipa`. (GitHub lehnt das Anlegen gelegentlich mit HTTP 403 ab; der Workflow versucht es dann mehrmals. Alternativ kann man selbst einen Tag `v…` pushen oder auf GitHub unter *Releases → Draft a new release* einen Tag anlegen.)
 2. Zu jedem Release gehört eine AltStore-/SideStore-Quelle. Ihre Adresse bleibt immer gleich:
    ```
    https://github.com/Backewatsch/MP3-Player/releases/latest/download/altstore-source.json

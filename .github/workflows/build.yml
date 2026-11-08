@@ -284,14 +284,20 @@ jobs:
               --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" --notes-file notes.md --latest
             exit 0
           fi
-          # GitHub verweigert dem Workflow-Token neue Tags auf Commits mit geänderter Workflow-Datei.
-          # Daher zeigt der neue Tag auf den Commit des letzten Releases; die Dateien stammen aus diesem Build.
-          LAST_TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
-          TARGET=$(gh api "repos/$GITHUB_REPOSITORY/commits/$LAST_TAG" -q .sha)
-          echo "Ziel-Commit für den Tag: $TARGET (vom Release $LAST_TAG)"
-          gh release create "v$APP_VERSION" MP3Player.ipa MP3Player.apk altstore-source.json \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$TARGET" \
-            --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" \
-            --notes-file notes.md \
-            --latest
+          # GitHub lehnt das Anlegen gelegentlich mit HTTP 403 ab – daher mehrere Versuche
+          for attempt in 1 2 3 4 5 6; do
+            if gh release create "v$APP_VERSION" MP3Player.ipa MP3Player.apk altstore-source.json \
+                 --repo "$GITHUB_REPOSITORY" \
+                 --target "$GITHUB_SHA" \
+                 --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" \
+                 --notes-file notes.md \
+                 --latest; then
+              echo "Release v$APP_VERSION veröffentlicht (Versuch $attempt)"
+              exit 0
+            fi
+            # Halb angelegtes Release wieder entfernen, dann erneut versuchen
+            gh release delete "v$APP_VERSION" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+            echo "Versuch $attempt fehlgeschlagen – warte $((attempt * 30)) Sekunden"
+            sleep $((attempt * 30))
+          done
+          exit 1
