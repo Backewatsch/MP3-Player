@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextInput
@@ -175,7 +176,10 @@ class UiFlowTest {
 
         // Start-Tab: Titel steht im Verlauf
         rule.onNodeWithTag("tab-start").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("history-Testlied"), 10_000)
+        rule.waitUntilAtLeastOneExists(hasTestTag("startScreen"), 5_000)
+        rule.waitUntil(10_000) { instrumentation.targetContext.app.library.history().isNotEmpty() }
+        // Der Verlauf steht weiter unten auf der Startseite → hinscrollen
+        rule.onNodeWithTag("startScreen").performScrollToNode(hasTestTag("history-Testlied"))
         screenshot("a09-Start-Verlauf")
         rule.onNodeWithTag("tab-library").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("miniPlayer"), 5_000)

@@ -203,7 +203,11 @@ class PlayerConnection(
         }
     }
 
+    /** Welche Datei zu welchem Eintrag gehört (der Controller sieht die URI der Einträge nicht) */
+    private val itemFiles = mutableMapOf<String, String>()
+
     private fun item(track: Track): MediaItem {
+        itemFiles[track.id] = track.fileName
         val ownCovers = (context.applicationContext as com.backewatsch.mp3player.App).showOwnCovers.value
         val artwork = if (ownCovers) library.artworkOf(track) else null
         return MediaItem.Builder()
@@ -286,6 +290,8 @@ class PlayerConnection(
             c.moveMediaItem(j, target)
         }
     }
+
+    fun setRepeatMode(mode: Int) = withController { it.repeatMode = mode }
 
     fun cycleRepeat() = withController {
         it.repeatMode = when (it.repeatMode) {
@@ -374,9 +380,9 @@ class PlayerConnection(
             val track = byId[id]
             if (track == null) {
                 c.removeMediaItem(i)
-            } else if (i != c.currentMediaItemIndex) {
-                val wanted = Uri.fromFile(library.fileOf(track))
-                if (c.getMediaItemAt(i).localConfiguration?.uri != wanted) c.replaceMediaItem(i, item(track))
+            } else if (i != c.currentMediaItemIndex && itemFiles[id] != track.fileName) {
+                // Nur wenn sich die Datei geändert hat (z. B. nach dem Umwandeln in MP3)
+                c.replaceMediaItem(i, item(track))
             }
         }
     }

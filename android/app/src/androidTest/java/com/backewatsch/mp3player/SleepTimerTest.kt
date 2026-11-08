@@ -46,9 +46,9 @@ class SleepTimerTest {
 
         instrumentation.runOnMainSync { app.player.play(listOf(track), 0) }
         // Endlos wiederholen, damit die Musik bis zum Timer weiterläuft
+        instrumentation.runOnMainSync { app.player.setRepeatMode(Player.REPEAT_MODE_ONE) }
         waitFor("Wiedergabe startet", 10_000) {
-            if (app.player.state.value.repeatMode == Player.REPEAT_MODE_OFF) app.player.cycleRepeat()
-            app.player.state.value.isPlaying && app.player.state.value.repeatMode != Player.REPEAT_MODE_OFF
+            app.player.state.value.isPlaying && app.player.state.value.repeatMode == Player.REPEAT_MODE_ONE
         }
 
         instrumentation.runOnMainSync { app.player.startSleepTimerMs(3_000) }
@@ -69,9 +69,9 @@ class SleepTimerTest {
         val track = runBlocking { app.library.import(file, move = true) }
 
         instrumentation.runOnMainSync { app.player.play(listOf(track), 0) }
+        instrumentation.runOnMainSync { app.player.setRepeatMode(Player.REPEAT_MODE_ONE) }
         waitFor("Wiedergabe startet", 10_000) {
-            if (app.player.state.value.repeatMode == Player.REPEAT_MODE_OFF) app.player.cycleRepeat()
-            app.player.state.value.isPlaying && app.player.state.value.repeatMode != Player.REPEAT_MODE_OFF
+            app.player.state.value.isPlaying && app.player.state.value.repeatMode == Player.REPEAT_MODE_ONE
         }
         instrumentation.runOnMainSync { app.player.startSleepTimerMs(2_000); app.player.cancelSleepTimer() }
         Thread.sleep(3_500)

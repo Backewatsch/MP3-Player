@@ -182,11 +182,15 @@ class FeaturesTest {
         try {
             instrumentation.runOnMainSync { app.sound.setEnabled(true); app.sound.setPreset("Bass-Boost") }
             assertTrue(app.sound.isEqualizerActive())
-            assertEquals(app.sound.currentLevels(), app.sound.appliedLevels())
+            // Geräte runden die Pegel (z. B. auf 1 dB) – kleine Abweichungen sind normal
+            val wanted = app.sound.currentLevels()
+            val applied = app.sound.appliedLevels()!!
+            assertEquals(wanted.size, applied.size)
+            wanted.zip(applied).forEach { (w, a) -> assertTrue("Pegel $applied statt $wanted", kotlin.math.abs(w - a) <= 100) }
             assertTrue("Bass angehoben", app.sound.currentLevels().first() > 0)
             instrumentation.runOnMainSync { app.sound.setBand(1, 0) }
             assertEquals(com.backewatsch.mp3player.player.SoundPresets.CUSTOM, app.sound.settings.value.preset)
-            assertEquals(0, app.sound.appliedLevels()!![1])
+            assertTrue(kotlin.math.abs(app.sound.appliedLevels()!![1]) <= 100)
         } finally {
             instrumentation.runOnMainSync { app.sound.setPreset("Normal"); app.sound.setEnabled(false) }
         }
