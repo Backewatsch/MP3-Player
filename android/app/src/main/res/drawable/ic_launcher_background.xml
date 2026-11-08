@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <gradient android:angle="270" android:startColor="#FFFA2E66" android:endColor="#FFBE42C0" />
-</shape>
+<!-- Erzeugt von scripts/make_icon.py – nicht von Hand bearbeiten -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M0,0 L108,0 L108,108 L0,108 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="48" android:gradientRadius="80"
+                android:startColor="#FF4C0422" android:endColor="#FF060008" />
+        </aapt:attr>
+    </path>
+</vector>
