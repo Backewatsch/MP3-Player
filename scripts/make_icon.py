@@ -173,6 +173,13 @@ def android_foreground():
              '<vector xmlns:android="http://schemas.android.com/apk/res/android"',
              '    xmlns:aapt="http://schemas.android.com/aapt"',
              '    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">']
+    # Neon-Leuchten hinter der Note
+    parts.append('    <path android:pathData="M57,52 m-38,0 a38,38 0 1,0 76,0 a38,38 0 1,0 -76,0">')
+    parts.append('        <aapt:attr name="android:fillColor">')
+    parts.append('            <gradient android:type="radial" android:centerX="57" android:centerY="52" android:gradientRadius="38"')
+    parts.append('                android:startColor="#88FF2E63" android:endColor="#00FF2E63" />')
+    parts.append('        </aapt:attr>')
+    parts.append('    </path>')
     rings, solids = chain_parts()
     parts.append(f'    <path android:fillColor="#FF80849A" android:pathData="{path_data(solids)}" />')
     for o, i in rings:
@@ -188,6 +195,9 @@ def android_foreground():
     parts.append('                android:startColor="#FFFF2E63" android:endColor="#FFFF9A00" />')
     parts.append('        </aapt:attr>')
     parts.append('    </path>')
+    # Glitch-Streifen quer durch die Note
+    parts.append('    <path android:fillColor="#E600E5FF" android:pathData="M33,47.4 L82,47.4 L82,48.8 L33,48.8 Z" />')
+    parts.append('    <path android:fillColor="#E6FF0040" android:pathData="M30,58.2 L78,58.2 L78,59.3 L30,59.3 Z" />')
     parts.append('</vector>')
     return "\n".join(parts) + "\n"
 
