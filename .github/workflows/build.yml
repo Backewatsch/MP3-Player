@@ -206,6 +206,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           working-directory: android
           script: |
+            adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher || true
             gradle --no-daemon connectedDebugAndroidTest > ../android-test.log 2>&1 || touch ../android-test-failed
             adb pull /sdcard/Android/data/com.backewatsch.mp3player/files/screenshots ../android-screenshots || true
             grep -E "Tests on|tests completed|FAILED|AssertionError|Exception" ../android-test.log | head -60 || true

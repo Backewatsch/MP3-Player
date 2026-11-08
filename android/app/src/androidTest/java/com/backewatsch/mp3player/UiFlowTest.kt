@@ -180,7 +180,10 @@ class UiFlowTest {
         fun run(cmd: String) = shell.executeShellCommand(cmd).close()
         run("cmd connectivity airplane-mode enable"); run("svc wifi disable"); run("svc data disable")
         try {
-            Thread.sleep(3000)
+            // Warten, bis das Netz wirklich weg ist
+            val cm = instrumentation.targetContext.getSystemService(android.net.ConnectivityManager::class.java)
+            repeat(30) { if (cm.activeNetwork != null) Thread.sleep(500) }
+            Thread.sleep(1000)
             rule.onNodeWithTag("tab-library").performClick()
             rule.waitUntilAtLeastOneExists(hasTestTag("category-Titel"), 5_000)
             rule.onNodeWithTag("category-Titel").performClick()
@@ -191,7 +194,8 @@ class UiFlowTest {
 
             rule.onNodeWithTag("tab-downloader").performClick()
             rule.waitUntilAtLeastOneExists(hasTestTag("addressField"), 5_000)
-            instrumentation.runOnMainSync { app.browser.submit("https://archive.org") }
+            // Adresse, die sicher nicht im Zwischenspeicher liegt
+            instrumentation.runOnMainSync { app.browser.submit("https://offline-test-${System.currentTimeMillis()}.example.org/") }
             rule.waitUntilAtLeastOneExists(hasTestTag("offlineHint"), 30_000)
             Thread.sleep(1000)
             screenshot("a17-Offline-Browser")
