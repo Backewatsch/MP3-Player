@@ -54,9 +54,10 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
         settings.setSupportMultipleWindows(false)
         // Dunkler Hintergrund (kein weißes Aufblitzen beim Laden)
         setBackgroundColor(android.graphics.Color.rgb(7, 6, 11))
-        // Webseiten dunkel darstellen: Seiten mit eigenem Dark Mode nutzen ihn, andere werden automatisch abgedunkelt
+        // Android-Abdunkelung aus: sie greift nicht bei allen Seiten und verträgt sich nicht mit dem eigenen
+        // Dunkel-Modus (DARKEN_SCRIPT), der helle Seiten zuverlässig umfärbt
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false)
         }
         downloads.userAgent = settings.userAgentString
         addJavascriptInterface(Bridge(), "MP3PlayerBridge")
