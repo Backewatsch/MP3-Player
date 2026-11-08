@@ -185,14 +185,20 @@ enum TrackSort: String, CaseIterable, Identifiable {
                 return byTitle(a, b)
             }
         case .newest:
-            return tracks.sorted { $0.addedAt != $1.addedAt ? $0.addedAt > $1.addedAt : byTitle($0, $1) }
+            return tracks.sorted { (a: Track, b: Track) -> Bool in
+                if a.addedAt != b.addedAt { return a.addedAt > b.addedAt }
+                return byTitle(a, b)
+            }
         case .mostPlayed:
             return tracks.sorted {
                 let x = playCounts[$0.id] ?? 0, y = playCounts[$1.id] ?? 0
                 return x != y ? x > y : byTitle($0, $1)
             }
         case .longest:
-            return tracks.sorted { $0.duration != $1.duration ? $0.duration > $1.duration : byTitle($0, $1) }
+            return tracks.sorted { (a: Track, b: Track) -> Bool in
+                if a.duration != b.duration { return a.duration > b.duration }
+                return byTitle(a, b)
+            }
         }
     }
 }
@@ -225,14 +231,19 @@ struct StatsSummary {
         func top(_ events: [PlayEvent]) -> [(Track, Int)] {
             var counts: [UUID: Int] = [:]
             for e in events { counts[e.trackID, default: 0] += 1 }
-            return counts.compactMap { id, n in byID[id].map { ($0, n) } }
-                .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.title.localizedCaseInsensitiveCompare($1.0.title) == .orderedAscending }
-                .prefix(10).map { $0 }
+            var items: [(Track, Int)] = []
+            for (id, n) in counts { if let t = byID[id] { items.append((t, n)) } }
+            items.sort(by: Self.byCountThenTitle)
+            return Array(items.prefix(10))
         }
         var artists: [String: Int] = [:]
         for e in plays { if let a = byID[e.trackID]?.artist, !a.isEmpty { artists[a, default: 0] += 1 } }
-        let topArtists = artists.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.lowercased() < $1.key.lowercased() }
-            .prefix(5).map { ($0.key, $0.value) }
+        var artistList: [(String, Int)] = artists.map { ($0.key, $0.value) }
+        artistList.sort { a, b in
+            if a.1 != b.1 { return a.1 > b.1 }
+            return a.0.lowercased() < b.0.lowercased()
+        }
+        let topArtists = Array(artistList.prefix(5))
         return StatsSummary(
             listenedTotal: state.listenedByMonth.values.reduce(0, +),
             listenedThisMonth: state.listenedByMonth[month] ?? 0,
@@ -245,6 +256,11 @@ struct StatsSummary {
             libraryDuration: state.tracks.reduce(0) { $0 + $1.duration },
             favoriteCount: state.favorites.filter { byID[$0] != nil }.count
         )
+    }
+
+    private static func byCountThenTitle(_ a: (Track, Int), _ b: (Track, Int)) -> Bool {
+        if a.1 != b.1 { return a.1 > b.1 }
+        return a.0.title.localizedCaseInsensitiveCompare(b.0.title) == .orderedAscending
     }
 
     /// „1 Std. 5 Min.“ bzw. „7 Min.“

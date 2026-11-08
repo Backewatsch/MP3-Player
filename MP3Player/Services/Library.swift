@@ -137,20 +137,27 @@ final class Library: ObservableObject {
 
     func mostPlayed(limit: Int = 50) -> [(Track, Int)] {
         let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return playCounts.filter { $0.value > 0 }
-            .sorted { $0.value > $1.value }
-            .compactMap { id, n in byID[id].map { ($0, n) } }
-            .prefix(limit).map { $0 }
+        var items: [(Track, Int)] = []
+        for (id, n) in playCounts where n > 0 { if let t = byID[id] { items.append((t, n)) } }
+        items.sort { a, b in a.1 > b.1 }
+        return Array(items.prefix(limit))
     }
 
     func history(limit: Int = Library.maxHistory) -> [(Track, Date)] {
         let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return historyEvents.compactMap { e in byID[e.trackID].map { ($0, e.at) } }.prefix(limit).map { $0 }
+        var items: [(Track, Date)] = []
+        for e in historyEvents { if let t = byID[e.trackID] { items.append((t, e.at)) } }
+        return Array(items.prefix(limit))
     }
 
     func recentlyPlayed(limit: Int = 20) -> [Track] {
         var seen = Set<UUID>()
-        return history().map { $0.0 }.filter { seen.insert($0.id).inserted }.prefix(limit).map { $0 }
+        var result: [Track] = []
+        for (track, _) in history() where seen.insert(track.id).inserted {
+            result.append(track)
+            if result.count >= limit { break }
+        }
+        return result
     }
 
     func clearHistory() {
@@ -485,8 +492,10 @@ final class Library: ObservableObject {
         func merge(_ a: [PlayEvent], _ b: [PlayEvent], max limit: Int) -> [PlayEvent] {
             var seen = Set<String>()
             let mapped = b.compactMap { e in map([e.trackID]).first.map { PlayEvent(trackID: $0, at: e.at) } }
-            return (a + mapped).filter { seen.insert("\($0.trackID)-\($0.at.timeIntervalSince1970)").inserted }
-                .sorted { $0.at > $1.at }.prefix(limit).map { $0 }
+            var merged: [PlayEvent] = []
+            for e in a + mapped where seen.insert("\(e.trackID)-\(e.at.timeIntervalSince1970)").inserted { merged.append(e) }
+            merged.sort { x, y in x.at > y.at }
+            return Array(merged.prefix(limit))
         }
         historyEvents = merge(historyEvents, backup.history, max: Self.maxHistory)
         plays = merge(plays, backup.plays, max: StatsSummary.maxPlays)
