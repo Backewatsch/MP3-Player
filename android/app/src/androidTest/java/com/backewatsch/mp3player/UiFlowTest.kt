@@ -9,11 +9,11 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performImeAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Before
@@ -74,7 +74,8 @@ class UiFlowTest {
         rule.onNodeWithTag("dialogConfirm").performClick()
         rule.waitUntilAtLeastOneExists(hasText("Sommerhits"), 5_000)
         screenshot("a02-Neue-Playlist")
-        backUntil("settingsButton")
+        rule.onNodeWithContentDescription("Zurück").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("settingsButton"), 5_000)
         rule.waitUntilAtLeastOneExists(hasText("Sommerhits"), 5_000)
 
         // Info & Updates
