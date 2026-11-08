@@ -9,6 +9,8 @@ enum LibraryRoute: Hashable {
     case album(String)
     case artist(String)
     case playlist(UUID)
+    case favorites
+    case stats
 }
 
 /// Tab „Mediathek“: Kurzwahl, Titel/Alben/Interpreten und Playlists (inkl. neue Playlist erstellen).
@@ -43,14 +45,16 @@ struct MediathekView: View {
                     overview
                 } else {
                     let results = searchResults
-                    Section("\(results.count) Treffer") {
+                    Section {
                         ForEach(Array(results.enumerated()), id: \.element.id) { index, track in
                             TrackListRow(track: track) { player.play(results, startAt: index) }
+                                .cyberRow()
                         }
-                    }
+                    } header: { CyberHeader(text: "\(results.count) Treffer") }
                 }
             }
             .listStyle(.insetGrouped)
+            .cyberList()
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     UpdateBanner { showSettings = true }
@@ -159,6 +163,7 @@ struct MediathekView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
             }
+            .cyberRow()
         } else {
             Section {
                 HStack(spacing: 12) {
@@ -182,25 +187,41 @@ struct MediathekView: View {
         }
 
         if !library.pinnedTracks.isEmpty {
-            Section("Kurzwahl") {
+            Section {
                 PinnedStrip(tracks: library.pinnedTracks)
                     .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
-            }
+                    .listRowBackground(Color.clear)
+            } header: { CyberHeader(text: "Kurzwahl") }
         }
 
-        Section("Bibliothek") {
+        Section {
+            NavigationLink(value: LibraryRoute.favorites) {
+                categoryRow("Lieblingssongs", "heart.fill", count: library.favoriteTracks.count)
+            }
+            .accessibilityIdentifier("category-Lieblingssongs")
+            .cyberRow()
             NavigationLink(value: LibraryRoute.allTracks) {
                 categoryRow("Titel", "music.note", count: library.tracks.count)
             }
             .accessibilityIdentifier("category-Titel")
+            .cyberRow()
             NavigationLink(value: LibraryRoute.albums) {
                 categoryRow("Alben", "square.stack", count: albumNames.count)
             }
             .accessibilityIdentifier("category-Alben")
+            .cyberRow()
             NavigationLink(value: LibraryRoute.artists) {
                 categoryRow("Interpreten", "music.mic", count: artistNames.count)
             }
             .accessibilityIdentifier("category-Interpreten")
+            .cyberRow()
+            NavigationLink(value: LibraryRoute.stats) {
+                categoryRow("Statistik", "chart.bar.fill", count: nil)
+            }
+            .accessibilityIdentifier("category-Statistik")
+            .cyberRow()
+        } header: {
+            CyberHeader(text: "Bibliothek")
         }
 
         Section {
@@ -217,31 +238,33 @@ struct MediathekView: View {
                 }
             }
             .accessibilityIdentifier("newPlaylistButton")
+            .cyberRow()
 
             ForEach(library.playlists) { playlist in
                 NavigationLink(value: LibraryRoute.playlist(playlist.id)) {
                     PlaylistRow(playlist: playlist)
                 }
                 .deleteDisabled(playlist.id == Library.downloadsPlaylistID)
+                .cyberRow()
             }
             .onDelete { offsets in
                 let doomed = offsets.compactMap { library.playlists.indices.contains($0) ? library.playlists[$0] : nil }
                 doomed.forEach(library.deletePlaylist)
             }
         } header: {
-            Text("Playlists")
+            CyberHeader(text: "Playlists")
         }
     }
 
-    private func categoryRow(_ title: String, _ symbol: String, count: Int) -> some View {
+    private func categoryRow(_ title: String, _ symbol: String, count: Int?) -> some View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
                 .font(.title3)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.cyberAccent)
                 .frame(width: 30)
             Text(title)
             Spacer()
-            Text("\(count)").foregroundStyle(.secondary)
+            if let count { Text("\(count)").foregroundStyle(.secondary) }
         }
         .padding(.vertical, 4)
     }
@@ -279,6 +302,10 @@ struct MediathekView: View {
                 .navigationTitle(name)
         case .playlist(let id):
             PlaylistDetailView(playlistID: id)
+        case .favorites:
+            FavoritesView()
+        case .stats:
+            StatsView()
         }
     }
 
@@ -315,37 +342,32 @@ struct PlaylistRow: View {
     }
 }
 
-/// Alle Titel (alphabetisch)
+/// Alle Titel – sortierbar, mit Mehrfachauswahl
 struct AllTracksView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var actions: TrackActions
+    @AppStorage("trackSort") private var sortRaw = TrackSort.title.rawValue
+    @StateObject private var selection = SelectionModel()
+
+    private var sort: TrackSort { TrackSort(rawValue: sortRaw) ?? .title }
 
     var body: some View {
-        let tracks = library.sortedTracks
+        let tracks = library.tracksSorted(by: sort)
         List {
             if !tracks.isEmpty {
                 Section {
-                    HStack(spacing: 12) {
-                        Button {
-                            player.shuffle = false
-                            player.play(tracks, startAt: 0, allTracks: true)
-                        } label: { Label("Abspielen", systemImage: "play.fill").frame(maxWidth: .infinity) }
-                            .accessibilityIdentifier("playAllButton")
-                        Button {
-                            player.shuffle = true
-                            player.play(tracks, startAt: Int.random(in: 0..<tracks.count), allTracks: true)
-                        } label: { Label("Zufällig", systemImage: "shuffle").frame(maxWidth: .infinity) }
-                    }
-                    .buttonStyle(.bordered)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    PlayShuffleRow(tracks: tracks, allTracks: true)
+                } footer: {
+                    Text("Sortiert: \(sort.label) · Gedrückt halten → „Auswählen“")
                 }
             }
             Section {
                 ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                    TrackListRow(track: track) {
+                    TrackListRow(track: track, selection: selection) {
                         player.play(tracks, startAt: index, allTracks: true)
                     }
+                    .cyberRow()
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { actions.requestDelete(track) } label: { Label("Entfernen", systemImage: "trash") }
                         Button { player.addToQueue(track) } label: { Label("Wiedergabeliste", systemImage: "text.append") }
@@ -353,7 +375,9 @@ struct AllTracksView: View {
                     }
                     .swipeActions(edge: .leading) {
                         Button { player.playNext(track) } label: { Label("Als Nächstes", systemImage: "text.line.first.and.arrowtriangle.forward") }
-                            .tint(.accentColor)
+                            .tint(Color.cyberAccent)
+                        Button { library.toggleFavorite(track) } label: { Label("Herz", systemImage: library.isFavorite(track) ? "heart.slash" : "heart") }
+                            .tint(.pink)
                     }
                 }
             } footer: {
@@ -361,7 +385,28 @@ struct AllTracksView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .cyberList()
         .navigationTitle("Titel")
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Menu {
+                    Picker("Sortieren", selection: $sortRaw) {
+                        ForEach(TrackSort.allCases) { option in
+                            Text(option.label).tag(option.rawValue)
+                        }
+                    }
+                } label: { Image(systemName: "arrow.up.arrow.down") }
+                .accessibilityLabel("Sortieren")
+                .accessibilityIdentifier("sortButton")
+                if !tracks.isEmpty {
+                    Button(selection.active ? "Fertig" : "Auswählen") { if selection.active { selection.clear() } else { selection.start() } }
+                        .accessibilityIdentifier("selectButton")
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if selection.active { SelectionBar(selection: selection, all: tracks) }
+        }
     }
 }
 
@@ -401,6 +446,7 @@ struct GroupListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .cyberList()
         .navigationTitle(title)
     }
 }

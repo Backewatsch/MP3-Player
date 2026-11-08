@@ -768,3 +768,222 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertNotNil(Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))
     }
 }
+
+// MARK: - Neue Funktionen (Sortieren, Statistik, Klang, Herzen, Sicherung, Schlafmodus)
+
+final class FeatureLogicTests: XCTestCase {
+    private func t(_ title: String, _ artist: String, _ duration: Double, _ added: TimeInterval) -> Track {
+        Track(id: UUID(), fileName: "\(title).mp3", title: title, artist: artist, duration: duration, addedAt: Date(timeIntervalSince1970: added))
+    }
+
+    func testSorting() {
+        let a = t("beta", "Zed", 200, 1), b = t("Alpha", "", 300, 3), c = t("gamma", "adam", 100, 2)
+        let all = [a, b, c]
+        XCTAssertEqual(TrackSort.title.apply(all).map(\.id), [b.id, a.id, c.id])
+        XCTAssertEqual(TrackSort.artist.apply(all).map(\.id), [c.id, a.id, b.id], "ohne Interpret am Ende")
+        XCTAssertEqual(TrackSort.newest.apply(all).map(\.id), [b.id, c.id, a.id])
+        XCTAssertEqual(TrackSort.mostPlayed.apply(all, playCounts: [c.id: 5, a.id: 2]).map(\.id), [c.id, a.id, b.id])
+        XCTAssertEqual(TrackSort.longest.apply(all).map(\.id), [b.id, a.id, c.id])
+    }
+
+    func testStats() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Berlin")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 11, day: 20, hour: 12))!
+        let lastMonth = cal.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 12))!
+        let a = t("A", "Zed", 200, 1), c = t("C", "adam", 100, 2)
+        var state = LibraryState(tracks: [a, c], playlists: [], pinned: [])
+        state.favorites = [a.id, UUID()]
+        state.plays = [PlayEvent(trackID: a.id, at: now), PlayEvent(trackID: c.id, at: now), PlayEvent(trackID: a.id, at: now),
+                       PlayEvent(trackID: c.id, at: lastMonth), PlayEvent(trackID: c.id, at: lastMonth)]
+        state.listenedByMonth = ["2026-11": 3900, "2026-10": 60]
+        let s = StatsSummary.make(state, now: now, calendar: cal)
+        XCTAssertEqual(s.playsThisMonth, 3)
+        XCTAssertEqual(s.playsTotal, 5)
+        XCTAssertEqual(s.topThisMonth.map { $0.0.id }, [a.id, c.id])
+        XCTAssertEqual(s.topAllTime.first?.0.id, c.id)
+        XCTAssertEqual(s.topArtists.first?.0, "adam")
+        XCTAssertEqual(s.listenedThisMonth, 3900)
+        XCTAssertEqual(s.listenedTotal, 3960)
+        XCTAssertEqual(s.favoriteCount, 1)
+        XCTAssertEqual(StatsSummary.formatListening(3900), "1 Std. 5 Min.")
+        XCTAssertEqual(StatsSummary.monthKey(now, calendar: cal), "2026-11")
+    }
+
+    func testEqualizerCurvesAndFades() {
+        let bass = SoundPresets.preset(named: "Bass-Boost")!
+        XCTAssertEqual(SoundPresets.gain(bass, at: 30), 6, accuracy: 0.001)
+        XCTAssertEqual(SoundPresets.gain(bass, at: 5000), 0, accuracy: 0.001)
+        XCTAssertEqual(SoundPresets.gains(bass).count, SoundPresets.bands.count)
+        XCTAssertEqual(SoundPresets.volume(position: 0, duration: 200, fade: 0, sleepRemaining: nil), 1)
+        XCTAssertEqual(SoundPresets.volume(position: 2, duration: 200, fade: 4, sleepRemaining: nil), 0.5, accuracy: 0.001)
+        XCTAssertEqual(SoundPresets.volume(position: 199, duration: 200, fade: 4, sleepRemaining: nil), 0.25, accuracy: 0.001)
+        XCTAssertEqual(SoundPresets.volume(position: 0, duration: 10, fade: 4, sleepRemaining: nil), 1, "zu kurzes Lied")
+        XCTAssertEqual(SoundPresets.volume(position: 100, duration: 200, fade: 4, sleepRemaining: 5), 0.5, accuracy: 0.001)
+    }
+
+    func testSleepTimerInput() {
+        XCTAssertEqual(SleepTimerView.parseMinutes("30"), 30)
+        XCTAssertEqual(SleepTimerView.parseMinutes(" 5 "), 5)
+        XCTAssertNil(SleepTimerView.parseMinutes("0"))
+        XCTAssertNil(SleepTimerView.parseMinutes("1441"))
+        XCTAssertNil(SleepTimerView.parseMinutes("abc"))
+        XCTAssertEqual(SleepTimerView.format(1800), "30:00")
+        XCTAssertEqual(SleepTimerView.format(3750), "1:02:30")
+    }
+}
+
+@MainActor
+final class FeatureLibraryTests: XCTestCase {
+    private var library: Library!
+    private var tracks: [Track] = []
+
+    override func setUp() async throws {
+        library = Library(autoScan: false)
+        tracks = []
+        for i in 0..<3 {
+            let src = try Fixture.tempCopy("untagged.mp3", as: "feature-\(i)-\(UUID().uuidString.prefix(6)).mp3")
+            tracks.append(try await library.importAudio(from: src, move: true))
+        }
+    }
+
+    override func tearDown() async throws {
+        library.deleteAll(library.tracks.filter { t in tracks.contains { $0.id == t.id } })
+        for p in library.playlists where p.name.hasPrefix("Test-") { library.deletePlaylist(p) }
+        library = nil
+    }
+
+    func testFavoritesMultiSelectAndStats() {
+        let (a, b, c) = (tracks[0], tracks[1], tracks[2])
+        library.toggleFavorite(a)
+        library.toggleFavorite(c)
+        XCTAssertEqual(library.favoriteTracks.prefix(2).map(\.id), [c.id, a.id])
+        library.toggleFavorite(a)
+        XCTAssertFalse(library.isFavorite(a))
+        library.addFavorites([a, b])
+        XCTAssertTrue(library.isFavorite(b))
+
+        let playlist = library.createPlaylist(named: "Test-Mix")
+        library.addAll([a, b], to: playlist)
+        library.addAll([b, c], to: playlist)
+        XCTAssertEqual(library.playlist(id: playlist.id)?.trackIDs, [a.id, b.id, c.id])
+
+        library.recordPlay(a.id); library.recordPlay(a.id); library.recordPlay(b.id)
+        library.recordStart(a.id)
+        library.addListened(90)
+        let stats = library.stats
+        XCTAssertGreaterThanOrEqual(stats.playsThisMonth, 3)
+        XCTAssertEqual(library.mostPlayed(limit: 1).first?.0.id, a.id)
+        XCTAssertEqual(library.history().first?.0.id, a.id)
+
+        library.deleteAll([b])
+        XCTAssertFalse(library.isFavorite(b))
+        XCTAssertEqual(library.playlist(id: playlist.id)?.trackIDs, [a.id, c.id])
+        tracks.remove(at: 1)
+    }
+
+    func testBackupRestoresPlaylistsAndHearts() throws {
+        let (a, b) = (tracks[0], tracks[1])
+        let playlist = library.createPlaylist(named: "Test-Party")
+        library.addAll([b, a], to: playlist)
+        library.toggleFavorite(b)
+        library.recordPlay(b.id)
+        let doc = try BackupDocument(state: library.stateSnapshot)
+        let backup = try Library.decodeBackup(doc.data)
+
+        library.deletePlaylist(library.playlist(id: playlist.id)!)
+        library.toggleFavorite(b)
+        let result = library.restore(from: backup)
+        XCTAssertGreaterThanOrEqual(result.matched, 2)
+        let restored = try XCTUnwrap(library.playlists.first { $0.name == "Test-Party" })
+        XCTAssertEqual(restored.trackIDs, [b.id, a.id])
+        XCTAssertTrue(library.isFavorite(b))
+        // Nochmal: nichts doppelt
+        library.restore(from: backup)
+        XCTAssertEqual(library.playlists.filter { $0.name == "Test-Party" }.count, 1)
+        XCTAssertThrowsError(try Library.decodeBackup(Data("kein json".utf8)))
+    }
+}
+
+@MainActor
+final class FeaturePlayerTests: XCTestCase {
+    private var library: Library!
+    private var player: AudioPlayer!
+    private var tracks: [Track] = []
+
+    override func setUp() async throws {
+        library = Library(autoScan: false)
+        player = AudioPlayer()
+        tracks = []
+        for i in 0..<4 {
+            let src = try Fixture.tempCopy("untagged.mp3", as: "fp-\(i)-\(UUID().uuidString.prefix(6)).mp3")
+            tracks.append(try await library.importAudio(from: src, move: true))
+        }
+    }
+
+    override func tearDown() async throws {
+        player.stop()
+        player.sound.enabled = false
+        player.sound.preset = "Normal"
+        for t in tracks { library.delete(t) }
+        player = nil
+        library = nil
+    }
+
+    func testPlayNextKeepsOrderAlsoWithShuffle() {
+        player.play([tracks[0], tracks[1]], startAt: 0)
+        player.playNext(tracks[2])
+        player.playNext(tracks[3])
+        XCTAssertEqual(player.queue.map(\.id), [tracks[0].id, tracks[2].id, tracks[3].id, tracks[1].id])
+        player.next()
+        XCTAssertEqual(player.current?.id, tracks[2].id)
+
+        player.shuffle = true
+        XCTAssertEqual(player.current?.id, tracks[2].id, "Zufall ändert den laufenden Titel nicht")
+        player.playNext(tracks[0])
+        player.next()
+        XCTAssertEqual(player.current?.id, tracks[0].id, "Als Nächstes gilt auch bei Zufall")
+        player.shuffle = false
+        XCTAssertEqual(player.current?.id, tracks[0].id)
+    }
+
+    func testSleepTimerStopsMusic() async {
+        player.repeatMode = .one
+        player.play([tracks[0]], startAt: 0)
+        XCTAssertTrue(player.isPlaying)
+        player.startSleepTimer(seconds: 1.5)
+        XCTAssertNotNil(player.sleepRemaining)
+        let stopped = await waitUntil(timeout: 6) { !self.player.isPlaying }
+        XCTAssertTrue(stopped, "Schlafmodus schaltet die Musik nicht aus")
+        XCTAssertNil(player.sleepRemaining)
+
+        player.play([tracks[0]], startAt: 0)
+        player.startSleepTimer(seconds: 1)
+        player.cancelSleepTimer()
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        XCTAssertTrue(player.isPlaying, "Abgebrochener Timer schaltet nichts aus")
+    }
+
+    func testEqualizerAppliesPreset() {
+        player.sound.choose("Bass-Boost")
+        XCTAssertTrue(player.equalizerActive)
+        XCTAssertEqual(player.appliedGains.first ?? 0, 6, accuracy: 0.01)
+        player.sound.setBand(9, 3)
+        XCTAssertEqual(player.sound.preset, SoundPresets.custom)
+        XCTAssertEqual(player.appliedGains[9], 3, accuracy: 0.01)
+        player.sound.enabled = false
+        XCTAssertFalse(player.equalizerActive)
+    }
+
+    func testPlayCountAndHistoryCallbacks() async {
+        var started: [UUID] = []
+        player.onTrackStarted = { started.append($0) }
+        player.play(tracks, startAt: 1)
+        XCTAssertEqual(started, [tracks[1].id])
+        var played: [UUID] = []
+        player.onTrackPlayed = { played.append($0) }
+        // Testlied ist ~2 s lang → nach der Hälfte gilt es als gehört
+        let counted = await waitUntil(timeout: 5) { played.contains(self.tracks[1].id) }
+        XCTAssertTrue(counted)
+    }
+}

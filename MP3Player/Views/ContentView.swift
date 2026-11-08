@@ -3,13 +3,19 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var downloads: DownloadManager
-    @State private var tab = Tab.library
+    @State private var tab = Tab.start
     @State private var showNowPlaying = false
 
-    enum Tab: Hashable { case library, downloader }
+    enum Tab: Hashable { case start, library, downloader }
 
     var body: some View {
         TabView(selection: $tab) {
+            StartView(showNowPlaying: $showNowPlaying)
+                .miniPlayer($showNowPlaying)
+                .trackActionsHost()
+                .tabItem { Label("Start", systemImage: "house") }
+                .tag(Tab.start)
+
             MediathekView()
                 .miniPlayer($showNowPlaying)
                 .trackActionsHost()
@@ -27,6 +33,7 @@ struct ContentView: View {
                 .trackActionsHost()
         }
         .preferredColorScheme(.dark)
+        .tint(Color.cyberAccent)
         .alert("Hinweis", isPresented: Binding(
             get: { player.errorMessage != nil },
             set: { if !$0 { player.errorMessage = nil } }

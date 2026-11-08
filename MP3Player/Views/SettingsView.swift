@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Info & Updates
 struct SettingsView: View {
@@ -10,19 +11,22 @@ struct SettingsView: View {
     @State private var conversionResult: String?
     @Environment(\.openURL) private var openURL
     @State private var copied = false
+    @AppStorage("showOwnCovers") private var showOwnCovers = false
+    @State private var showSound = false
+    @State private var exportDocument: BackupDocument?
+    @State private var showExporter = false
+    @State private var showImporter = false
+    @State private var backupStatus: String?
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     HStack(spacing: 14) {
-                        Image(systemName: "music.note")
-                            .font(.title.weight(.semibold))
-                            .foregroundStyle(.white)
+                        Image("Logo")
+                            .resizable()
                             .frame(width: 56, height: 56)
-                            .background(LinearGradient(colors: [Color.accentColor, .purple],
-                                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                                        in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("ILLEGAL FREEDOM MUSIC").font(.headline)
                             Text("Version \(updates.currentVersion) (Build \(updates.currentBuild))")
@@ -69,6 +73,66 @@ struct SettingsView: View {
                     }
                     .disabled(updates.state == .checking)
                     .accessibilityIdentifier("checkUpdatesButton")
+                }
+
+                Section {
+                    Toggle("Eigene Cover der Lieder anzeigen", isOn: $showOwnCovers)
+                        .tint(Color.cyberAccent)
+                        .accessibilityIdentifier("ownCoversSwitch")
+                } header: {
+                    CyberHeader(text: "Darstellung")
+                } footer: {
+                    Text(showOwnCovers ? "Lieder zeigen ihr eigenes Cover (falls vorhanden)." : "Neben jedem Lied steht das App-Logo.")
+                }
+
+                Section {
+                    Button { showSound = true } label: {
+                        Label("Equalizer & Überblenden" + (player.sound.enabled ? " · \(player.sound.preset)" : "")
+                              + (player.sound.crossfade > 0 ? " · \(Int(player.sound.crossfade)) s" : ""),
+                              systemImage: "slider.vertical.3")
+                    }
+                    .accessibilityIdentifier("openSound")
+                } header: { CyberHeader(text: "Klang") }
+
+                Section {
+                    Button {
+                        exportDocument = try? BackupDocument(state: library.stateSnapshot)
+                        showExporter = exportDocument != nil
+                    } label: { Label("Sicherung erstellen", systemImage: "square.and.arrow.up") }
+                        .accessibilityIdentifier("backupCreate")
+                    Button { showImporter = true } label: { Label("Sicherung wiederherstellen", systemImage: "arrow.counterclockwise") }
+                        .accessibilityIdentifier("backupRestore")
+                    if let backupStatus {
+                        Text(backupStatus).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("backupStatus")
+                    }
+                } header: {
+                    CyberHeader(text: "Sicherung")
+                } footer: {
+                    Text("Sichert Playlists, Herzen, Kurzwahl, Verlauf und Statistik. Die Musikdateien selbst findest du in der Dateien-App unter „Auf meinem iPhone › ILLEGAL FREEDOM MUSIC“ – kopiere sie z. B. nach iCloud Drive. Beim Wiederherstellen geht nichts verloren.")
+                }
+                .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .json,
+                              defaultFilename: "ILLEGAL-FREEDOM-MUSIC-Sicherung") { result in
+                    switch result {
+                    case .success: backupStatus = "✓ Sicherung gespeichert."
+                    case .failure(let error): backupStatus = "Sicherung fehlgeschlagen: \(error.localizedDescription)"
+                    }
+                }
+                .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
+                    switch result {
+                    case .success(let url):
+                        let accessing = url.startAccessingSecurityScopedResource()
+                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                        do {
+                            let data = try Data(contentsOf: url)
+                            let r = library.restore(from: try Library.decodeBackup(data))
+                            backupStatus = "✓ Wiederhergestellt: \(r.matched) Lieder erkannt, \(r.playlists) Playlists"
+                                + (r.missing > 0 ? " · \(r.missing) Lieder fehlen auf diesem iPhone." : ".")
+                        } catch {
+                            backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
+                        }
+                    case .failure(let error):
+                        backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
+                    }
                 }
 
                 Section {
@@ -127,6 +191,8 @@ struct SettingsView: View {
                     Text("Wenn du die Quelle in AltStore oder SideStore hinzufügst, zeigen diese Apps neue Versionen automatisch an und installieren sie mit einem Tipp. Deine Musik bleibt bei einem Update erhalten.")
                 }
             }
+            .cyberList()
+            .sheet(isPresented: $showSound) { SoundView(sound: player.sound) }
             .navigationTitle("Info & Updates")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

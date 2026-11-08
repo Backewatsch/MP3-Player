@@ -4,30 +4,31 @@ struct ArtworkView: View {
     let track: Track?
     var size: CGFloat
     var cornerRadius: CGFloat = 6
+    /// Eigene Cover der Lieder statt des App-Logos (Einstellung, Standard: aus)
+    @AppStorage("showOwnCovers") private var showOwnCovers = false
 
     var body: some View {
         Group {
-            if let track, let image = ArtworkCache.shared.image(for: track) {
+            if showOwnCovers, let track, let image = ArtworkCache.shared.image(for: track) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
             } else {
-                ZStack {
-                    LinearGradient(colors: [Color.accentColor.opacity(0.85), Color.purple.opacity(0.7)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Image(systemName: "music.note")
-                        .font(.system(size: size * 0.42, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
+                // App-Logo neben jedem Lied
+                Image("Logo")
+                    .resizable()
+                    .scaledToFill()
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(Color.neonCyan.opacity(0.25), lineWidth: 0.5))
     }
 }
 
 struct TrackRow: View {
     @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var library: Library
     let track: Track
 
     var body: some View {
@@ -35,8 +36,8 @@ struct TrackRow: View {
             ArtworkView(track: track, size: 46)
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
-                    .font(.body)
-                    .foregroundStyle(player.current?.id == track.id ? Color.accentColor : .primary)
+                    .font(.body.weight(player.current?.id == track.id ? .bold : .regular))
+                    .foregroundStyle(player.current?.id == track.id ? Color.neonCyan : .primary)
                     .lineLimit(1)
                 Text(track.artist.isEmpty ? "Unbekannter Interpret" : track.artist)
                     .font(.subheadline)
@@ -44,9 +45,15 @@ struct TrackRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
+            if library.isFavorite(track) {
+                Image(systemName: "heart.fill")
+                    .font(.caption2)
+                    .foregroundStyle(Color.cyberAccent)
+                    .accessibilityLabel("Lieblingssong")
+            }
             if player.current?.id == track.id {
-                Image(systemName: player.isPlaying ? "speaker.wave.2.fill" : "speaker.fill")
-                    .foregroundStyle(Color.accentColor)
+                Image(systemName: player.isPlaying ? "waveform" : "speaker.fill")
+                    .foregroundStyle(Color.neonCyan)
                     .font(.footnote)
             }
             Text(track.duration.formattedTime)

@@ -101,21 +101,43 @@ struct Playlist: Identifiable, Codable, Hashable {
     var trackIDs: [UUID]
 }
 
+/// Ein Eintrag im Verlauf bzw. in der Statistik: welcher Titel wann
+struct PlayEvent: Codable, Hashable {
+    var trackID: UUID
+    var at: Date
+}
+
 struct LibraryState: Codable {
-    /// 2 = Alben werden gespeichert
-    static let currentVersion = 2
+    /// 2 = Alben werden gespeichert, 3 = Herzen, Verlauf, Statistik
+    static let currentVersion = 3
 
     var version: Int
     var tracks: [Track]
     var playlists: [Playlist]
     /// Titel in der „Kurzwahl“ (angepinnt)
     var pinned: [UUID]
+    /// Lieblingssongs (zuletzt markiert zuerst)
+    var favorites: [UUID] = []
+    /// Wie oft jeder Titel gehört wurde („Oft gespielt“)
+    var playCounts: [UUID: Int] = [:]
+    /// Zuletzt gestartete Titel, neueste zuerst („Verlauf“)
+    var history: [PlayEvent] = []
+    /// Richtig gehörte Titel (für die Statistik), neueste zuerst
+    var plays: [PlayEvent] = []
+    /// Hörzeit in Sekunden je Monat („2026-11“)
+    var listenedByMonth: [String: Double] = [:]
 
-    init(tracks: [Track], playlists: [Playlist], pinned: [UUID]) {
+    init(tracks: [Track], playlists: [Playlist], pinned: [UUID], favorites: [UUID] = [], playCounts: [UUID: Int] = [:],
+         history: [PlayEvent] = [], plays: [PlayEvent] = [], listenedByMonth: [String: Double] = [:]) {
         version = Self.currentVersion
         self.tracks = tracks
         self.playlists = playlists
         self.pinned = pinned
+        self.favorites = favorites
+        self.playCounts = playCounts
+        self.history = history
+        self.plays = plays
+        self.listenedByMonth = listenedByMonth
     }
 
     init(from decoder: Decoder) throws {
@@ -124,6 +146,112 @@ struct LibraryState: Codable {
         tracks = try c.decode([Track].self, forKey: .tracks)
         playlists = try c.decode([Playlist].self, forKey: .playlists)
         pinned = try c.decodeIfPresent([UUID].self, forKey: .pinned) ?? []
+        favorites = try c.decodeIfPresent([UUID].self, forKey: .favorites) ?? []
+        playCounts = try c.decodeIfPresent([UUID: Int].self, forKey: .playCounts) ?? [:]
+        history = try c.decodeIfPresent([PlayEvent].self, forKey: .history) ?? []
+        plays = try c.decodeIfPresent([PlayEvent].self, forKey: .plays) ?? []
+        listenedByMonth = try c.decodeIfPresent([String: Double].self, forKey: .listenedByMonth) ?? [:]
+    }
+}
+
+/// Sortierung der Titelliste
+enum TrackSort: String, CaseIterable, Identifiable {
+    case title, artist, newest, mostPlayed, longest
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .title: return "Titel (A–Z)"
+        case .artist: return "Interpret (A–Z)"
+        case .newest: return "Zuletzt hinzugefügt"
+        case .mostPlayed: return "Am meisten gespielt"
+        case .longest: return "Länge"
+        }
+    }
+
+    func apply(_ tracks: [Track], playCounts: [UUID: Int] = [:]) -> [Track] {
+        func byTitle(_ a: Track, _ b: Track) -> Bool { a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending }
+        switch self {
+        case .title:
+            return tracks.sorted(by: byTitle)
+        case .artist:
+            return tracks.sorted { a, b in
+                if a.artist.isEmpty != b.artist.isEmpty { return !a.artist.isEmpty } // ohne Interpret ans Ende
+                let c = a.artist.localizedCaseInsensitiveCompare(b.artist)
+                if c != .orderedSame { return c == .orderedAscending }
+                let d = a.album.localizedCaseInsensitiveCompare(b.album)
+                if d != .orderedSame { return d == .orderedAscending }
+                return byTitle(a, b)
+            }
+        case .newest:
+            return tracks.sorted { $0.addedAt != $1.addedAt ? $0.addedAt > $1.addedAt : byTitle($0, $1) }
+        case .mostPlayed:
+            return tracks.sorted {
+                let x = playCounts[$0.id] ?? 0, y = playCounts[$1.id] ?? 0
+                return x != y ? x > y : byTitle($0, $1)
+            }
+        case .longest:
+            return tracks.sorted { $0.duration != $1.duration ? $0.duration > $1.duration : byTitle($0, $1) }
+        }
+    }
+}
+
+/// Hör-Statistik
+struct StatsSummary {
+    var listenedTotal: Double
+    var listenedThisMonth: Double
+    var playsThisMonth: Int
+    var playsTotal: Int
+    var topThisMonth: [(Track, Int)]
+    var topAllTime: [(Track, Int)]
+    var topArtists: [(String, Int)]
+    var trackCount: Int
+    var libraryDuration: Double
+    var favoriteCount: Int
+
+    static let maxPlays = 5000
+
+    static func monthKey(_ date: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month], from: date)
+        return String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
+    }
+
+    static func make(_ state: LibraryState, now: Date = Date(), calendar: Calendar = .current) -> StatsSummary {
+        let byID = Dictionary(state.tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let month = monthKey(now, calendar: calendar)
+        let plays = state.plays.filter { byID[$0.trackID] != nil }
+        let monthPlays = plays.filter { monthKey($0.at, calendar: calendar) == month }
+        func top(_ events: [PlayEvent]) -> [(Track, Int)] {
+            var counts: [UUID: Int] = [:]
+            for e in events { counts[e.trackID, default: 0] += 1 }
+            return counts.compactMap { id, n in byID[id].map { ($0, n) } }
+                .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.title.localizedCaseInsensitiveCompare($1.0.title) == .orderedAscending }
+                .prefix(10).map { $0 }
+        }
+        var artists: [String: Int] = [:]
+        for e in plays { if let a = byID[e.trackID]?.artist, !a.isEmpty { artists[a, default: 0] += 1 } }
+        let topArtists = artists.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.lowercased() < $1.key.lowercased() }
+            .prefix(5).map { ($0.key, $0.value) }
+        return StatsSummary(
+            listenedTotal: state.listenedByMonth.values.reduce(0, +),
+            listenedThisMonth: state.listenedByMonth[month] ?? 0,
+            playsThisMonth: monthPlays.count,
+            playsTotal: plays.count,
+            topThisMonth: top(monthPlays),
+            topAllTime: top(plays),
+            topArtists: topArtists,
+            trackCount: state.tracks.count,
+            libraryDuration: state.tracks.reduce(0) { $0 + $1.duration },
+            favoriteCount: state.favorites.filter { byID[$0] != nil }.count
+        )
+    }
+
+    /// „1 Std. 5 Min.“ bzw. „7 Min.“
+    static func formatListening(_ seconds: Double) -> String {
+        let minutes = Int(seconds / 60)
+        let h = minutes / 60, m = minutes % 60
+        return h > 0 ? "\(h) Std. \(m) Min." : "\(m) Min."
     }
 }
 

@@ -60,5 +60,9 @@ struct MP3PlayerApp: App {
         player.onDurationLoaded = { [weak library = library] id, duration in
             library?.updateDuration(of: id, to: duration)
         }
+        // Verlauf, „Oft gespielt“ und Statistik
+        player.onTrackStarted = { [weak library = library] id in library?.recordStart(id) }
+        player.onTrackPlayed = { [weak library = library] id in library?.recordPlay(id) }
+        player.onListened = { [weak library = library] seconds in library?.addListened(seconds) }
     }
 }

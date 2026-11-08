@@ -65,6 +65,10 @@ final class MP3PlayerUITests: XCTestCase {
     }
 
     func test1_AllTabsShowUp() {
+        // Start-Tab ist die erste Seite
+        XCTAssertTrue(app.otherElements["startScreen"].waitForExistence(timeout: 10) || app.staticTexts["Willkommen!"].waitForExistence(timeout: 5))
+        screenshot("00-Start-leer")
+        tab("Mediathek")
         XCTAssertTrue(app.staticTexts["Noch keine Musik"].waitForExistence(timeout: 10))
         screenshot("01-Mediathek-leer")
         app.swipeUp()
@@ -86,6 +90,7 @@ final class MP3PlayerUITests: XCTestCase {
     }
 
     func test2_CreatePlaylistInLibrary() {
+        tab("Mediathek")
         let new = app.buttons["newPlaylistButton"]
         if !new.waitForExistence(timeout: 5) { app.swipeUp() }
         XCTAssertTrue(new.waitForExistence(timeout: 10))
@@ -167,7 +172,8 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(pin.waitForExistence(timeout: 5))
         pin.tap()
         goBackToRoot()
-        XCTAssertTrue(app.staticTexts["Kurzwahl"].waitForExistence(timeout: 5) || app.staticTexts["KURZWAHL"].exists)
+        let pinned = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "Kurzwahl")).firstMatch
+        XCTAssertTrue(pinned.waitForExistence(timeout: 5), "Kurzwahl erscheint nicht")
         screenshot("16-Mediathek-Kurzwahl")
     }
 
@@ -191,6 +197,7 @@ final class MP3PlayerUITests: XCTestCase {
     }
 
     func test5_SettingsShowsVersionUpdatesAndConverter() {
+        tab("Mediathek")
         let gear = app.buttons["settingsButton"]
         XCTAssertTrue(gear.waitForExistence(timeout: 10))
         gear.tap()
@@ -201,7 +208,11 @@ final class MP3PlayerUITests: XCTestCase {
                                "neueste Version", "Update verfügbar", "Keine öffentliche Version", "Fehler")
         _ = app.staticTexts.containing(done).firstMatch.waitForExistence(timeout: 20)
         screenshot("13-Info-Updates")
-        app.buttons["Fertig"].tap()
+        app.swipeUp()
+        XCTAssertTrue(app.buttons["backupCreate"].waitForExistence(timeout: 5), "Sicherung fehlt")
+        XCTAssertTrue(app.buttons["openSound"].exists, "Klang fehlt")
+        screenshot("13b-Einstellungen-Sicherung")
+        app.buttons["Fertig"].firstMatch.tap()
     }
 
     func test6_YouTubeShowsHint() {
@@ -213,5 +224,73 @@ final class MP3PlayerUITests: XCTestCase {
         let hint = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "YouTube werden nicht unterstützt")).firstMatch
         XCTAssertTrue(hint.waitForExistence(timeout: 30))
         screenshot("12-YouTube-Hinweis")
+    }
+
+    /// Lieblingssongs, Sortieren, Mehrfachauswahl, Statistik, Klang und Schlafmodus
+    func test7_NewFeatures() {
+        openDownloads()
+        let field = app.textFields["downloadLinkField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(mp3URL1)
+        app.buttons["downloadStartButton"].tap()
+        waitForFinishedDownload(timeout: 120)
+        app.buttons["closeDownloads"].tap()
+
+        // Player: Herz, Klang, Schlafmodus
+        let mini = app.otherElements["miniPlayer"].firstMatch
+        XCTAssertTrue(mini.waitForExistence(timeout: 5))
+        mini.tap()
+        let fav = app.buttons["favButton"].firstMatch
+        XCTAssertTrue(fav.waitForExistence(timeout: 5))
+        fav.tap()
+        XCTAssertEqual(fav.label, "Aus Lieblingssongs entfernen")
+        app.buttons["soundButton"].firstMatch.tap()
+        XCTAssertTrue(app.switches["eqSwitch"].waitForExistence(timeout: 5), "Klang-Fenster fehlt")
+        app.buttons["preset-Bass-Boost"].firstMatch.tap()
+        screenshot("20-Klang")
+        app.buttons["Fertig"].firstMatch.tap()
+        app.buttons["sleepButton"].firstMatch.tap()
+        let minutes = app.textFields["sleepMinutes"]
+        XCTAssertTrue(minutes.waitForExistence(timeout: 5), "Schlafmodus-Feld fehlt")
+        minutes.tap()
+        minutes.typeText("30")
+        screenshot("21-Schlafmodus")
+        app.buttons["sleepStart"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Schlafmodus läuft"].waitForExistence(timeout: 5), "Schlafmodus läuft nicht")
+        screenshot("22-Schlafmodus-laeuft")
+        app.buttons["Schließen"].tap()
+
+        // Mediathek: Lieblingssongs, Sortieren, Auswahl, Statistik
+        tab("Mediathek")
+        app.buttons["category-Lieblingssongs"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["trackMore"].firstMatch.waitForExistence(timeout: 5), "Lieblingssong fehlt")
+        screenshot("23-Lieblingssongs")
+        goBackToRoot()
+        app.buttons["category-Titel"].firstMatch.tap()
+        let sortButton = app.buttons["sortButton"].firstMatch
+        XCTAssertTrue(sortButton.waitForExistence(timeout: 5))
+        sortButton.tap()
+        XCTAssertTrue(app.buttons["Zuletzt hinzugefügt"].waitForExistence(timeout: 5), "Sortier-Menü fehlt")
+        screenshot("24-Sortieren")
+        app.buttons["Zuletzt hinzugefügt"].tap()
+        app.buttons["selectButton"].firstMatch.tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "select-")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["1 ausgewählt"].waitForExistence(timeout: 5), "Auswahl funktioniert nicht")
+        screenshot("25-Auswahl")
+        app.buttons["sel-close"].tap()
+        goBackToRoot()
+        app.swipeUp()
+        app.buttons["category-Statistik"].firstMatch.tap()
+        XCTAssertTrue(app.otherElements["stat-month"].waitForExistence(timeout: 5) || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Hörzeit")).firstMatch.waitForExistence(timeout: 5))
+        screenshot("26-Statistik")
+        goBackToRoot()
+
+        // Start-Tab zeigt Lieblingssongs und Statistik
+        tab("Start")
+        XCTAssertTrue(app.buttons["startStats"].waitForExistence(timeout: 5) || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Diesen Monat")).firstMatch.exists)
+        screenshot("27-Start")
     }
 }

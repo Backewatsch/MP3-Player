@@ -5,6 +5,7 @@ Motiv: Neon-Musiknote mit Glitch-Versatz vor einer zerrissenen Kette mit Funken 
 Koordinaten im 108×108-Raster der adaptiven Android-Symbole (sichtbar: Kreis/Quadrat um 54,54).
 """
 import math
+import shutil
 import sys
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -218,6 +219,8 @@ ANDROID_BACKGROUND = """<?xml version="1.0" encoding="utf-8"?>
 if __name__ == "__main__":
     root = sys.argv[1] if len(sys.argv) > 1 else "."
     render_png(1024, f"{root}/MP3Player/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+    # Gleiches Logo als Bild in der App (neben jedem Lied)
+    shutil.copyfile(f"{root}/MP3Player/Assets.xcassets/AppIcon.appiconset/AppIcon.png", f"{root}/MP3Player/Assets.xcassets/Logo.imageset/Logo.png")
     res = f"{root}/android/app/src/main/res/drawable"
     open(f"{res}/ic_launcher_foreground.xml", "w").write(android_foreground())
     open(f"{res}/ic_launcher_background.xml", "w").write(ANDROID_BACKGROUND)

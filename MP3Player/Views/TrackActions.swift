@@ -138,6 +138,11 @@ struct TrackActionsSheet: View {
                 }
                 .padding(.bottom, 14)
 
+                row(library.isFavorite(current) ? "Aus Lieblingssongs entfernen" : "Zu Lieblingssongs hinzufügen",
+                    library.isFavorite(current) ? "heart.slash" : "heart") {
+                    library.toggleFavorite(current)
+                    actions.close()
+                }
                 row("Mix starten", "dot.radiowaves.left.and.right") {
                     player.startMix(with: current, from: library.tracks)
                     actions.close()
@@ -331,6 +336,7 @@ struct TrackCollectionView: View {
 /// Kopf mit Cover + Titelliste (für Album- und Interpretenseiten)
 struct TrackCollectionList: View {
     @EnvironmentObject private var player: AudioPlayer
+    @StateObject private var selection = SelectionModel()
     let title: String
     let subtitle: String
     let tracks: [Track]
@@ -362,11 +368,21 @@ struct TrackCollectionList: View {
                 }
                 Section {
                     ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                        TrackListRow(track: track) { player.play(tracks, startAt: index) }
+                        TrackListRow(track: track, selection: selection) { player.play(tracks, startAt: index) }
+                            .cyberRow()
                     }
                 }
             }
             .listStyle(.insetGrouped)
+            .cyberList()
+            .toolbar {
+                if !tracks.isEmpty {
+                    Button(selection.active ? "Fertig" : "Auswählen") { if selection.active { selection.clear() } else { selection.start() } }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if selection.active { SelectionBar(selection: selection, all: tracks) }
+            }
     }
 }
 
@@ -421,11 +437,54 @@ struct SongInfoSheet: View {
 // MARK: - Zeile mit „…“-Knopf
 
 /// Titelzeile: Tippen spielt ab, „…“ öffnet das Optionsmenü, langes Drücken zeigt ein Kurzmenü.
+/// Mit `selection` gibt es eine Mehrfachauswahl: dann schaltet Tippen das Häkchen um.
 struct TrackListRow: View {
-    @EnvironmentObject private var player: AudioPlayer
-    @EnvironmentObject private var actions: TrackActions
     let track: Track
     var playlist: Playlist? = nil
+    var selection: SelectionModel? = nil
+    let onPlay: () -> Void
+
+    var body: some View {
+        if let selection {
+            SelectableTrackRow(selection: selection, track: track, playlist: playlist, onPlay: onPlay)
+        } else {
+            PlainTrackRow(track: track, playlist: playlist, selection: nil, onPlay: onPlay)
+        }
+    }
+}
+
+/// Zeile, die auf die Auswahl reagiert (beobachtet das Auswahl-Modell)
+private struct SelectableTrackRow: View {
+    @ObservedObject var selection: SelectionModel
+    let track: Track
+    let playlist: Playlist?
+    let onPlay: () -> Void
+
+    var body: some View {
+        if selection.active {
+            Button { selection.toggle(track.id) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: selection.ids.contains(track.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(selection.ids.contains(track.id) ? Color.cyberAccent : .secondary)
+                    TrackRow(track: track)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("select-\(track.title)")
+        } else {
+            PlainTrackRow(track: track, playlist: playlist, selection: selection, onPlay: onPlay)
+        }
+    }
+}
+
+private struct PlainTrackRow: View {
+    @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var actions: TrackActions
+    @EnvironmentObject private var library: Library
+    let track: Track
+    let playlist: Playlist?
+    let selection: SelectionModel?
     let onPlay: () -> Void
 
     var body: some View {
@@ -446,8 +505,15 @@ struct TrackListRow: View {
             .accessibilityIdentifier("trackMore")
         }
         .contextMenu {
+            if let selection {
+                Button { selection.start(with: track.id) } label: { Label("Auswählen", systemImage: "checkmark.circle") }
+            }
             Button { player.playNext(track) } label: { Label("Als Nächstes abspielen", systemImage: "text.line.first.and.arrowtriangle.forward") }
             Button { player.addToQueue(track) } label: { Label("In die Wiedergabeliste", systemImage: "text.append") }
+            Button { library.toggleFavorite(track) } label: {
+                Label(library.isFavorite(track) ? "Aus Lieblingssongs entfernen" : "Zu Lieblingssongs",
+                      systemImage: library.isFavorite(track) ? "heart.slash" : "heart")
+            }
             Button { actions.show(.addToPlaylist(track)) } label: { Label("Zu Playlist hinzufügen", systemImage: "text.badge.plus") }
             Button { actions.open(track, in: playlist) } label: { Label("Weitere Optionen …", systemImage: "ellipsis.circle") }
         }

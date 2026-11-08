@@ -11,6 +11,17 @@ final class Library: ObservableObject {
     @Published private(set) var playlists: [Playlist] = []
     /// Angepinnte Titel („Kurzwahl“)
     @Published private(set) var pinnedIDs: [UUID] = []
+    /// Lieblingssongs (Herz), zuletzt markiert zuerst
+    @Published private(set) var favoriteIDs: [UUID] = []
+    /// Wie oft jeder Titel gehört wurde
+    @Published private(set) var playCounts: [UUID: Int] = [:]
+    /// Verlauf (neueste zuerst)
+    @Published private(set) var historyEvents: [PlayEvent] = []
+    /// Gehörte Titel für die Statistik (neueste zuerst)
+    @Published private(set) var plays: [PlayEvent] = []
+    /// Hörzeit in Sekunden je Monat
+    @Published private(set) var listenedByMonth: [String: Double] = [:]
+    static let maxHistory = 300
     /// Fortschritt einer laufenden Umwandlung (für die Anzeige), sonst `nil`
     @Published private(set) var conversionStatus: String?
 
@@ -73,6 +84,93 @@ final class Library: ObservableObject {
     var sortedTracks: [Track] {
         tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
+
+    func tracksSorted(by order: TrackSort) -> [Track] { order.apply(tracks, playCounts: playCounts) }
+
+    // MARK: Lieblingssongs
+
+    func isFavorite(_ track: Track) -> Bool { favoriteIDs.contains(track.id) }
+
+    var favoriteTracks: [Track] {
+        let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return favoriteIDs.compactMap { byID[$0] }
+    }
+
+    func toggleFavorite(_ track: Track) {
+        if let i = favoriteIDs.firstIndex(of: track.id) { favoriteIDs.remove(at: i) } else { favoriteIDs.insert(track.id, at: 0) }
+        save()
+    }
+
+    func addFavorites(_ list: [Track]) {
+        let new = list.map(\.id).filter { !favoriteIDs.contains($0) }
+        favoriteIDs = new + favoriteIDs
+        save()
+    }
+
+    // MARK: Oft gespielt, Verlauf, Statistik
+
+    /// Titel gestartet → Verlauf (gleicher Titel innerhalb einer Minute nur einmal)
+    func recordStart(_ id: UUID, at now: Date = Date()) {
+        guard track(id: id) != nil else { return }
+        if let recent = historyEvents.first, recent.trackID == id, now.timeIntervalSince(recent.at) < 60 { return }
+        historyEvents.insert(PlayEvent(trackID: id, at: now), at: 0)
+        if historyEvents.count > Self.maxHistory { historyEvents.removeLast(historyEvents.count - Self.maxHistory) }
+        save()
+    }
+
+    /// Titel richtig gehört → „Oft gespielt“ und Statistik
+    func recordPlay(_ id: UUID, at now: Date = Date()) {
+        guard track(id: id) != nil else { return }
+        playCounts[id, default: 0] += 1
+        plays.insert(PlayEvent(trackID: id, at: now), at: 0)
+        if plays.count > StatsSummary.maxPlays { plays.removeLast(plays.count - StatsSummary.maxPlays) }
+        save()
+    }
+
+    func addListened(_ seconds: Double, at now: Date = Date()) {
+        guard seconds > 0 else { return }
+        listenedByMonth[StatsSummary.monthKey(now), default: 0] += seconds
+        save()
+    }
+
+    func playCount(_ track: Track) -> Int { playCounts[track.id] ?? 0 }
+
+    func mostPlayed(limit: Int = 50) -> [(Track, Int)] {
+        let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return playCounts.filter { $0.value > 0 }
+            .sorted { $0.value > $1.value }
+            .compactMap { id, n in byID[id].map { ($0, n) } }
+            .prefix(limit).map { $0 }
+    }
+
+    func history(limit: Int = Library.maxHistory) -> [(Track, Date)] {
+        let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return historyEvents.compactMap { e in byID[e.trackID].map { ($0, e.at) } }.prefix(limit).map { $0 }
+    }
+
+    func recentlyPlayed(limit: Int = 20) -> [Track] {
+        var seen = Set<UUID>()
+        return history().map { $0.0 }.filter { seen.insert($0.id).inserted }.prefix(limit).map { $0 }
+    }
+
+    func clearHistory() {
+        historyEvents = []
+        playCounts = [:]
+        save()
+    }
+
+    func clearStats() {
+        plays = []
+        listenedByMonth = [:]
+        save()
+    }
+
+    var stateSnapshot: LibraryState {
+        LibraryState(tracks: tracks, playlists: playlists, pinned: pinnedIDs, favorites: favoriteIDs, playCounts: playCounts,
+                     history: historyEvents, plays: plays, listenedByMonth: listenedByMonth)
+    }
+
+    var stats: StatsSummary { StatsSummary.make(stateSnapshot) }
 
     // MARK: Import
 
@@ -239,6 +337,8 @@ final class Library: ObservableObject {
             let ids = Set(missing.map(\.id))
             tracks.removeAll { ids.contains($0.id) }
             for i in playlists.indices { playlists[i].trackIDs.removeAll { ids.contains($0) } }
+            pinnedIDs.removeAll { ids.contains($0) }
+            favoriteIDs.removeAll { ids.contains($0) }
             changed = true
         }
         // Neue Dateien aufnehmen
@@ -257,13 +357,31 @@ final class Library: ObservableObject {
 
     // MARK: Bearbeiten
 
-    func delete(_ track: Track) {
-        try? FileManager.default.removeItem(at: track.fileURL)
-        try? FileManager.default.removeItem(at: track.artworkURL)
-        tracks.removeAll { $0.id == track.id }
-        for i in playlists.indices { playlists[i].trackIDs.removeAll { $0 == track.id } }
-        pinnedIDs.removeAll { $0 == track.id }
-        ArtworkCache.shared.remove(track.id)
+    func delete(_ track: Track) { deleteAll([track]) }
+
+    /// Löscht mehrere Titel vom iPhone und aus allen Playlists.
+    func deleteAll(_ list: [Track]) {
+        guard !list.isEmpty else { return }
+        let ids = Set(list.map(\.id))
+        for track in list {
+            try? FileManager.default.removeItem(at: track.fileURL)
+            try? FileManager.default.removeItem(at: track.artworkURL)
+            ArtworkCache.shared.remove(track.id)
+        }
+        tracks.removeAll { ids.contains($0.id) }
+        for i in playlists.indices { playlists[i].trackIDs.removeAll { ids.contains($0) } }
+        pinnedIDs.removeAll { ids.contains($0) }
+        favoriteIDs.removeAll { ids.contains($0) }
+        for id in ids { playCounts[id] = nil }
+        historyEvents.removeAll { ids.contains($0.trackID) }
+        plays.removeAll { ids.contains($0.trackID) }
+        save()
+    }
+
+    /// Mehrere Titel (ohne Doppelte) an eine Playlist anhängen
+    func addAll(_ list: [Track], to playlist: Playlist) {
+        guard let i = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
+        for t in list where !playlists[i].trackIDs.contains(t.id) { playlists[i].trackIDs.append(t.id) }
         save()
     }
 
@@ -337,6 +455,44 @@ final class Library: ObservableObject {
         save()
     }
 
+    /// Übernimmt Playlists, Herzen, Kurzwahl, Zähler, Verlauf und Hörzeit aus einer Sicherung (IDs bereits zugeordnet).
+    func applyRestore(backup: LibraryState, map: ([UUID]) -> [UUID]) {
+        for bp in backup.playlists {
+            let ids = map(bp.trackIDs)
+            let target: Int?
+            if bp.id == Self.downloadsPlaylistID {
+                target = playlists.firstIndex { $0.id == Self.downloadsPlaylistID }
+            } else {
+                target = playlists.firstIndex {
+                    $0.id != Self.downloadsPlaylistID && $0.name.localizedCaseInsensitiveCompare(bp.name) == .orderedSame
+                }
+            }
+            if let i = target {
+                for id in ids where !playlists[i].trackIDs.contains(id) { playlists[i].trackIDs.append(id) }
+            } else {
+                var unique: [UUID] = []
+                for id in ids where !unique.contains(id) { unique.append(id) }
+                let id = playlists.contains { $0.id == bp.id } ? UUID() : bp.id
+                playlists.append(Playlist(id: id, name: bp.name, trackIDs: unique))
+            }
+        }
+        for id in map(backup.pinned) where !pinnedIDs.contains(id) { pinnedIDs.append(id) }
+        for id in map(backup.favorites) where !favoriteIDs.contains(id) { favoriteIDs.append(id) }
+        for (old, n) in backup.playCounts {
+            if let id = map([old]).first { playCounts[id] = max(playCounts[id] ?? 0, n) }
+        }
+        for (k, v) in backup.listenedByMonth { listenedByMonth[k] = max(listenedByMonth[k] ?? 0, v) }
+        func merge(_ a: [PlayEvent], _ b: [PlayEvent], max limit: Int) -> [PlayEvent] {
+            var seen = Set<String>()
+            let mapped = b.compactMap { e in map([e.trackID]).first.map { PlayEvent(trackID: $0, at: e.at) } }
+            return (a + mapped).filter { seen.insert("\($0.trackID)-\($0.at.timeIntervalSince1970)").inserted }
+                .sorted { $0.at > $1.at }.prefix(limit).map { $0 }
+        }
+        historyEvents = merge(historyEvents, backup.history, max: Self.maxHistory)
+        plays = merge(plays, backup.plays, max: StatsSummary.maxPlays)
+        save()
+    }
+
     // MARK: Persistenz
 
     private func load() {
@@ -345,11 +501,17 @@ final class Library: ObservableObject {
         tracks = state.tracks
         playlists = state.playlists
         pinnedIDs = state.pinned.filter { id in state.tracks.contains { $0.id == id } }
-        needsMetadataUpgrade = state.version < LibraryState.currentVersion
+        favoriteIDs = state.favorites
+        playCounts = state.playCounts
+        historyEvents = state.history
+        plays = state.plays
+        listenedByMonth = state.listenedByMonth
+        // Alben wurden ab Version 2 gespeichert
+        needsMetadataUpgrade = state.version < 2
     }
 
     private func save() {
-        let state = LibraryState(tracks: tracks, playlists: playlists, pinned: pinnedIDs)
+        let state = stateSnapshot
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: Storage.indexFile, options: .atomic)
         }
