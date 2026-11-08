@@ -14,17 +14,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // ---------- Cyberpunk-Farben (gedämpft, augenschonend) ----------
-/** Haupt-Akzent: gedämpftes Neon-Magenta */
-val Accent = Color(0xFFC2509F)
+/** Haupt-Akzent: Babyblau */
+val Accent = Color(0xFF89CFF0)
 /** Zweiter Akzent: gedämpftes Cyan */
 val NeonCyan = Color(0xFF4FAFBB)
 /** Gedämpftes Signal-Gelb für Hervorhebungen */
 val NeonYellow = Color(0xFFC8B85A)
-val AccentPurple = Color(0xFF5A3A9A)
-val CyberBlack = Color(0xFF07060B)
-val CyberPanel = Color(0xFF0E0C15)
-val CyberPanelHigh = Color(0xFF15121F)
-val CyberLine = Color(0xFF26223A)
+val AccentPurple = Color(0xFF3E6E96)
+val CyberBlack = Color(0xFF06080B)
+val CyberPanel = Color(0xFF0B0F15)
+val CyberPanelHigh = Color(0xFF11161F)
+val CyberLine = Color(0xFF1F2A3A)
 
 private val colors = darkColorScheme(
     primary = Accent,
@@ -33,15 +33,15 @@ private val colors = darkColorScheme(
     onSecondary = Color.Black,
     secondaryContainer = CyberPanelHigh,
     onSecondaryContainer = NeonCyan,
-    primaryContainer = Color(0xFF2A1226),
+    primaryContainer = Color(0xFF10263A),
     onPrimaryContainer = Accent,
     tertiary = NeonYellow,
     background = CyberBlack,
-    onBackground = Color(0xFFCFC9DE),
+    onBackground = Color(0xFFCFD9E3),
     surface = CyberPanel,
-    onSurface = Color(0xFFCFC9DE),
+    onSurface = Color(0xFFCFD9E3),
     surfaceVariant = CyberPanel,
-    onSurfaceVariant = Color(0xFF7E7898),
+    onSurfaceVariant = Color(0xFF7889A0),
     surfaceContainer = CyberPanel,
     surfaceContainerHigh = CyberPanelHigh,
     surfaceContainerHighest = CyberPanelHigh,

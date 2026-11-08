@@ -138,13 +138,13 @@ fun Card(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** Text mit Glitch-Effekt (versetzte Cyan- und Magenta-Kopie) */
+/** Text mit Glitch-Effekt (versetzte Cyan- und Babyblau-Kopie) */
 @Composable
 fun GlitchText(
     text: String,
     style: TextStyle,
     modifier: Modifier = Modifier,
-    color: Color = Color(0xFFDCD6EA),
+    color: Color = Color(0xFFDCE6EE),
     maxLines: Int = 1,
 ) {
     Box(modifier) {

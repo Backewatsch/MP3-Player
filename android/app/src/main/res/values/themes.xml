@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#FF07060B</color>
-    <color name="accent">#FFC2509F</color>
+    <color name="background">#FF06080B</color>
+    <color name="accent">#FF89CFF0</color>
     <style name="Theme.MP3Player" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
