@@ -7,6 +7,8 @@ import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -202,8 +204,8 @@ private fun SongPickerSheet(
                 Text("${selected.size} ausgewählt", style = MaterialTheme.typography.bodySmall)
             }
         }
-        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).height(460.dp)) {
-            androidx.compose.foundation.lazy.items(visible, key = { it.sourceKey }) { song ->
+        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).height(460.dp)) {
+            items(visible, key = { it.sourceKey }) { song ->
                 val done = song !in available
                 val checked = done || song.sourceKey in selected
                 Row(
