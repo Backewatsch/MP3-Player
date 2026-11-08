@@ -34,9 +34,18 @@ class UpdateChecker(private val context: Context, val currentVersion: String, va
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
     private var lastCheck = 0L
+    private val prefs = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
 
+    /** Beim Öffnen der App: höchstens alle 10 Minuten bei GitHub nachsehen */
     suspend fun checkIfDue() {
-        if (System.currentTimeMillis() - lastCheck > 6 * 3600_000L || _state.value == State.Idle) check()
+        if (System.currentTimeMillis() - lastCheck > 10 * 60_000L || _state.value == State.Idle) check()
+    }
+
+    /** Soll für diese Version das Update-Fenster erscheinen? (nach „Später“ nicht mehr) */
+    fun shouldPrompt(release: Release) = prefs.getInt("dismissedBuild", 0) < release.build
+
+    fun dismiss(release: Release) {
+        prefs.edit().putInt("dismissedBuild", release.build).apply()
     }
 
     suspend fun check() {

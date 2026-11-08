@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.backewatsch.mp3player.App
 import com.backewatsch.mp3player.app
+import kotlinx.coroutines.launch
 
 val LocalApp = staticCompositionLocalOf<App> { error("App fehlt") }
 val LocalNav = staticCompositionLocalOf<AppNavigation> { error("Navigation fehlt") }
@@ -123,5 +124,34 @@ fun MainScreen() {
         if (nav.showDownloads) DownloadsSheet(onDismiss = { nav.showDownloads = false })
         if (nav.showTransfer) TransferSheet(onDismiss = { nav.showTransfer = false })
         TrackActionsHost(nav.actions)
+        UpdatePrompt()
     }
+}
+
+/** Fenster beim Öffnen der App, wenn eine neue Version bereitsteht */
+@androidx.compose.runtime.Composable
+private fun UpdatePrompt() {
+    val app = LocalApp.current
+    val update by app.updates.state.collectAsState()
+    val available = (update as? com.backewatsch.mp3player.update.UpdateChecker.State.Available)?.release ?: return
+    var hidden by androidx.compose.runtime.remember(available.build) { mutableStateOf(!app.updates.shouldPrompt(available)) }
+    if (hidden) return
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { hidden = true },
+        title = { Text("Update verfügbar") },
+        text = {
+            Text("Version ${available.version} von ILLEGAL FREEDOM MUSIC ist da" +
+                (if (available.notes.isNotBlank()) ":\n\n" + available.notes.take(300) else ".") +
+                "\n\nDeine Musik und Playlists bleiben erhalten.")
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { hidden = true; app.scope.launch { app.updates.install(available) } },
+                modifier = Modifier.testTag("updateInstall"),
+            ) { Text("Jetzt installieren", color = Accent) }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = { app.updates.dismiss(available); hidden = true }) { Text("Später") }
+        },
+    )
 }

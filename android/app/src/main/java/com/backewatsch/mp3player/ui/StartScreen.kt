@@ -1,7 +1,12 @@
 package com.backewatsch.mp3player.ui
 
 import android.text.format.DateUtils
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.ui.draw.clip
+import com.backewatsch.mp3player.update.UpdateChecker
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,6 +52,7 @@ fun StartScreen() {
     val nav = LocalNav.current
     val lib by app.library.state.collectAsState()
     val player by app.player.state.collectAsState()
+    val update by app.updates.state.collectAsState()
     var confirmClear by remember { mutableStateOf(false) }
     var showAllHistory by remember { mutableStateOf(false) }
 
@@ -61,6 +67,22 @@ fun StartScreen() {
                 modifier = Modifier.padding(start = 20.dp, top = 24.dp, end = 20.dp))
             Text("ILLEGAL FREEDOM MUSIC", style = MaterialTheme.typography.labelLarge, color = Accent,
                 modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
+        }
+        (update as? UpdateChecker.State.Available)?.let { available ->
+            item {
+                Row(
+                    Modifier.padding(16.dp, 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Accent)
+                        .clickable { nav.showSettings = true }.padding(12.dp).testTag("startUpdateBanner"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.AutoAwesome, null)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Update verfügbar", fontWeight = FontWeight.SemiBold)
+                        Text("Version ${available.release.version} – tippen zum Installieren", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
         }
 
         if (lib.tracks.isEmpty()) {
