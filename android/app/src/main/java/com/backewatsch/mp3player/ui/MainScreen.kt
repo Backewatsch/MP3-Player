@@ -85,6 +85,8 @@ fun MainScreen() {
         Scaffold(
             modifier = Modifier.cyberBackground(),
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            // Bei durchsichtigem Hintergrund die Textfarbe ausdrücklich setzen (sonst Schwarz)
+            contentColor = MaterialTheme.colorScheme.onBackground,
             bottomBar = {
                 Column {
                     MiniPlayer(onOpen = { nav.showNowPlaying = true })
