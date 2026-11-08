@@ -144,6 +144,33 @@ class ConverterAndLibraryTest {
         assertNotNull("Download-Playlist bleibt", library.playlist(DOWNLOADS_PLAYLIST_ID))
     }
 
+    @Test fun playCountsAndHistory() = runBlocking {
+        val a = library.import(asset("untagged.mp3", "a.mp3"), move = true)
+        val b = library.import(asset("tagged.mp3", "b.mp3"), move = true)
+        library.recordStart(a.id, now = 1_000)
+        library.recordStart(a.id, now = 2_000)      // gleiche Minute → kein zweiter Eintrag
+        library.recordStart(b.id, now = 100_000)
+        library.recordStart(a.id, now = 200_000)
+        assertEquals(listOf(a.id, b.id, a.id), library.history().map { it.first.id })
+        assertEquals(listOf(a.id, b.id), library.recentlyPlayed().map { it.id })
+
+        library.recordPlay(b.id); library.recordPlay(b.id); library.recordPlay(a.id)
+        assertEquals(listOf(b.id to 2, a.id to 1), library.mostPlayed().map { it.first.id to it.second })
+
+        // gespeichert?
+        val reloaded = Library(Storage(context, root), CoroutineScope(Dispatchers.Default), autoConvert = false)
+        assertEquals(2, reloaded.playCount(b))
+        assertEquals(3, reloaded.history().size)
+
+        // Gelöschter Titel verschwindet aus beidem
+        library.delete(b)
+        assertEquals(listOf(a.id to 1), library.mostPlayed().map { it.first.id to it.second })
+        assertTrue(library.history().none { it.first.id == b.id })
+        library.clearHistory()
+        assertTrue(library.history().isEmpty())
+        assertTrue(library.mostPlayed().isEmpty())
+    }
+
     @Test fun rescanAndConvertExistingFile() = runBlocking {
         val storage = library.storage
         testContext.assets.open("short.m4a").use { input -> File(storage.musicDir, "kopiert.m4a").outputStream().use { input.copyTo(it) } }

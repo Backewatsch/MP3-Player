@@ -6,6 +6,7 @@ import android.os.Build
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +62,21 @@ fun TransferSheet(onDismiss: () -> Unit) {
     var songResult by remember { mutableStateOf<String?>(null) }
     var playlistResult by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var showPicker by remember { mutableStateOf(false) }
+
+    /** Ausgewählte Lieder übertragen (auch für „Alle“) */
+    fun transfer(selection: List<DeviceMusicImporter.DeviceSong>, withPlaylists: Boolean) {
+        app.scope.launch {
+            busy = true
+            val r = importer.importSongs(selection)
+            val pl = if (withPlaylists) importer.importMediaStorePlaylists() else null
+            songResult = "${r.imported} Lieder übertragen" +
+                (if (r.skipped > 0) ", ${r.skipped} waren schon da" else "") +
+                (if (r.failed > 0) ", ${r.failed} fehlgeschlagen" else "") + "." +
+                (if (pl != null && pl.playlists > 0) " Zusätzlich ${pl.playlists} Playlists vom Handy erkannt." else "")
+            busy = false
+        }
+    }
 
     val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     val pickPlaylists = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -106,22 +122,16 @@ fun TransferSheet(onDismiss: () -> Unit) {
                         LinearProgressIndicator(progress = { (p.done + 1f) / p.total }, Modifier.fillMaxWidth().padding(vertical = 6.dp), color = Accent)
                     }
                     Button(
-                        onClick = {
-                            app.scope.launch {
-                                busy = true
-                                val r = importer.importSongs(list)
-                                val pl = importer.importMediaStorePlaylists()
-                                songResult = "${r.imported} Lieder übertragen" +
-                                    (if (r.skipped > 0) ", ${r.skipped} waren schon da" else "") +
-                                    (if (r.failed > 0) ", ${r.failed} fehlgeschlagen" else "") + "." +
-                                    (if (pl.playlists > 0) " Zusätzlich ${pl.playlists} Playlists vom Handy erkannt." else "")
-                                busy = false
-                            }
-                        },
+                        onClick = { transfer(list, withPlaylists = true) },
                         enabled = !busy && list.size > already,
                         colors = ButtonDefaults.buttonColors(containerColor = Accent),
                         modifier = Modifier.fillMaxWidth().testTag("transferSongs"),
-                    ) { Text(if (list.size > already) "${list.size - already} Lieder übertragen" else "Alles übertragen") }
+                    ) { Text(if (list.size > already) "Alle ${list.size - already} Lieder übertragen" else "Alles übertragen") }
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = { showPicker = true }, enabled = !busy && list.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth().testTag("pickSongs"),
+                    ) { Text("Lieder einzeln auswählen", color = Accent) }
                 }
             }
             songResult?.let { ResultLine(it, "songResult") }
@@ -148,6 +158,82 @@ fun TransferSheet(onDismiss: () -> Unit) {
                 modifier = Modifier.padding(top = 6.dp))
             playlistResult?.let { ResultLine(it, "playlistResult") }
         }
+    }
+
+    if (showPicker && songs != null) {
+        SongPickerSheet(songs!!, onDismiss = { showPicker = false }) { chosen ->
+            showPicker = false
+            transfer(chosen, withPlaylists = false)
+        }
+    }
+}
+
+/** Liste aller Lieder auf dem Handy zum Auswählen */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SongPickerSheet(
+    songs: List<DeviceMusicImporter.DeviceSong>,
+    onDismiss: () -> Unit,
+    onTransfer: (List<DeviceMusicImporter.DeviceSong>) -> Unit,
+) {
+    val app = LocalApp.current
+    var query by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    val available = remember(songs) { songs.filter { app.library.trackFromSource(it.sourceKey) == null } }
+    val visible = songs.filter {
+        query.isBlank() || it.title.contains(query, true) || it.artist.contains(query, true) || it.displayName.contains(query, true)
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text("Lieder auswählen", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            androidx.compose.material3.OutlinedTextField(
+                query, { query = it }, singleLine = true, placeholder = { Text("Titel oder Interpret suchen") },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("songSearch"),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val visibleAvailable = visible.filter { it in available }.map { it.sourceKey }
+                val allChosen = visibleAvailable.isNotEmpty() && selected.containsAll(visibleAvailable)
+                androidx.compose.material3.TextButton(onClick = {
+                    selected = if (allChosen) selected - visibleAvailable.toSet() else selected + visibleAvailable
+                }, modifier = Modifier.testTag("selectAllSongs")) {
+                    Text(if (allChosen) "Auswahl aufheben" else "Alle auswählen", color = Accent)
+                }
+                Spacer(Modifier.weight(1f))
+                Text("${selected.size} ausgewählt", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).height(460.dp)) {
+            androidx.compose.foundation.lazy.items(visible, key = { it.sourceKey }) { song ->
+                val done = song !in available
+                val checked = done || song.sourceKey in selected
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable(enabled = !done) {
+                            selected = if (song.sourceKey in selected) selected - song.sourceKey else selected + song.sourceKey
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("deviceSong-${song.displayName}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = null, enabled = !done)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(song.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text(
+                            listOf(song.artist, song.folder, com.backewatsch.mp3player.model.formatTime(song.durationMs))
+                                .filter { it.isNotBlank() }.joinToString(" · ") + if (done) " · schon übertragen" else "",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+        Button(
+            onClick = { onTransfer(songs.filter { it.sourceKey in selected }) },
+            enabled = selected.isNotEmpty(),
+            colors = ButtonDefaults.buttonColors(containerColor = Accent),
+            modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("transferSelected"),
+        ) { Text("${selected.size} Lieder übertragen") }
     }
 }
 

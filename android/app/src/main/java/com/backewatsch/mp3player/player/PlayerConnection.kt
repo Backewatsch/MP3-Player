@@ -42,8 +42,41 @@ class PlayerConnection(
     private var controller: MediaController? = null
     private val pending = mutableListOf<(MediaController) -> Unit>()
 
+    /** Für Verlauf und „Oft gespielt“: welcher Titel schon eingetragen bzw. gezählt wurde */
+    private var startedId: String? = null
+    private var countedId: String? = null
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            startedId = null
+            countedId = null
+            if (controller?.isPlaying == true) noteStart()
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) noteStart()
+        }
+    }
+
+    private fun noteStart() {
+        val id = controller?.currentMediaItem?.mediaId ?: return
+        if (startedId == id) return
+        startedId = id
+        library.recordStart(id)
+    }
+
+    /** Gezählt wird ein Titel nach 30 Sekunden (bei kurzen Titeln nach der Hälfte) */
+    private fun noteProgress(c: Player) {
+        val id = c.currentMediaItem?.mediaId ?: return
+        if (countedId == id) return
+        val duration = duration(c)
+        val threshold = if (duration > 0) minOf(30_000L, duration / 2) else 30_000L
+        if (c.currentPosition >= threshold) {
+            countedId = id
+            library.recordPlay(id)
+        }
     }
 
     init {
@@ -63,7 +96,10 @@ class PlayerConnection(
         scope.launch {
             while (isActive) {
                 controller?.let { c ->
-                    if (c.isPlaying) _state.value = _state.value.copy(positionMs = c.currentPosition, durationMs = duration(c))
+                    if (c.isPlaying) {
+                        _state.value = _state.value.copy(positionMs = c.currentPosition, durationMs = duration(c))
+                        noteProgress(c)
+                    }
                 }
                 delay(500)
             }

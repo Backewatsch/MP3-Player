@@ -24,12 +24,20 @@ data class Playlist(
     val trackIds: List<String> = emptyList(),
 )
 
+/** Ein Eintrag im Verlauf: welcher Titel wann gestartet wurde */
+@Serializable
+data class PlayEvent(val trackId: String, val at: Long)
+
 @Serializable
 data class LibraryState(
     val version: Int = CURRENT_VERSION,
     val tracks: List<Track> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val pinned: List<String> = emptyList(),
+    /** Wie oft jeder Titel gehört wurde („Oft gespielt“) */
+    val playCounts: Map<String, Int> = emptyMap(),
+    /** Zuletzt gestartete Titel, neueste zuerst („Verlauf“) */
+    val history: List<PlayEvent> = emptyList(),
 ) {
     companion object {
         const val CURRENT_VERSION = 2

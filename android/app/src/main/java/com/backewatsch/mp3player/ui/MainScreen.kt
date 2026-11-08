@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -37,6 +38,10 @@ val LocalApp = staticCompositionLocalOf<App> { error("App fehlt") }
 val LocalNav = staticCompositionLocalOf<AppNavigation> { error("Navigation fehlt") }
 
 /** Tabs und Navigation innerhalb der Mediathek */
+const val TAB_START = 0
+const val TAB_LIBRARY = 1
+const val TAB_DOWNLOADER = 2
+
 class AppNavigation {
     var tab by mutableStateOf(0)
     val libraryStack = mutableStateListOf<LibRoute>(LibRoute.Root)
@@ -47,7 +52,7 @@ class AppNavigation {
     val actions = TrackActionsState()
 
     fun push(route: LibRoute) {
-        tab = 0
+        tab = TAB_LIBRARY
         showNowPlaying = false
         libraryStack.add(route)
     }
@@ -69,8 +74,8 @@ fun MainScreen() {
         val active = downloads.count { it.state is com.backewatsch.mp3player.download.DownloadRepository.State.Running ||
             it.state is com.backewatsch.mp3player.download.DownloadRepository.State.Converting }
 
-        BackHandler(enabled = nav.tab == 0 && nav.libraryStack.size > 1) { nav.pop() }
-        BackHandler(enabled = nav.tab == 1) { app.browser.back() }
+        BackHandler(enabled = nav.tab == TAB_LIBRARY && nav.libraryStack.size > 1) { nav.pop() }
+        BackHandler(enabled = nav.tab == TAB_DOWNLOADER) { app.browser.back() }
 
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
@@ -81,12 +86,17 @@ fun MainScreen() {
                         val colors = NavigationBarItemDefaults.colors(selectedIconColor = Accent, selectedTextColor = Accent,
                             indicatorColor = Accent.copy(alpha = 0.18f))
                         NavigationBarItem(
-                            selected = nav.tab == 0, onClick = { if (nav.tab == 0) nav.libraryStack.retainAll(listOf(LibRoute.Root)); nav.tab = 0 },
+                            selected = nav.tab == TAB_START, onClick = { nav.tab = TAB_START },
+                            icon = { Icon(Icons.Default.Home, null) }, label = { Text("Start") },
+                            colors = colors, modifier = Modifier.testTag("tab-start"),
+                        )
+                        NavigationBarItem(
+                            selected = nav.tab == TAB_LIBRARY, onClick = { if (nav.tab == TAB_LIBRARY) nav.libraryStack.retainAll(listOf(LibRoute.Root)); nav.tab = TAB_LIBRARY },
                             icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Mediathek") },
                             colors = colors, modifier = Modifier.testTag("tab-library"),
                         )
                         NavigationBarItem(
-                            selected = nav.tab == 1, onClick = { nav.tab = 1 },
+                            selected = nav.tab == TAB_DOWNLOADER, onClick = { nav.tab = TAB_DOWNLOADER },
                             icon = {
                                 BadgedBox(badge = { if (active + unseen > 0) Badge { Text("${active + unseen}") } }) {
                                     Icon(Icons.Default.Download, null)
@@ -101,7 +111,8 @@ fun MainScreen() {
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (nav.tab) {
-                    0 -> LibraryHost()
+                    TAB_START -> StartScreen()
+                    TAB_LIBRARY -> LibraryHost()
                     else -> BrowserScreen()
                 }
             }

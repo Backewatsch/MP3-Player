@@ -24,7 +24,12 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
         /** Originalpfad (z. B. /storage/emulated/0/Music/Lied.mp3) – dient zum Wiedererkennen */
         val path: String,
         val size: Long,
+        val title: String = "",
+        val artist: String = "",
+        val durationMs: Long = 0,
     ) {
+        /** Ordner, in dem das Lied liegt (z. B. „Music“ oder „Download“) */
+        val folder get() = path.substringBeforeLast('/', "").substringAfterLast('/')
         val sourceKey get() = path
     }
 
@@ -45,6 +50,9 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.DURATION,
         )
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
         val songs = mutableListOf<DeviceSong>()
@@ -55,13 +63,26 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
             @Suppress("DEPRECATION")
             val dataCol = c.getColumnIndex(MediaStore.Audio.Media.DATA)
             val sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val titleCol = c.getColumnIndex(MediaStore.Audio.Media.TITLE)
+            val artistCol = c.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+            val durationCol = c.getColumnIndex(MediaStore.Audio.Media.DURATION)
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
                 val name = c.getString(nameCol) ?: continue
                 val path = (if (dataCol >= 0) c.getString(dataCol) else null) ?: "media:$id:$name"
                 if (path.startsWith(ownFolder)) continue
                 if (!FileNames.isImportable(name)) continue
-                songs += DeviceSong(ContentUris.withAppendedId(collection, id), name, path, c.getLong(sizeCol))
+                val artist = (if (artistCol >= 0) c.getString(artistCol) else null)
+                    ?.takeUnless { it == MediaStore.UNKNOWN_STRING }.orEmpty()
+                songs += DeviceSong(
+                    uri = ContentUris.withAppendedId(collection, id),
+                    displayName = name,
+                    path = path,
+                    size = c.getLong(sizeCol),
+                    title = (if (titleCol >= 0) c.getString(titleCol) else null).orEmpty().ifBlank { FileNames.baseName(name) },
+                    artist = artist,
+                    durationMs = if (durationCol >= 0) c.getLong(durationCol) else 0,
+                )
             }
         }
         songs

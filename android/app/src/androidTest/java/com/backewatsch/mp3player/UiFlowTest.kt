@@ -65,6 +65,10 @@ class UiFlowTest {
     }
 
     @Test fun t1_tabsPlaylistAndSettings() {
+        // Start-Tab ist die erste Seite
+        rule.waitUntilAtLeastOneExists(hasTestTag("startScreen"), 10_000)
+        screenshot("a00-Start-leer")
+        rule.onNodeWithTag("tab-library").performClick()
         rule.waitUntilAtLeastOneExists(hasText("Noch keine Musik"), 10_000)
         rule.onNodeWithText("Heruntergeladen").assertExists()
         screenshot("a01-Mediathek-leer")
@@ -124,6 +128,13 @@ class UiFlowTest {
         Thread.sleep(3000)
         screenshot("a07-Playlist-spielt")
 
+        // Start-Tab: Titel steht im Verlauf
+        rule.onNodeWithTag("tab-start").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("history-Testlied"), 10_000)
+        screenshot("a09-Start-Verlauf")
+        rule.onNodeWithTag("tab-library").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("miniPlayer"), 5_000)
+
         rule.onNodeWithTag("miniPlayer").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("bigPlayPause"), 5_000)
         Thread.sleep(800)
@@ -156,6 +167,8 @@ class UiFlowTest {
         run("cmd connectivity airplane-mode enable"); run("svc wifi disable"); run("svc data disable")
         try {
             Thread.sleep(3000)
+            rule.onNodeWithTag("tab-library").performClick()
+            rule.waitUntilAtLeastOneExists(hasTestTag("category-Titel"), 5_000)
             rule.onNodeWithTag("category-Titel").performClick()
             rule.waitUntilAtLeastOneExists(hasTestTag("playAllButton"), 5_000)
             rule.onNodeWithTag("playAllButton").performClick()

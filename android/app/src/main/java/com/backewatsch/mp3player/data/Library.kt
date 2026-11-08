@@ -3,6 +3,7 @@ package com.backewatsch.mp3player.data
 import com.backewatsch.mp3player.convert.Mp3Converter
 import com.backewatsch.mp3player.model.LibraryState
 import com.backewatsch.mp3player.model.LibraryState.Companion.DOWNLOADS_PLAYLIST_ID
+import com.backewatsch.mp3player.model.PlayEvent
 import com.backewatsch.mp3player.model.Playlist
 import com.backewatsch.mp3player.model.Track
 import kotlinx.coroutines.CoroutineScope
@@ -265,6 +266,8 @@ class Library(
                 tracks = s.tracks.filter { it.id != track.id },
                 playlists = s.playlists.map { p -> p.copy(trackIds = p.trackIds - track.id) },
                 pinned = s.pinned - track.id,
+                playCounts = s.playCounts - track.id,
+                history = s.history.filter { it.trackId != track.id },
             )
         }
         save()
@@ -296,6 +299,54 @@ class Library(
         updatePlaylist(playlist.id) { p -> p.copy(trackIds = (p.trackIds + trackIds).distinct()) }
         return playlist(playlist.id) ?: playlist
     }
+
+    // region Oft gespielt & Verlauf
+
+    /** Titel wurde gestartet → in den Verlauf (gleicher Titel innerhalb einer Minute nur einmal) */
+    fun recordStart(trackId: String, now: Long = System.currentTimeMillis()) {
+        if (track(trackId) == null) return
+        _state.update { s ->
+            val recent = s.history.firstOrNull()
+            if (recent != null && recent.trackId == trackId && now - recent.at < 60_000) return@update s
+            s.copy(history = (listOf(PlayEvent(trackId, now)) + s.history).take(MAX_HISTORY))
+        }
+        save()
+    }
+
+    /** Titel wurde richtig gehört (nicht nur angespielt) → zählt für „Oft gespielt“ */
+    fun recordPlay(trackId: String) {
+        if (track(trackId) == null) return
+        _state.update { s -> s.copy(playCounts = s.playCounts + (trackId to ((s.playCounts[trackId] ?: 0) + 1))) }
+        save()
+    }
+
+    fun playCount(track: Track) = _state.value.playCounts[track.id] ?: 0
+
+    /** Meistgehörte Titel, häufigste zuerst */
+    fun mostPlayed(limit: Int = 50): List<Pair<Track, Int>> {
+        val byId = tracks.associateBy { it.id }
+        return _state.value.playCounts.entries
+            .filter { it.value > 0 }
+            .sortedByDescending { it.value }
+            .mapNotNull { (id, count) -> byId[id]?.let { it to count } }
+            .take(limit)
+    }
+
+    /** Verlauf: Titel mit Zeitpunkt, neueste zuerst */
+    fun history(limit: Int = MAX_HISTORY): List<Pair<Track, Long>> {
+        val byId = tracks.associateBy { it.id }
+        return _state.value.history.mapNotNull { e -> byId[e.trackId]?.let { it to e.at } }.take(limit)
+    }
+
+    /** Zuletzt gehört, jeder Titel nur einmal */
+    fun recentlyPlayed(limit: Int = 20): List<Track> = history().map { it.first }.distinctBy { it.id }.take(limit)
+
+    fun clearHistory() {
+        _state.update { it.copy(history = emptyList(), playCounts = emptyMap()) }
+        save()
+    }
+
+    // endregion
 
     fun createPlaylist(name: String): Playlist {
         val playlist = Playlist(name = name.trim().ifEmpty { "Neue Playlist" })
@@ -356,6 +407,10 @@ class Library(
         storage.resetAll()
         _state.value = LibraryState()
         ensureDownloadsPlaylist()
+    }
+
+    companion object {
+        const val MAX_HISTORY = 300
     }
 
     private fun ensureDownloadsPlaylist() {
