@@ -4,7 +4,10 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var updates: UpdateChecker
     @EnvironmentObject private var library: Library
+    @EnvironmentObject private var player: AudioPlayer
     @Environment(\.dismiss) private var dismiss
+    @State private var confirmConvertAll = false
+    @State private var conversionResult: String?
     @Environment(\.openURL) private var openURL
     @State private var copied = false
 
@@ -66,6 +69,43 @@ struct SettingsView: View {
                     }
                     .disabled(updates.state == .checking)
                     .accessibilityIdentifier("checkUpdatesButton")
+                }
+
+                Section {
+                    if let status = library.conversionStatus {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text(status).font(.footnote)
+                        }
+                    } else {
+                        Button {
+                            confirmConvertAll = true
+                        } label: {
+                            Label("Alle MP3s in M4A umwandeln (\(library.convertibleTracks.count))",
+                                  systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(library.convertibleTracks.isEmpty)
+                        .accessibilityIdentifier("convertAllButton")
+                    }
+                    if let conversionResult {
+                        Text(conversionResult).font(.footnote).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Konverter")
+                } footer: {
+                    Text("Wandelt vorhandene Dateien (MP3, WAV, FLAC …) in M4A (AAC) um. Playlists, Kurzwahl und Cover bleiben erhalten. Hinweis: Der Klang wird dadurch nicht besser – die Datei wird neu kodiert und das Original gelöscht. Einzelne Titel: „…“ → „In M4A umwandeln“.")
+                }
+                .confirmationDialog("Alle \(library.convertibleTracks.count) Titel in M4A umwandeln?",
+                                    isPresented: $confirmConvertAll, titleVisibility: .visible) {
+                    Button("Umwandeln") {
+                        Task {
+                            let result = await library.convertAllToM4A(skipping: player.current?.id)
+                            conversionResult = "Fertig: \(result.converted) umgewandelt" + (result.failed > 0 ? ", \(result.failed) fehlgeschlagen" : "") + "."
+                        }
+                    }
+                    Button("Abbrechen", role: .cancel) {}
+                } message: {
+                    Text("Die Originaldateien werden ersetzt. Der gerade laufende Titel wird übersprungen.")
                 }
 
                 Section {

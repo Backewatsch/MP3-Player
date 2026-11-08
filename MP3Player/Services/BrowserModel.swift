@@ -16,6 +16,14 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var notice: String?
     @Published var foundAudio: [URL] = []
     @Published var showFoundAudio = false
+
+    /// Medium, das gerade auf der Seite abgespielt wird
+    enum DetectedMedia: Equatable {
+        case downloadable(URL)
+        /// Stream (blob:/MediaSource, z. B. YouTube) – lässt sich nicht als Datei laden
+        case stream
+    }
+    @Published var detectedMedia: DetectedMedia?
     /// Solange der Nutzer tippt, wird die Adresszeile nicht überschrieben.
     var isEditingAddress = false {
         didSet { if !isEditingAddress { syncState(updateAddress: true) } }
@@ -40,8 +48,15 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.websiteDataStore = .default()
+        // Meldet, wenn auf einer Seite (auch in eingebetteten Frames) ein Audio/Video startet
+        let handler = MediaMessageHandler()
+        config.userContentController.add(handler, name: "mediaPlaying")
+        config.userContentController.addUserScript(WKUserScript(source: Self.mediaWatcherScript,
+                                                                injectionTime: .atDocumentEnd,
+                                                                forMainFrameOnly: false))
         webView = WKWebView(frame: .zero, configuration: config)
         super.init()
+        handler.browser = self
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -107,8 +122,39 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
     }
 
+    /// Wird vom Seitenskript aufgerufen, wenn ein Medium startet.
+    func mediaStartedPlaying(source: String) {
+        if let url = URL(string: source), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            detectedMedia = .downloadable(url)
+        } else {
+            detectedMedia = .stream
+        }
+    }
+
+    /// Lädt das erkannte Medium herunter (wird umgewandelt und landet in der Wiedergabeliste).
+    func downloadDetectedMedia() {
+        guard case .downloadable(let url) = detectedMedia else { return }
+        startDownload(url)
+        detectedMedia = nil
+    }
+
+    private static let mediaWatcherScript = """
+    (function() {
+      if (window.__mp3PlayerWatcher) return;
+      window.__mp3PlayerWatcher = true;
+      document.addEventListener('play', function(e) {
+        var el = e.target;
+        if (!el || (el.tagName !== 'AUDIO' && el.tagName !== 'VIDEO')) return;
+        try {
+          window.webkit.messageHandlers.mediaPlaying.postMessage({ src: el.currentSrc || el.src || '' });
+        } catch (err) {}
+      }, true);
+    })();
+    """
+
     /// Sucht Audio-Elemente und Links auf Audiodateien auf der aktuellen Seite.
-    func scanForAudio() {
+    /// - Parameter silent: ohne Meldung/Dialog (automatische Suche nach dem Laden einer Seite)
+    func scanForAudio(silent: Bool = false) {
         let js = """
         (function() {
           var re = /\\.(mp3|m4a|aac|wav|flac|aiff?|caf|mp4|mov|m4v)([?#]|$)/i;
@@ -127,6 +173,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             Task { @MainActor in
                 guard let self else { return }
                 self.foundAudio = urls
+                guard !silent else { return }
                 if urls.isEmpty {
                     self.notice = "Auf dieser Seite wurden keine herunterladbaren Audio- oder Videodateien gefunden."
                 } else {
@@ -201,6 +248,16 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         notice = "Download gestartet – der Titel landet automatisch in der Playlist „Heruntergeladen“."
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        detectedMedia = nil
+        foundAudio = []
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Seite automatisch nach Audio-/Videodateien durchsuchen (Zähler am Wellen-Symbol)
+        scanForAudio(silent: true)
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         handle(error)
     }
@@ -261,6 +318,17 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     }
 }
 
+/// Leitet Nachrichten des Seitenskripts weiter, ohne den Browser festzuhalten (vermeidet einen Speicherzyklus).
+@MainActor
+private final class MediaMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var browser: BrowserModel?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        let source = (message.body as? [String: Any])?["src"] as? String ?? ""
+        browser?.mediaStartedPlaying(source: source)
+    }
+}
+
 enum StartPage {
     static let html = """
     <!doctype html>
@@ -280,14 +348,14 @@ enum StartPage {
     </style></head>
     <body>
       <h1>🎵 Musik finden</h1>
-      <p>Tippe auf einen Link zu einer MP3-Datei (oder drücke lange darauf → „Als Audio herunterladen“). Der Titel landet automatisch in deiner Playlist „Heruntergeladen“.</p>
+      <p>Tippe auf einen Link zu einer Audio- oder Videodatei – oder starte ein Audio/Video auf einer Seite und tippe auf <b>„Als Audio laden“</b>. Videos werden automatisch in Audio umgewandelt. Jeder Titel landet in der Playlist „Heruntergeladen“ und in deiner Wiedergabeliste.</p>
       <a class="card" href="https://archive.org/details/audio"><b>Internet Archive</b><span>Millionen freie Aufnahmen, Live-Konzerte, Hörbücher</span></a>
       <a class="card" href="https://freemusicarchive.org/"><b>Free Music Archive</b><span>Kostenlose, legal nutzbare Musik</span></a>
       <a class="card" href="https://www.jamendo.com/"><b>Jamendo</b><span>Unabhängige Künstler unter Creative Commons</span></a>
       <a class="card" href="https://ccmixter.org/"><b>ccMixter</b><span>Remixe und Samples unter CC-Lizenz</span></a>
       <a class="card" href="https://incompetech.com/music/royalty-free/music.html"><b>Incompetech</b><span>Lizenzfreie Musik von Kevin MacLeod</span></a>
       <a class="card" href="https://librivox.org/"><b>LibriVox</b><span>Gemeinfreie Hörbücher als MP3</span></a>
-      <div class="hint">Tipp: Über das Menü <b>⋯</b> oben kannst du eine Seite nach Audiodateien durchsuchen lassen.</div>
+      <div class="hint">Tipp: Das Wellen-Symbol unten zeigt, wie viele Dateien auf einer Seite gefunden wurden – mit „Alle als neue Playlist laden“ holst du sie auf einmal.</div>
     </body></html>
     """
 }

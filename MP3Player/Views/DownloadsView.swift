@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct DownloadsView: View {
+    var isSheet = false
     @EnvironmentObject private var downloads: DownloadManager
+    @Environment(\.dismiss) private var dismiss
     @State private var linkText = ""
     @FocusState private var linkFocused: Bool
 
@@ -23,7 +25,7 @@ struct DownloadsView: View {
                             .accessibilityIdentifier("downloadStartButton")
                     }
                 } footer: {
-                    Text("Audiodateien werden direkt übernommen, Videos (MP4, MOV, M4V) automatisch in Audio (M4A) umgewandelt. Fertige Titel landen in der Bibliothek und in der Playlist „Heruntergeladen“.")
+                    Text("Audiodateien werden direkt übernommen, Videos (MP4, MOV, M4V) automatisch in Audio (M4A) umgewandelt. Fertige Titel landen in der Mediathek, in der Playlist „Heruntergeladen“ und in der Wiedergabeliste.")
                 }
 
                 if downloads.items.isEmpty {
@@ -41,6 +43,12 @@ struct DownloadsView: View {
             .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Downloads")
             .toolbar {
+                if isSheet {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Fertig") { dismiss() }
+                            .accessibilityIdentifier("closeDownloads")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Leeren") { downloads.clearFinished() }
                         .disabled(downloads.items.isEmpty)

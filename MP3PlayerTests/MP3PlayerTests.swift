@@ -386,6 +386,67 @@ final class ConverterAndExtrasTests: XCTestCase {
         XCTAssertNotNil(file["Bitrate (ca.)"])
     }
 
+    func testConvertExistingMP3KeepsPlaylistsAndPin() async throws {
+        let track = try await library.importAudio(from: try Fixture.tempCopy("tagged.mp3", as: "conv-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        created.append(track)
+        let playlist = library.createPlaylist(named: "Konvertiert")
+        library.add(track, to: playlist)
+        library.togglePin(track)
+        let oldURL = track.fileURL
+
+        let converted = try await library.convertToM4A(track)
+        XCTAssertEqual(converted.id, track.id, "gleiche ID")
+        XCTAssertTrue(converted.fileName.hasSuffix(".m4a"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path), "MP3 wurde ersetzt")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: converted.fileURL.path))
+        XCTAssertEqual(converted.duration, 3.0, accuracy: 0.4)
+        XCTAssertEqual(library.playlist(id: playlist.id)?.trackIDs, [track.id], "bleibt in der Playlist")
+        XCTAssertTrue(library.isPinned(converted), "bleibt in der Kurzwahl")
+        XCTAssertFalse(library.convertibleTracks.contains { $0.id == track.id })
+
+        await library.rescan()
+        XCTAssertEqual(library.tracks.filter { $0.id == track.id }.count, 1, "kein Duplikat nach Ordner-Abgleich")
+
+        let player = AudioPlayer()
+        player.play([converted], startAt: 0)
+        XCTAssertTrue(player.isPlaying)
+        player.stop()
+        library.deletePlaylist(playlist)
+    }
+
+    func testConvertAll() async throws {
+        let a = try await library.importAudio(from: try Fixture.tempCopy("untagged.mp3", as: "all-a-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        let b = try await library.importAudio(from: try Fixture.tempCopy("untagged.mp3", as: "all-b-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        created += [a, b]
+        let result = await library.convertAllToM4A(skipping: b.id)
+        XCTAssertGreaterThanOrEqual(result.converted, 1)
+        XCTAssertEqual(result.failed, 0)
+        XCTAssertTrue(library.track(id: a.id)?.fileName.hasSuffix(".m4a") == true)
+        XCTAssertTrue(library.track(id: b.id)?.fileName.hasSuffix(".mp3") == true, "übersprungener Titel bleibt")
+        XCTAssertNil(library.conversionStatus)
+    }
+
+    func testDownloadedTrackGoesIntoQueuePaused() async throws {
+        let track = try await library.importAudio(from: try Fixture.tempCopy("untagged.mp3", as: "queue-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        created.append(track)
+        let player = AudioPlayer()
+        player.libraryDidAdd(track, playlistID: Library.downloadsPlaylistID)
+        XCTAssertEqual(player.queue.map(\.id), [track.id])
+        XCTAssertEqual(player.current?.id, track.id)
+        XCTAssertFalse(player.isPlaying, "startet nicht von selbst")
+        player.stop()
+    }
+
+    func testBrowserDetectsPlayingMedia() {
+        let browser = BrowserModel()
+        browser.mediaStartedPlaying(source: "https://example.com/video/clip.mp4")
+        XCTAssertEqual(browser.detectedMedia, .downloadable(URL(string: "https://example.com/video/clip.mp4")!))
+        browser.mediaStartedPlaying(source: "blob:https://www.youtube.com/1234")
+        XCTAssertEqual(browser.detectedMedia, .stream)
+        browser.mediaStartedPlaying(source: "")
+        XCTAssertEqual(browser.detectedMedia, .stream)
+    }
+
     func testOldLibraryFormatStillLoads() throws {
         // Bibliothek aus Version 1.0.8 (ohne Album, ohne Kurzwahl)
         let json = """

@@ -159,6 +159,24 @@ struct TrackActionsSheet: View {
                     actions.close()
                 }
                 row("Infos bearbeiten", "pencil") { actions.show(.edit(current)) }
+                if current.fileURL.pathExtension.lowercased() != "m4a" {
+                    row("In M4A umwandeln", "arrow.triangle.2.circlepath") {
+                        let target = current
+                        if player.current?.id == target.id { player.stop() }
+                        actions.close()
+                        Task {
+                            library.setConversionStatus("Wandle „\(target.title)“ in M4A um …")
+                            do {
+                                try await library.convertToM4A(target)
+                                library.setConversionStatus(nil)
+                            } catch {
+                                library.setConversionStatus("Umwandlung fehlgeschlagen: \(error.localizedDescription)")
+                                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                                library.setConversionStatus(nil)
+                            }
+                        }
+                    }
+                }
                 if let playlist {
                     row("Aus Playlist entfernen", "trash") {
                         library.remove(current, from: playlist)
@@ -291,8 +309,8 @@ struct AddToPlaylistSheet: View {
 
 // MARK: - Album / Interpret
 
+/// Album oder Interpret als eigenes Fenster (aus dem Optionsmenü)
 struct TrackCollectionView: View {
-    @EnvironmentObject private var player: AudioPlayer
     @Environment(\.dismiss) private var dismiss
     let title: String
     let subtitle: String
@@ -300,6 +318,24 @@ struct TrackCollectionView: View {
 
     var body: some View {
         NavigationStack {
+            TrackCollectionList(title: title, subtitle: subtitle, tracks: tracks)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+                }
+        }
+        .trackActionsHost()
+    }
+}
+
+/// Kopf mit Cover + Titelliste (für Album- und Interpretenseiten)
+struct TrackCollectionList: View {
+    @EnvironmentObject private var player: AudioPlayer
+    let title: String
+    let subtitle: String
+    let tracks: [Track]
+
+    var body: some View {
             List {
                 Section {
                     VStack(spacing: 10) {
@@ -330,12 +366,7 @@ struct TrackCollectionView: View {
                     }
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
-            }
-        }
-        .trackActionsHost()
+            .listStyle(.insetGrouped)
     }
 }
 

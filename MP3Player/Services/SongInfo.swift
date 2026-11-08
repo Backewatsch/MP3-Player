@@ -39,7 +39,7 @@ struct SongInfo {
                 put("Album", value)
             case .id3MetadataComposer?, .iTunesMetadataComposer?, .commonIdentifierCreator?:
                 put("Komponist", value)
-            case .id3MetadataLyricist?, .iTunesMetadataLyricist?:
+            case .id3MetadataLyricist?:
                 put("Texter", value)
             case .id3MetadataConductor?, .iTunesMetadataConductor?:
                 put("Dirigent", value)

@@ -1,57 +1,5 @@
 import SwiftUI
 
-struct PlaylistsView: View {
-    @EnvironmentObject private var library: Library
-    @State private var showNewPrompt = false
-    @State private var newName = ""
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(library.playlists) { playlist in
-                    NavigationLink(value: playlist.id) {
-                        HStack(spacing: 12) {
-                            ArtworkView(track: library.tracks(in: playlist).first, size: 52)
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    if playlist.id == Library.downloadsPlaylistID {
-                                        Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.accentColor)
-                                    }
-                                    Text(playlist.name).font(.body)
-                                }
-                                Text("\(library.tracks(in: playlist).count) Titel")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .deleteDisabled(playlist.id == Library.downloadsPlaylistID)
-                }
-                .onDelete { offsets in
-                    // Erst die Playlists bestimmen, dann löschen (Indizes verschieben sich sonst)
-                    let doomed = offsets.compactMap { library.playlists.indices.contains($0) ? library.playlists[$0] : nil }
-                    doomed.forEach(library.deletePlaylist)
-                }
-            }
-            .navigationTitle("Playlists")
-            .navigationDestination(for: UUID.self) { id in
-                PlaylistDetailView(playlistID: id)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { newName = ""; showNewPrompt = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("Neue Playlist")
-                }
-            }
-            .alert("Neue Playlist", isPresented: $showNewPrompt) {
-                TextField("Name", text: $newName)
-                Button("Abbrechen", role: .cancel) {}
-                Button("Erstellen") { library.createPlaylist(named: newName) }
-            }
-        }
-    }
-}
-
 struct PlaylistDetailView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: AudioPlayer
@@ -79,6 +27,7 @@ struct PlaylistDetailView: View {
                             player.shuffle = false
                             player.play(tracks, startAt: 0, playlistID: playlist.id)
                         } label: { Label("Abspielen", systemImage: "play.fill").frame(maxWidth: .infinity) }
+                            .accessibilityIdentifier("playAllButton")
                         Button {
                             player.shuffle = true
                             player.play(tracks, startAt: Int.random(in: 0..<tracks.count), playlistID: playlist.id)

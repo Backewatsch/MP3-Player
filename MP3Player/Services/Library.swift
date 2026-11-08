@@ -11,6 +11,8 @@ final class Library: ObservableObject {
     @Published private(set) var playlists: [Playlist] = []
     /// Angepinnte Titel („Kurzwahl“)
     @Published private(set) var pinnedIDs: [UUID] = []
+    /// Fortschritt einer laufenden Umwandlung (für die Anzeige), sonst `nil`
+    @Published private(set) var conversionStatus: String?
 
     /// Wird aufgerufen, sobald ein neuer Titel hinzugekommen ist (z. B. für die Warteschlange).
     var onTrackAdded: ((Track, _ playlistID: UUID?) -> Void)?
@@ -137,6 +139,65 @@ final class Library: ObservableObject {
         save()
         onTrackAdded?(track, targetPlaylist)
         return track
+    }
+
+    // MARK: Umwandeln in M4A
+
+    /// Titel, die noch nicht im M4A-Format vorliegen
+    var convertibleTracks: [Track] {
+        tracks.filter { $0.fileURL.pathExtension.lowercased() != "m4a" }
+    }
+
+    /// Wandelt die Datei eines Titels in M4A um. Der Titel behält ID, Playlists, Kurzwahl und Cover.
+    @discardableResult
+    func convertToM4A(_ track: Track) async throws -> Track {
+        guard let current = self.track(id: track.id) else { return track }
+        guard current.fileURL.pathExtension.lowercased() != "m4a" else { return current }
+        let oldURL = current.fileURL
+        let baseName = (current.fileName as NSString).deletingPathExtension
+        let converted = try await AudioConverter.convertToM4A(oldURL, baseName: baseName)
+        defer { try? FileManager.default.removeItem(at: converted.deletingLastPathComponent()) }
+
+        let destination = Self.uniqueDestination(for: "\(baseName).m4a")
+        importing.insert(destination.lastPathComponent)
+        defer { importing.remove(destination.lastPathComponent) }
+        try FileManager.default.moveItem(at: converted, to: destination)
+
+        guard let i = tracks.firstIndex(where: { $0.id == current.id }) else {
+            try? FileManager.default.removeItem(at: destination)
+            return current
+        }
+        // Erst den neuen Dateinamen eintragen, dann die alte Datei löschen (kein Zwischenstand ohne Datei)
+        tracks[i].fileName = destination.lastPathComponent
+        try? FileManager.default.removeItem(at: oldURL)
+        let fresh = await Self.makeTrack(for: destination)
+        if let j = tracks.firstIndex(where: { $0.id == current.id }), fresh.duration > 0 {
+            tracks[j].duration = fresh.duration
+        }
+        save()
+        return self.track(id: current.id) ?? current
+    }
+
+    /// Wandelt alle Titel, die nicht M4A sind, nacheinander um.
+    /// - Parameter skipping: z. B. der gerade laufende Titel
+    func convertAllToM4A(skipping skipID: UUID? = nil) async -> (converted: Int, failed: Int) {
+        let todo = convertibleTracks.filter { $0.id != skipID }
+        var converted = 0, failed = 0
+        for (n, track) in todo.enumerated() {
+            conversionStatus = "Wandle um: \(n + 1) von \(todo.count) – „\(track.title)“"
+            do {
+                try await convertToM4A(track)
+                converted += 1
+            } catch {
+                failed += 1
+            }
+        }
+        conversionStatus = nil
+        return (converted, failed)
+    }
+
+    func setConversionStatus(_ text: String?) {
+        conversionStatus = text
     }
 
     /// Liest bei Bibliotheken aus älteren Versionen einmalig die Alben nach.

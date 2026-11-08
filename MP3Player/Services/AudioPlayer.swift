@@ -176,10 +176,27 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
-    /// Neuer Titel in der Bibliothek → an die laufende Warteschlange anhängen, falls sie passt.
+    /// Neuer Titel in der Bibliothek. Heruntergeladene Titel (mit Ziel-Playlist) kommen immer in die
+    /// Wiedergabeliste; Importe aus der Dateien-App nur, wenn gerade „Alle Titel“ läuft.
     func libraryDidAdd(_ track: Track, playlistID: UUID?) {
-        guard !queue.isEmpty, !queue.contains(where: { $0.id == track.id }) else { return }
-        if queueIsAllTracks || (playlistID != nil && playlistID == sourcePlaylistID) {
+        guard !queue.contains(where: { $0.id == track.id }) else { return }
+        if playlistID != nil {
+            enqueue(track)
+        } else if !queue.isEmpty, queueIsAllTracks {
+            queue.append(track)
+        }
+    }
+
+    /// Hängt einen Titel an die Wiedergabeliste an, ohne die Wiedergabe zu starten.
+    /// Ist die Liste leer, steht der Titel pausiert bereit.
+    func enqueue(_ track: Track) {
+        if queue.isEmpty {
+            queue = [track]
+            history = []
+            sourcePlaylistID = nil
+            queueIsAllTracks = false
+            load(index: 0, autoplay: false)
+        } else {
             queue.append(track)
         }
     }

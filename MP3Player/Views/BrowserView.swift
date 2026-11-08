@@ -5,6 +5,7 @@ struct BrowserView: View {
     @EnvironmentObject private var browser: BrowserModel
     @EnvironmentObject private var downloads: DownloadManager
     @FocusState private var addressFocused: Bool
+    @State private var showDownloads = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,6 +22,7 @@ struct BrowserView: View {
             }
             WebView(webView: browser.webView)
                 .ignoresSafeArea(.keyboard)
+                .overlay(alignment: .bottom) { mediaBanner }
             toolbar
         }
         .overlay(alignment: .top) {
@@ -45,6 +47,10 @@ struct BrowserView: View {
         .sheet(isPresented: $browser.showFoundAudio) {
             FoundAudioSheet()
         }
+        .sheet(isPresented: $showDownloads) {
+            DownloadsView(isSheet: true)
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: browser.detectedMedia)
     }
 
     private var addressBar: some View {
@@ -71,7 +77,8 @@ struct BrowserView: View {
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             Menu {
-                Button { browser.scanForAudio() } label: { Label("Audiodateien auf Seite suchen", systemImage: "waveform") }
+                Button { browser.scanForAudio() } label: { Label("Audio-/Videodateien auf Seite suchen", systemImage: "waveform") }
+                Button { showDownloads = true } label: { Label("Downloads & Link einfügen", systemImage: "arrow.down.circle") }
                 Button { browser.downloadCurrentPage() } label: { Label("Diese Adresse als Audio laden", systemImage: "arrow.down.circle") }
                 Button { browser.loadStartPage() } label: { Label("Startseite", systemImage: "house") }
             } label: {
@@ -81,6 +88,60 @@ struct BrowserView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    @ViewBuilder private func countBadge(_ count: Int) -> some View {
+        if count > 0 {
+            Text("\(min(count, 99))")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Color.accentColor, in: Capsule())
+                .offset(x: 10, y: -8)
+        }
+    }
+
+    /// Erscheint, wenn auf der Seite ein Audio/Video abgespielt wird
+    @ViewBuilder private var mediaBanner: some View {
+        switch browser.detectedMedia {
+        case .downloadable(let url)?:
+            HStack(spacing: 10) {
+                Image(systemName: "waveform.circle.fill").font(.title2).foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Medium erkannt").font(.subheadline.weight(.semibold))
+                    Text(url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                Button("Als Audio laden") { browser.downloadDetectedMedia() }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("downloadDetectedMedia")
+                Button { browser.detectedMedia = nil } label: { Image(systemName: "xmark").font(.caption.weight(.bold)) }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Schließen")
+            }
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        case .stream?:
+            HStack(spacing: 10) {
+                Image(systemName: "lock.circle.fill").font(.title2).foregroundStyle(.secondary)
+                Text("Dieses Medium wird als Stream abgespielt und kann nicht als Datei geladen werden.")
+                    .font(.footnote)
+                Spacer(minLength: 6)
+                Button { browser.detectedMedia = nil } label: { Image(systemName: "xmark").font(.caption.weight(.bold)) }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Schließen")
+            }
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        case nil:
+            EmptyView()
+        }
     }
 
     private var youTubeBanner: some View {
@@ -105,11 +166,19 @@ struct BrowserView: View {
                 .disabled(!browser.canGoForward)
                 .accessibilityLabel("Vor")
             Spacer()
-            Button(action: browser.scanForAudio) { Image(systemName: "waveform") }
-                .accessibilityLabel("Audiodateien auf Seite suchen")
+            Button { browser.scanForAudio() } label: {
+                Image(systemName: "waveform")
+                    .overlay(alignment: .topTrailing) { countBadge(browser.foundAudio.count) }
+            }
+            .accessibilityLabel("Audio- und Videodateien auf Seite suchen")
+            .accessibilityIdentifier("scanButton")
             Spacer()
-            Button(action: browser.loadStartPage) { Image(systemName: "house") }
-                .accessibilityLabel("Startseite")
+            Button { showDownloads = true } label: {
+                Image(systemName: "arrow.down.circle")
+                    .overlay(alignment: .topTrailing) { countBadge(downloads.activeCount + downloads.unseenCount) }
+            }
+            .accessibilityLabel("Downloads")
+            .accessibilityIdentifier("downloadsButton")
             Spacer()
             Button(action: browser.reload) { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }
                 .accessibilityLabel(browser.isLoading ? "Stopp" : "Neu laden")

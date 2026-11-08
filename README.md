@@ -11,6 +11,10 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 - Zufallswiedergabe, Wiederholen (alle / einen), Warteschlange („Als Nächstes“, „Zur Warteschlange“)
 - Pausiert bei Anrufen und wenn Kopfhörer abgezogen werden
 
+**Aufbau: zwei Tabs**
+- **Mediathek**: Kurzwahl, Titel, Alben, Interpreten und alle Playlists – neue Playlists direkt hier erstellen (oder ＋ → „Neue Playlist“)
+- **Lieder downloaden**: interner Browser mit Download-Liste (Knopf unten mit Zähler) und Link-Feld
+
 **Titel-Optionen (Tippen auf „…“ oder lange drücken)**
 - Als Nächstes abspielen · Zu Playlist hinzufügen (auch neue Playlist) · Teilen
 - Mix starten (Titel zuerst, dann gemischt – gleicher Interpret bevorzugt)
@@ -20,7 +24,10 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 - Infos bearbeiten · Aus Playlist entfernen · Wiedergabeliste schließen · Aus Mediathek entfernen
 
 **Konverter**
-- Videos (MP4, MOV, M4V) aus dem Internet oder aus der Dateien-App werden automatisch in Audio umgewandelt und landen in der Bibliothek
+- Videos (MP4, MOV, M4V) aus dem Internet oder aus der Dateien-App werden automatisch in Audio umgewandelt und landen in der Mediathek
+- Vorhandene MP3s umwandeln: einzeln über „…“ → „In M4A umwandeln“ oder alle unter *Info & Updates → Konverter* (Playlists, Kurzwahl und Cover bleiben erhalten; der Klang wird dadurch nicht besser)
+- Im Browser: Startet auf einer Seite ein Audio/Video, erscheint „Als Audio laden“. Seiten werden automatisch nach Dateien durchsucht (Zähler am Wellen-Symbol). Alles Geladene kommt zusätzlich in die **Wiedergabeliste**
+- Grenzen: Streams (blob:/MediaSource, z. B. YouTube) und Formate, die iOS nicht lesen kann (WebM, OGG), lassen sich nicht umwandeln
 - Ausgabeformat ist **M4A (AAC)**, nicht MP3: iOS bringt keinen MP3-Encoder mit. M4A spielt in dieser App und fast überall sonst und klingt bei gleicher Größe mindestens so gut
 - Streaming-Dienste (YouTube, Spotify …) werden nicht unterstützt (siehe unten)
 

@@ -3,41 +3,24 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var downloads: DownloadManager
-    @State private var tab = Tab.tracks
+    @State private var tab = Tab.library
     @State private var showNowPlaying = false
 
-    enum Tab: Hashable { case tracks, playlists, browser, downloads }
+    enum Tab: Hashable { case library, downloader }
 
     var body: some View {
         TabView(selection: $tab) {
-            LibraryView()
+            MediathekView()
                 .miniPlayer($showNowPlaying)
                 .trackActionsHost()
-                .tabItem { Label("Titel", systemImage: "music.note") }
-                .tag(Tab.tracks)
-
-            PlaylistsView()
-                .miniPlayer($showNowPlaying)
-                .trackActionsHost()
-                .tabItem { Label("Playlists", systemImage: "music.note.list") }
-                .tag(Tab.playlists)
+                .tabItem { Label("Mediathek", systemImage: "music.note.house") }
+                .tag(Tab.library)
 
             BrowserView()
                 .miniPlayer($showNowPlaying)
-                .tabItem { Label("Browser", systemImage: "safari") }
-                .tag(Tab.browser)
-
-            DownloadsView()
-                .miniPlayer($showNowPlaying)
-                .tabItem { Label("Downloads", systemImage: "arrow.down.circle") }
+                .tabItem { Label("Lieder downloaden", systemImage: "arrow.down.circle") }
                 .badge(downloads.activeCount + downloads.unseenCount)
-                .tag(Tab.downloads)
-        }
-        .onChange(of: tab) { newTab in
-            if newTab == .downloads { downloads.unseenCount = 0 }
-        }
-        .onChange(of: downloads.unseenCount) { count in
-            if tab == .downloads && count > 0 { downloads.unseenCount = 0 }
+                .tag(Tab.downloader)
         }
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
