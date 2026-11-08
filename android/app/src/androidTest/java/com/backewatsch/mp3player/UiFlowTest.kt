@@ -181,6 +181,25 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("bigPlayPause"), 5_000)
         Thread.sleep(800)
         screenshot("a08-Player")
+
+        // Schlafmodus: Minuten eingeben → Timer läuft, Restzeit sichtbar → wieder beenden
+        val player = instrumentation.targetContext.app.player
+        rule.onNodeWithTag("sleepButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("sleepMinutes"), 5_000)
+        rule.onNodeWithTag("sleepMinutes").performTextInput("30")
+        Thread.sleep(500)
+        screenshot("a18-Schlafmodus")
+        rule.onNodeWithTag("sleepStart").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("sleepRemaining"), 5_000)
+        check(player.sleepRemainingMs()!! in 29 * 60_000L..30 * 60_000L) { "Schlafmodus nicht auf 30 Minuten gestellt" }
+        Thread.sleep(800)
+        screenshot("a19-Schlafmodus-laeuft")
+        rule.onNodeWithTag("sleepButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("sleepCancel"), 5_000)
+        rule.onNodeWithTag("sleepCancel").performClick()
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag("sleepRemaining").fetchSemanticsNodes().isEmpty() }
+        check(player.sleepRemainingMs() == null) { "Schlafmodus nicht beendet" }
+
         backUntil("trackMore")
 
         // Optionsmenü

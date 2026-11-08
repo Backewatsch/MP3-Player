@@ -21,6 +21,7 @@ class PlaybackService : MediaSessionService() {
                 /* handleAudioFocus = */ true,
             )
             .setHandleAudioBecomingNoisy(true) // Kopfhörer abgezogen → Pause
+            .setWakeMode(C.WAKE_MODE_LOCAL) // läuft bei ausgeschaltetem Bildschirm zuverlässig weiter (auch der Schlafmodus)
             .build()
         session = MediaSession.Builder(this, player).build()
     }

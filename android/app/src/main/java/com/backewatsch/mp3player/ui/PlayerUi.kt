@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -88,6 +89,12 @@ fun MiniPlayer(onOpen: () -> Unit) {
                     Text(track.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
             }
+            // Läuft der Schlafmodus, zeigt der Mini-Player die Restzeit
+            rememberSleepRemaining()?.let { remaining ->
+                Icon(Icons.Default.Bedtime, "Schlafmodus läuft", tint = Accent, modifier = Modifier.size(16.dp))
+                Text(" " + com.backewatsch.mp3player.player.SleepTimer.formatRemaining(remaining),
+                    style = MaterialTheme.typography.labelSmall, color = Accent, modifier = Modifier.testTag("miniSleep"))
+            }
             IconButton(onClick = app.player::togglePlayPause, modifier = Modifier.testTag("miniPlayPause")) {
                 Icon(
                     if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -132,6 +139,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                 Row(Modifier.fillMaxWidth()) {
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Schließen") }
                     Spacer(Modifier.weight(1f))
+                    SleepTimerButton()
                     IconButton(onClick = { showQueue = true }) { Icon(Icons.AutoMirrored.Filled.QueueMusic, "Wiedergabeliste") }
                     IconButton(onClick = { nav.actions.open(track) }) { Icon(Icons.Default.MoreVert, "Optionen") }
                 }

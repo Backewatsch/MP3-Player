@@ -77,3 +77,30 @@ class LogicTest {
         assertNull(UpdateChecker.parseRelease("""{"tag_name":"beta"}"""))
     }
 }
+
+/** Schlafmodus: Eingabe, Ausblenden, Anzeige */
+class SleepTimerLogicTest {
+    @Test fun parsesMinutes() {
+        org.junit.Assert.assertEquals(30, com.backewatsch.mp3player.player.SleepTimer.parseMinutes("30"))
+        org.junit.Assert.assertEquals(5, com.backewatsch.mp3player.player.SleepTimer.parseMinutes(" 5 "))
+        org.junit.Assert.assertEquals(1440, com.backewatsch.mp3player.player.SleepTimer.parseMinutes("1440"))
+        org.junit.Assert.assertNull(com.backewatsch.mp3player.player.SleepTimer.parseMinutes("0"))
+        org.junit.Assert.assertNull(com.backewatsch.mp3player.player.SleepTimer.parseMinutes("1441"))
+        org.junit.Assert.assertNull(com.backewatsch.mp3player.player.SleepTimer.parseMinutes(""))
+        org.junit.Assert.assertNull(com.backewatsch.mp3player.player.SleepTimer.parseMinutes("abc"))
+    }
+
+    @Test fun fadesOutAtTheEnd() {
+        val t = com.backewatsch.mp3player.player.SleepTimer
+        org.junit.Assert.assertEquals(1f, t.volumeFor(60_000), 0f)
+        org.junit.Assert.assertEquals(0.5f, t.volumeFor(5_000), 0.001f)
+        org.junit.Assert.assertEquals(0.05f, t.volumeFor(0), 0.001f)
+    }
+
+    @Test fun formatsRemaining() {
+        val t = com.backewatsch.mp3player.player.SleepTimer
+        org.junit.Assert.assertEquals("30:00", t.formatRemaining(30 * 60_000L))
+        org.junit.Assert.assertEquals("0:01", t.formatRemaining(400))
+        org.junit.Assert.assertEquals("1:02:30", t.formatRemaining((3600 + 150) * 1000L))
+    }
+}

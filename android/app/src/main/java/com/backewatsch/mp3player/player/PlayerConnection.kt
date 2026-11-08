@@ -3,6 +3,7 @@ package com.backewatsch.mp3player.player
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -38,6 +39,13 @@ class PlayerConnection(
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** Schlafmodus: Zeitpunkt (SystemClock.elapsedRealtime), zu dem die Musik ausgeht; null = aus */
+    private val _sleepEndAt = MutableStateFlow<Long?>(null)
+    val sleepEndAt: StateFlow<Long?> = _sleepEndAt.asStateFlow()
+
+    /** true, solange die Lautstärke für den Schlafmodus heruntergeregelt ist */
+    private var fading = false
 
     private var controller: MediaController? = null
     private val pending = mutableListOf<(MediaController) -> Unit>()
@@ -112,9 +120,50 @@ class PlayerConnection(
                         _state.value = _state.value.copy(positionMs = c.currentPosition, durationMs = duration(c))
                         noteProgress(c)
                     }
+                    checkSleepTimer(c)
                 }
                 delay(500)
             }
+        }
+    }
+
+    // ---------- Schlafmodus ----------
+
+    /** Musik nach [minutes] Minuten ausschalten (ersetzt einen laufenden Timer). */
+    fun startSleepTimer(minutes: Int) = startSleepTimerMs(minutes * 60_000L)
+
+    /** Wie [startSleepTimer], aber in Millisekunden (auch für Tests). */
+    fun startSleepTimerMs(durationMs: Long) {
+        restoreVolume()
+        _sleepEndAt.value = SystemClock.elapsedRealtime() + durationMs
+    }
+
+    fun cancelSleepTimer() {
+        _sleepEndAt.value = null
+        restoreVolume()
+    }
+
+    /** Restzeit des Schlafmodus in ms, oder null wenn er aus ist */
+    fun sleepRemainingMs(): Long? = _sleepEndAt.value?.let { (it - SystemClock.elapsedRealtime()).coerceAtLeast(0) }
+
+    private fun restoreVolume() {
+        if (fading) {
+            controller?.volume = 1f
+            fading = false
+        }
+    }
+
+    private fun checkSleepTimer(c: MediaController) {
+        val remaining = sleepRemainingMs() ?: return
+        if (remaining <= 0) {
+            c.pause()
+            _sleepEndAt.value = null
+            c.volume = 1f
+            fading = false
+            refresh()
+        } else if (remaining < SleepTimer.FADE_MS && c.isPlaying) {
+            fading = true
+            c.volume = SleepTimer.volumeFor(remaining)
         }
     }
 
@@ -302,6 +351,7 @@ class PlayerConnection(
     fun stop() = withController {
         it.stop(); it.clearMediaItems()
         originalOrder = emptyList(); shuffled = false; nextUpCount = 0
+        cancelSleepTimer()
     }
 
     fun removeFromQueue(index: Int) = withController { c ->
