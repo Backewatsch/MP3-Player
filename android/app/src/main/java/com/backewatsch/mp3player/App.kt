@@ -14,6 +14,7 @@ import com.backewatsch.mp3player.update.UpdateChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -27,6 +28,8 @@ class App : Application() {
     lateinit var player: PlayerConnection
     lateinit var updates: UpdateChecker
     lateinit var deviceImporter: com.backewatsch.mp3player.data.DeviceMusicImporter
+    lateinit var sound: com.backewatsch.mp3player.player.AudioEffects
+    lateinit var backup: com.backewatsch.mp3player.data.Backup
     val browser: BrowserController by lazy { BrowserController(this, downloads) }
 
     /** Eigene Cover der Lieder statt des App-Logos anzeigen (Standard: aus → immer das Logo) */
@@ -38,19 +41,37 @@ class App : Application() {
         player.refreshArtwork()
     }
 
+    /** Sortierung der Titelliste (bleibt gespeichert) */
+    val trackSort by lazy {
+        kotlinx.coroutines.flow.MutableStateFlow(com.backewatsch.mp3player.data.TrackSort.fromName(settings.getString("trackSort", null)))
+    }
+    fun setTrackSort(sort: com.backewatsch.mp3player.data.TrackSort) {
+        settings.edit().putString("trackSort", sort.name).apply()
+        trackSort.value = sort
+    }
+
     override fun onCreate() {
         super.onCreate()
         storage = Storage(this)
+        sound = com.backewatsch.mp3player.player.AudioEffects(this)
         library = Library(storage, scope)
         downloads = DownloadRepository(library, storage, scope)
         player = PlayerConnection(this, library, scope)
         updates = UpdateChecker(this, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         deviceImporter = com.backewatsch.mp3player.data.DeviceMusicImporter(this, library)
+        backup = com.backewatsch.mp3player.data.Backup(library)
 
         // Heruntergeladene Titel kommen in die Wiedergabeliste (pausiert, wenn gerade nichts läuft)
         library.onTrackAdded = { track, playlistId -> if (playlistId != null) player.enqueue(track) }
         scope.launch { library.state.collect { player.libraryChanged(it.tracks) } }
         scope.launch { library.rescan() }
+        // Widget auf dem Startbildschirm aktuell halten
+        scope.launch {
+            kotlinx.coroutines.flow.combine(player.state, library.state) { p, l ->
+                val t = l.tracks.firstOrNull { it.id == p.currentId }
+                com.backewatsch.mp3player.widget.PlayerWidget.Info(t?.title, t?.artist, p.isPlaying, t != null && t.id in l.favorites)
+            }.distinctUntilChanged().collect { com.backewatsch.mp3player.widget.PlayerWidget.update(this@App, it) }
+        }
     }
 
     /** Dateien aus „Öffnen mit …“, „Teilen“ oder der Dateiauswahl übernehmen (werden zu MP3). */

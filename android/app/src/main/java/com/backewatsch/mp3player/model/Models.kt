@@ -38,9 +38,15 @@ data class LibraryState(
     val playCounts: Map<String, Int> = emptyMap(),
     /** Zuletzt gestartete Titel, neueste zuerst („Verlauf“) */
     val history: List<PlayEvent> = emptyList(),
+    /** Lieblingssongs (Herz), zuletzt markierte zuerst */
+    val favorites: List<String> = emptyList(),
+    /** Richtig gehörte Titel mit Zeitpunkt, neueste zuerst – für die Statistik */
+    val plays: List<PlayEvent> = emptyList(),
+    /** Hörzeit in ms je Monat („2026-11“) – für die Statistik */
+    val listenedByMonth: Map<String, Long> = emptyMap(),
 ) {
     companion object {
-        const val CURRENT_VERSION = 2
+        const val CURRENT_VERSION = 3
         /** Feste ID der Playlist „Heruntergeladen“ */
         const val DOWNLOADS_PLAYLIST_ID = "00000000-0000-0000-0000-00000000d001"
     }

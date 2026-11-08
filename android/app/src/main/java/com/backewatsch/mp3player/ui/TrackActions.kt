@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.HeartBroken
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
@@ -149,6 +151,13 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
                 }
             }
             Spacer(Modifier.height(10.dp))
+            val favorite = current.id in lib.favorites
+            ActionRow(if (favorite) "Aus Lieblingssongs entfernen" else "Zu Lieblingssongs hinzufügen",
+                if (favorite) Icons.Default.HeartBroken else Icons.Default.Favorite) {
+                app.library.toggleFavorite(current)
+                Toast.makeText(context, if (favorite) "Aus Lieblingssongs entfernt" else "♥ Zu Lieblingssongs hinzugefügt", Toast.LENGTH_SHORT).show()
+                close()
+            }
             ActionRow("Mix starten", Icons.Default.Radio) { app.player.startMix(current, app.library.tracks); close() }
             ActionRow("In die Wiedergabeliste", Icons.AutoMirrored.Filled.QueueMusic) {
                 app.player.addToQueue(current)

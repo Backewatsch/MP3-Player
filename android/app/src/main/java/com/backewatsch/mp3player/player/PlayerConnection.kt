@@ -44,8 +44,9 @@ class PlayerConnection(
     private val _sleepEndAt = MutableStateFlow<Long?>(null)
     val sleepEndAt: StateFlow<Long?> = _sleepEndAt.asStateFlow()
 
-    /** true, solange die Lautstärke für den Schlafmodus heruntergeregelt ist */
-    private var fading = false
+    /** Hörzeit für die Statistik, wird gesammelt und alle 30 s gespeichert */
+    private var listenedPending = 0L
+    private var lastTick = 0L
 
     private var controller: MediaController? = null
     private val pending = mutableListOf<(MediaController) -> Unit>()
@@ -121,6 +122,7 @@ class PlayerConnection(
                         noteProgress(c)
                     }
                     checkSleepTimer(c)
+                    countListening(c.isPlaying)
                 }
                 delay(500)
             }
@@ -134,36 +136,34 @@ class PlayerConnection(
 
     /** Wie [startSleepTimer], aber in Millisekunden (auch für Tests). */
     fun startSleepTimerMs(durationMs: Long) {
-        restoreVolume()
         _sleepEndAt.value = SystemClock.elapsedRealtime() + durationMs
     }
 
+    /** Lautstärke regelt der Wiedergabedienst (leiser werden in den letzten Sekunden) */
     fun cancelSleepTimer() {
         _sleepEndAt.value = null
-        restoreVolume()
     }
 
     /** Restzeit des Schlafmodus in ms, oder null wenn er aus ist */
     fun sleepRemainingMs(): Long? = _sleepEndAt.value?.let { (it - SystemClock.elapsedRealtime()).coerceAtLeast(0) }
-
-    private fun restoreVolume() {
-        if (fading) {
-            controller?.volume = 1f
-            fading = false
-        }
-    }
 
     private fun checkSleepTimer(c: MediaController) {
         val remaining = sleepRemainingMs() ?: return
         if (remaining <= 0) {
             c.pause()
             _sleepEndAt.value = null
-            c.volume = 1f
-            fading = false
             refresh()
-        } else if (remaining < SleepTimer.FADE_MS && c.isPlaying) {
-            fading = true
-            c.volume = SleepTimer.volumeFor(remaining)
+        }
+    }
+
+    /** Hörzeit zählen (Statistik) */
+    private fun countListening(playing: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        if (playing && lastTick > 0) listenedPending += (now - lastTick).coerceIn(0, 2_000)
+        lastTick = if (playing) now else 0
+        if (listenedPending >= 30_000 || (!playing && listenedPending > 0)) {
+            library.addListened(listenedPending)
+            listenedPending = 0
         }
     }
 

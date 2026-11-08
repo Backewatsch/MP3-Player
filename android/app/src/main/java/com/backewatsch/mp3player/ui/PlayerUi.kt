@@ -28,6 +28,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
@@ -139,6 +143,9 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                 Row(Modifier.fillMaxWidth()) {
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Schließen") }
                     Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { nav.showSound = true }, modifier = Modifier.testTag("soundButton")) {
+                        Icon(Icons.Default.Equalizer, "Klang / Equalizer")
+                    }
                     SleepTimerButton()
                     IconButton(onClick = { showQueue = true }) { Icon(Icons.AutoMirrored.Filled.QueueMusic, "Wiedergabeliste") }
                     IconButton(onClick = { nav.actions.open(track) }) { Icon(Icons.Default.MoreVert, "Optionen") }
@@ -150,9 +157,21 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                         androidx.compose.foundation.shape.CutCornerShape(topStart = 24.dp, bottomEnd = 24.dp)).padding(6.dp),
                 ) { Artwork(track, 290.dp, 20.dp) }
                 Spacer(Modifier.height(28.dp))
-                GlitchText(track.title.uppercase(), style = MaterialTheme.typography.headlineSmall, maxLines = 2)
-                Text("> " + track.artist.ifEmpty { "Unbekannter Interpret" }, style = MaterialTheme.typography.titleMedium,
-                    color = NeonCyan)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(48.dp))
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        GlitchText(track.title.uppercase(), style = MaterialTheme.typography.headlineSmall, maxLines = 2)
+                        Text("> " + track.artist.ifEmpty { "Unbekannter Interpret" }, style = MaterialTheme.typography.titleMedium,
+                            color = NeonCyan)
+                    }
+                    // Herz: Lieblingssong
+                    val favorite = track.id in lib.favorites
+                    IconButton(onClick = { app.library.toggleFavorite(track) }, modifier = Modifier.testTag("favButton")) {
+                        Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            if (favorite) "Aus Lieblingssongs entfernen" else "Zu Lieblingssongs",
+                            tint = if (favorite) Accent else LocalContentColor.current)
+                    }
+                }
                 Spacer(Modifier.height(20.dp))
                 val duration = state.durationMs.coerceAtLeast(1)
                 Slider(

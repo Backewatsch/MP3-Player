@@ -54,6 +54,7 @@ class AppNavigation {
     var showSettings by mutableStateOf(false)
     var showDownloads by mutableStateOf(false)
     var showTransfer by mutableStateOf(false)
+    var showSound by mutableStateOf(false)
     val actions = TrackActionsState()
 
     fun push(route: LibRoute) {
@@ -136,6 +137,7 @@ fun MainScreen() {
         if (nav.showSettings) SettingsSheet(onDismiss = { nav.showSettings = false })
         if (nav.showDownloads) DownloadsSheet(onDismiss = { nav.showDownloads = false })
         if (nav.showTransfer) TransferSheet(onDismiss = { nav.showTransfer = false })
+        if (nav.showSound) SoundSheet(onDismiss = { nav.showSound = false })
         TrackActionsHost(nav.actions)
         UpdatePrompt()
     }

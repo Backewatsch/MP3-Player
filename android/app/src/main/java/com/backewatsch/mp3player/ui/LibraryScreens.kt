@@ -22,6 +22,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
@@ -84,6 +88,8 @@ sealed interface LibRoute {
     data class Album(val name: String) : LibRoute
     data class Artist(val name: String) : LibRoute
     data class PlaylistDetail(val id: String) : LibRoute
+    data object Favorites : LibRoute
+    data object Stats : LibRoute
 }
 
 @Composable
@@ -97,6 +103,8 @@ fun LibraryHost() {
         is LibRoute.Album -> CollectionScreen(route.name, "Album")
         is LibRoute.Artist -> CollectionScreen(route.name, "Interpret")
         is LibRoute.PlaylistDetail -> PlaylistScreen(route.id)
+        LibRoute.Favorites -> FavoritesScreen()
+        LibRoute.Stats -> StatsScreen()
     }
 }
 
@@ -263,11 +271,16 @@ fun MediathekRoot() {
             item { SectionHeader("Bibliothek") }
             item {
                 Card {
+                    CategoryRow("Lieblingssongs", Icons.Default.Favorite, lib.favorites.count { id -> lib.tracks.any { it.id == id } },
+                        "category-Lieblingssongs") { nav.push(LibRoute.Favorites) }
+                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Titel", Icons.Default.MusicNote, lib.tracks.size, "category-Titel") { nav.push(LibRoute.AllTracks) }
                     HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Alben", Icons.Default.Album, app.library.albumNames().size, "category-Alben") { nav.push(LibRoute.Albums) }
                     HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Interpreten", Icons.Default.Mic, app.library.artistNames().size, "category-Interpreten") { nav.push(LibRoute.Artists) }
+                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    CategoryRow("Statistik", Icons.Default.BarChart, null, "category-Statistik") { nav.push(LibRoute.Stats) }
                 }
             }
 
@@ -310,13 +323,13 @@ fun MediathekRoot() {
 }
 
 @Composable
-private fun CategoryRow(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, count: Int, tag: String, onClick: () -> Unit) {
+private fun CategoryRow(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, count: Int?, tag: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = Accent)
         Spacer(Modifier.width(16.dp))
         Text(title, Modifier.weight(1f))
-        Text("$count", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (count != null) Text("$count", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -349,20 +362,72 @@ fun AllTracksScreen() {
     val nav = LocalNav.current
     val lib by app.library.state.collectAsState()
     val player by app.player.state.collectAsState()
-    val tracks = remember(lib) { app.library.sortedTracks() }
+    val sort by app.trackSort.collectAsState()
+    val tracks = remember(lib, sort) { app.library.sortedTracks(sort) }
+    val selection = rememberSelection()
+    var showSort by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        ScreenTopBar("Titel", onBack = { nav.pop() })
+        if (selection.active) SelectionBar(selection, tracks)
+        else ScreenTopBar("Titel", onBack = { nav.pop() }) {
+            Box {
+                IconButton(onClick = { showSort = true }, modifier = Modifier.testTag("sortButton")) {
+                    Icon(Icons.AutoMirrored.Filled.Sort, "Sortieren")
+                }
+                DropdownMenu(expanded = showSort, onDismissRequest = { showSort = false }) {
+                    com.backewatsch.mp3player.data.TrackSort.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label, color = if (option == sort) Accent else MaterialTheme.colorScheme.onSurface) },
+                            leadingIcon = { if (option == sort) Icon(Icons.Default.Check, null, tint = Accent) },
+                            onClick = { app.setTrackSort(option); showSort = false },
+                            modifier = Modifier.testTag("sort-${option.name}"),
+                        )
+                    }
+                }
+            }
+        }
         LazyColumn {
             if (tracks.isNotEmpty()) item {
                 PlayShuffleButtons({ app.player.play(tracks, 0) }, { app.player.play(tracks, tracks.indices.random(), shuffle = true) })
+                Text("Sortiert: ${sort.label} · Gedrückt halten zum Auswählen", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp))
             }
             itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
-                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) })
+                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
             item {
                 Text("${tracks.size} Titel", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun FavoritesScreen() {
+    val app = LocalApp.current
+    val nav = LocalNav.current
+    val lib by app.library.state.collectAsState()
+    val player by app.player.state.collectAsState()
+    val tracks = remember(lib) { app.library.favoriteTracks() }
+    val selection = rememberSelection()
+    Column(Modifier.fillMaxSize()) {
+        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar("Lieblingssongs", onBack = { nav.pop() })
+        if (tracks.isEmpty()) {
+            EmptyHint("Noch keine Lieblingssongs", "Tippe im Player oder im Menü eines Liedes auf das Herz ♥ – dann erscheint es hier.")
+            return@Column
+        }
+        LazyColumn {
+            item {
+                PlayShuffleButtons({ app.player.play(tracks, 0) }, { app.player.play(tracks, tracks.indices.random(), shuffle = true) })
+            }
+            itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+                TrackRow(track, player.currentId == track.id, player.isPlaying,
+                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
+            }
+            item {
+                Text("${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
             }
         }
     }
@@ -405,8 +470,9 @@ fun CollectionScreen(name: String, kind: String) {
     val lib by app.library.state.collectAsState()
     val player by app.player.state.collectAsState()
     val tracks = remember(lib, name) { if (kind == "Album") app.library.tracksInAlbum(name) else app.library.tracksByArtist(name) }
+    val selection = rememberSelection()
     Column(Modifier.fillMaxSize()) {
-        ScreenTopBar(name, onBack = { nav.pop() })
+        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar(name, onBack = { nav.pop() })
         LazyColumn {
             item {
                 Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -422,7 +488,7 @@ fun CollectionScreen(name: String, kind: String) {
             }
             itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
-                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) })
+                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
         }
     }
@@ -445,8 +511,10 @@ fun PlaylistScreen(id: String) {
     }
     val tracks = app.library.tracksIn(playlist)
     val isDownloads = playlist.id == DOWNLOADS_PLAYLIST_ID
+    val selection = rememberSelection()
     Column(Modifier.fillMaxSize()) {
-        ScreenTopBar(playlist.name, onBack = { nav.pop() }) {
+        if (selection.active) SelectionBar(selection, tracks, playlist)
+        else ScreenTopBar(playlist.name, onBack = { nav.pop() }) {
             TextButton(onClick = { editing = !editing }) { Text(if (editing) "Fertig" else "Bearbeiten") }
         }
         LazyColumn {
@@ -468,7 +536,7 @@ fun PlaylistScreen(id: String) {
                     }
                 } else {
                     TrackRow(track, player.currentId == track.id, player.isPlaying,
-                        onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track, playlist) })
+                        onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track, playlist) }, selection = selection)
                 }
             }
             item {

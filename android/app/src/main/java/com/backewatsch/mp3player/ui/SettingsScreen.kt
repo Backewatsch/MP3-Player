@@ -1,4 +1,9 @@
 package com.backewatsch.mp3player.ui
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Equalizer
 
 import android.content.Intent
 import android.net.Uri
@@ -59,6 +64,44 @@ fun SettingsSheet(onDismiss: () -> Unit) {
     val player by app.player.state.collectAsState()
     var confirmConvert by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
+    val nav = LocalNav.current
+    var backupStatus by remember { mutableStateOf<String?>(null) }
+    var backupBusy by remember { mutableStateOf(false) }
+    var includeMusic by remember { mutableStateOf(true) }
+    val dateTag = java.time.LocalDate.now().toString()
+    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupBusy = true
+        app.scope.launch {
+            backupStatus = try {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    app.backup.export(out, includeMusic) { done, total -> backupStatus = "Sichere Lied $done von $total …" }
+                } ?: throw IllegalStateException("Datei konnte nicht geschrieben werden.")
+                "✓ Sicherung gespeichert (" + (if (includeMusic) "mit Musik" else "Playlists, Herzen und Statistik") + ")."
+            } catch (e: Exception) {
+                "Sicherung fehlgeschlagen: ${e.message}"
+            } finally {
+                backupBusy = false
+            }
+        }
+    }
+    val restorer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupBusy = true
+        backupStatus = "Stelle wieder her …"
+        app.scope.launch {
+            backupStatus = try {
+                val r = context.contentResolver.openInputStream(uri)?.use { app.backup.restore(it) }
+                    ?: throw IllegalStateException("Datei nicht lesbar.")
+                "✓ Wiederhergestellt: ${r.tracksAdded} Lieder neu, ${r.tracksMatched} schon vorhanden, ${r.playlists} Playlists" +
+                    (if (r.tracksMissing > 0) " · ${r.tracksMissing} Lieder fehlen (Sicherung ohne Musik)." else ".")
+            } catch (e: Exception) {
+                "Wiederherstellen fehlgeschlagen: ${e.message}"
+            } finally {
+                backupBusy = false
+            }
+        }
+    }
     LaunchedEffect(Unit) { if (update == UpdateChecker.State.Idle) app.updates.check() }
     val convertible = lib.tracks.count { !com.backewatsch.mp3player.data.FileNames.isMp3(it.fileName) }
 
@@ -123,6 +166,43 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                     androidx.compose.material3.Switch(checked = own, onCheckedChange = { app.setShowOwnCovers(it) })
                 }
             }
+
+            SectionHeader("Klang")
+            Card {
+                val sound by app.sound.settings.collectAsState()
+                ActionLine(
+                    "Equalizer & Überblenden" + (if (sound.enabled) " · ${sound.preset}" else "") +
+                        (if (sound.crossfadeSec > 0) " · ${sound.crossfadeSec} s" else ""),
+                    Icons.Default.Equalizer, "openSound",
+                ) { nav.showSound = true }
+            }
+
+            SectionHeader("Sicherung")
+            Card {
+                Row(
+                    Modifier.fillMaxWidth().clickable { includeMusic = !includeMusic }.padding(16.dp).testTag("backupMusicSwitch"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Musikdateien mitsichern")
+                        Text(if (includeMusic) "Komplett – für ein neues Handy (größere Datei)" else "Nur Playlists, Herzen und Statistik (klein)",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.Switch(checked = includeMusic, onCheckedChange = { includeMusic = it })
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ActionLine("Sicherung erstellen", Icons.Default.Save, "backupCreate", enabled = !backupBusy) {
+                    exporter.launch("ILLEGAL-FREEDOM-MUSIC-Sicherung-$dateTag.zip")
+                }
+                ActionLine("Sicherung wiederherstellen", Icons.Default.Restore, "backupRestore", enabled = !backupBusy) {
+                    restorer.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                }
+                if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp), color = Accent)
+                backupStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp).testTag("backupStatus")) }
+            }
+            Text("Speichere die Sicherung z. B. in „Downloads“ oder Google Drive. Beim Wiederherstellen geht nichts verloren – Vorhandenes wird zusammengeführt.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
 
             SectionHeader("Konverter")
             Card {

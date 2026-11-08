@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
@@ -60,6 +62,8 @@ fun StartScreen() {
     val history = remember(lib) { app.library.history() }
     val recent = remember(lib) { app.library.recentlyPlayed(15) }
     val current = lib.tracks.firstOrNull { it.id == player.currentId }
+    val favorites = remember(lib) { app.library.favoriteTracks() }
+    val stats = remember(lib) { com.backewatsch.mp3player.data.Stats.summary(lib) }
 
     LazyColumn(Modifier.fillMaxSize().testTag("startScreen")) {
         item {
@@ -116,6 +120,52 @@ fun StartScreen() {
                         }
                         Icon(Icons.Default.PlayArrow, null, tint = Accent)
                     }
+                }
+            }
+        }
+
+        // Lieblingssongs
+        if (favorites.isNotEmpty()) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionHeader("Lieblingssongs")
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { app.player.play(favorites, 0) }, modifier = Modifier.padding(end = 8.dp, top = 12.dp)) {
+                        Text("Alle abspielen", color = Accent)
+                    }
+                }
+            }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    itemsIndexed(favorites.take(20), key = { _, t -> "f-" + t.id }) { index, track ->
+                        Column(Modifier.width(120.dp).clickable { app.player.play(favorites, index) }.testTag("startFav-${track.title}")) {
+                            Artwork(track, 120.dp, 12.dp)
+                            Text(track.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 6.dp))
+                            Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Statistik in Kürze
+        item { SectionHeader("Deine Statistik") }
+        item {
+            Card {
+                Row(Modifier.fillMaxWidth().clickable { nav.push(LibRoute.Stats) }.padding(14.dp).testTag("startStats"),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BarChart, null, tint = Accent)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Diesen Monat: " + com.backewatsch.mp3player.data.Stats.formatListening(stats.listenedThisMonthMs) +
+                            " · ${stats.playsThisMonth} Lieder", fontWeight = FontWeight.SemiBold)
+                        Text(stats.topThisMonth.firstOrNull()?.let { "Dein Nr.-1-Song: ${it.first.title}" } ?: "Top 10, Hörzeit und Top-Interpreten",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

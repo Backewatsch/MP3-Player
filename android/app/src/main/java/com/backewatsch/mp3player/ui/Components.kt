@@ -24,9 +24,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,14 +79,33 @@ fun Artwork(track: Track?, size: Dp, corner: Dp = 6.dp) {
     }
 }
 
-/** Titelzeile: Tippen spielt, „⋮“ öffnet das Optionsmenü, langes Drücken ebenfalls. */
+/**
+ * Titelzeile: Tippen spielt, „⋮“ öffnet das Optionsmenü. Mit [selection] startet langes Drücken die
+ * Mehrfachauswahl (sonst öffnet es das Menü); während der Auswahl schaltet Tippen das Häkchen um.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TrackRow(track: Track, isCurrent: Boolean, isPlaying: Boolean, onPlay: () -> Unit, onMore: () -> Unit) {
+fun TrackRow(
+    track: Track,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    onPlay: () -> Unit,
+    onMore: () -> Unit,
+    selection: SelectionState? = null,
+) {
+    val app = LocalContext.current.app
+    val lib by app.library.state.collectAsState()
+    val favorite = track.id in lib.favorites
+    val selecting = selection?.active == true
+    val selected = selection != null && track.id in selection.ids
     Row(
         Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onPlay, onLongClick = onMore)
+            .background(if (selected) Accent.copy(alpha = 0.10f) else Color.Transparent)
+            .combinedClickable(
+                onClick = { if (selecting) selection!!.toggle(track.id) else onPlay() },
+                onLongClick = { if (selection != null) selection.toggle(track.id) else onMore() },
+            )
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .testTag("track-${track.title}"),
         verticalAlignment = Alignment.CenterVertically,
@@ -101,13 +123,20 @@ fun TrackRow(track: Track, isCurrent: Boolean, isPlaying: Boolean, onPlay: () ->
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (isCurrent && isPlaying) Icon(Icons.Default.GraphicEq, null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+        if (favorite) Icon(Icons.Default.Favorite, "Lieblingssong", tint = Accent, modifier = Modifier.size(14.dp).testTag("fav-${track.title}"))
+        if (isCurrent && isPlaying) Icon(Icons.Default.GraphicEq, null, tint = NeonCyan, modifier = Modifier.padding(start = 6.dp).size(18.dp))
         Text(
             formatTime(track.durationMs), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp),
         )
-        IconButton(onClick = onMore, modifier = Modifier.testTag("trackMore")) {
-            Icon(Icons.Default.MoreVert, "Optionen für ${track.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (selecting) {
+            Checkbox(checked = selected, onCheckedChange = { selection!!.toggle(track.id) },
+                colors = CheckboxDefaults.colors(checkedColor = Accent, checkmarkColor = Color.Black),
+                modifier = Modifier.testTag("check-${track.title}"))
+        } else {
+            IconButton(onClick = onMore, modifier = Modifier.testTag("trackMore")) {
+                Icon(Icons.Default.MoreVert, "Optionen für ${track.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

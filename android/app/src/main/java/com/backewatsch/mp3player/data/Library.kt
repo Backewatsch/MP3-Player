@@ -62,6 +62,13 @@ class Library(
     }
 
     fun sortedTracks(): List<Track> = tracks.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+    fun sortedTracks(order: TrackSort): List<Track> = order.apply(tracks, _state.value.playCounts)
+    fun isFavorite(track: Track) = track.id in _state.value.favorites
+    /** Lieblingssongs, zuletzt markierte zuerst */
+    fun favoriteTracks(): List<Track> {
+        val byId = tracks.associateBy { it.id }
+        return _state.value.favorites.mapNotNull { byId[it] }
+    }
     fun pinnedTracks(): List<Track> = _state.value.pinned.mapNotNull { track(it) }
     fun isPinned(track: Track) = track.id in _state.value.pinned
     fun tracksByArtist(artist: String) = sortedTracks().filter { it.artist.equals(artist, ignoreCase = true) }
@@ -168,6 +175,7 @@ class Library(
                     tracks = s.tracks.filter { it.id !in missing } + fresh,
                     playlists = s.playlists.map { p -> p.copy(trackIds = p.trackIds.filter { it !in missing }) },
                     pinned = s.pinned.filter { it !in missing },
+                    favorites = s.favorites.filter { it !in missing },
                 )
             }
         }
@@ -258,18 +266,37 @@ class Library(
 
     // region Bearbeiten
 
-    fun delete(track: Track) {
-        fileOf(track).delete()
-        storage.artworkFor(track.id).delete()
+    fun delete(track: Track) = deleteAll(listOf(track))
+
+    /** Löscht mehrere Titel vom Gerät und aus allen Playlists. */
+    fun deleteAll(list: List<Track>) {
+        if (list.isEmpty()) return
+        val ids = list.map { it.id }.toSet()
+        list.forEach { fileOf(it).delete(); storage.artworkFor(it.id).delete() }
         _state.update { s ->
             s.copy(
-                tracks = s.tracks.filter { it.id != track.id },
-                playlists = s.playlists.map { p -> p.copy(trackIds = p.trackIds - track.id) },
-                pinned = s.pinned - track.id,
-                playCounts = s.playCounts - track.id,
-                history = s.history.filter { it.trackId != track.id },
+                tracks = s.tracks.filter { it.id !in ids },
+                playlists = s.playlists.map { p -> p.copy(trackIds = p.trackIds.filter { it !in ids }) },
+                pinned = s.pinned.filter { it !in ids },
+                favorites = s.favorites.filter { it !in ids },
+                playCounts = s.playCounts - ids,
+                history = s.history.filter { it.trackId !in ids },
+                plays = s.plays.filter { it.trackId !in ids },
             )
         }
+        save()
+    }
+
+    fun toggleFavorite(track: Track) {
+        _state.update { s ->
+            s.copy(favorites = if (track.id in s.favorites) s.favorites - track.id else listOf(track.id) + s.favorites)
+        }
+        save()
+    }
+
+    /** Mehrere Titel als Lieblingssongs markieren */
+    fun addFavorites(list: List<Track>) {
+        _state.update { s -> s.copy(favorites = (list.map { it.id }.filter { it !in s.favorites } + s.favorites)) }
         save()
     }
 
@@ -316,7 +343,26 @@ class Library(
     /** Titel wurde richtig gehört (nicht nur angespielt) → zählt für „Oft gespielt“ */
     fun recordPlay(trackId: String) {
         if (track(trackId) == null) return
-        _state.update { s -> s.copy(playCounts = s.playCounts + (trackId to ((s.playCounts[trackId] ?: 0) + 1))) }
+        val now = System.currentTimeMillis()
+        _state.update { s ->
+            s.copy(
+                playCounts = s.playCounts + (trackId to ((s.playCounts[trackId] ?: 0) + 1)),
+                plays = (listOf(PlayEvent(trackId, now)) + s.plays).take(Stats.MAX_PLAYS),
+            )
+        }
+        save()
+    }
+
+    /** Hörzeit für die Statistik hinzufügen */
+    fun addListened(ms: Long, now: Long = System.currentTimeMillis()) {
+        if (ms <= 0) return
+        val key = Stats.monthKey(now)
+        _state.update { s -> s.copy(listenedByMonth = s.listenedByMonth + (key to ((s.listenedByMonth[key] ?: 0) + ms))) }
+        save()
+    }
+
+    fun clearStats() {
+        _state.update { it.copy(plays = emptyList(), listenedByMonth = emptyMap()) }
         save()
     }
 
@@ -369,6 +415,10 @@ class Library(
     fun add(track: Track, playlist: Playlist) =
         updatePlaylist(playlist.id) { if (track.id in it.trackIds) it else it.copy(trackIds = it.trackIds + track.id) }
 
+    /** Mehrere Titel (ohne Doppelte) an eine Playlist anhängen */
+    fun addAll(list: List<Track>, playlist: Playlist) =
+        updatePlaylist(playlist.id) { p -> p.copy(trackIds = (p.trackIds + list.map { it.id }).distinct()) }
+
     fun remove(track: Track, playlist: Playlist) =
         updatePlaylist(playlist.id) { it.copy(trackIds = it.trackIds - track.id) }
 
@@ -386,6 +436,95 @@ class Library(
 
     // endregion
 
+    // region Sicherung
+
+    /** Ergebnis einer Wiederherstellung */
+    data class RestoreResult(val tracksAdded: Int, val tracksMatched: Int, val tracksMissing: Int, val playlists: Int)
+
+    /** Aktueller Stand für eine Sicherung */
+    fun snapshot(): LibraryState = _state.value
+
+    /**
+     * Spielt eine Sicherung ein, ohne Vorhandenes zu verlieren: Titel werden über ID, Herkunft oder
+     * Titel+Interpret+Länge wiedererkannt; fehlende Titel kommen aus [musicFiles] (Dateiname → Datei), falls vorhanden.
+     * Playlists werden über den Namen zusammengeführt, Herzen/Kurzwahl vereinigt, Zähler und Hörzeit übernommen.
+     */
+    suspend fun restore(backup: LibraryState, musicFiles: Map<String, File>, artworkFiles: Map<String, File>): RestoreResult {
+        val idMap = mutableMapOf<String, String>()
+        var added = 0
+        var matched = 0
+        var missing = 0
+        val newTracks = mutableListOf<Track>()
+        val reserved = mutableListOf<String>()
+        try {
+            for (bt in backup.tracks) {
+                val existing = track(bt.id)
+                    ?: tracks.firstOrNull { bt.source.isNotEmpty() && it.source == bt.source }
+                    ?: tracks.firstOrNull {
+                        it.title.equals(bt.title, ignoreCase = true) && it.artist.equals(bt.artist, ignoreCase = true) &&
+                            kotlin.math.abs(it.durationMs - bt.durationMs) < 2_000
+                    }
+                if (existing != null) {
+                    idMap[bt.id] = existing.id; matched++; continue
+                }
+                val file = musicFiles[bt.fileName]
+                if (file == null || !file.exists()) { missing++; continue }
+                val destination = mutex.withLock {
+                    storage.uniqueDestination(FileNames.sanitize(bt.fileName)).also { importing += it.name; reserved += it.name }
+                }
+                withContext(Dispatchers.IO) { file.copyTo(destination, overwrite = false) }
+                val id = if (newTracks.none { it.id == bt.id }) bt.id else java.util.UUID.randomUUID().toString()
+                artworkFiles[bt.id]?.takeIf { it.exists() }?.let { art ->
+                    withContext(Dispatchers.IO) { art.copyTo(storage.artworkFor(id), overwrite = true) }
+                }
+                newTracks += bt.copy(id = id, fileName = destination.name)
+                idMap[bt.id] = id
+                added++
+            }
+
+            fun map(ids: List<String>) = ids.mapNotNull { idMap[it] }
+            mutex.withLock {
+                _state.update { s ->
+                    var playlists = s.playlists
+                    for (bp in backup.playlists) {
+                        val ids = map(bp.trackIds)
+                        val target = if (bp.id == DOWNLOADS_PLAYLIST_ID) playlists.firstOrNull { it.id == DOWNLOADS_PLAYLIST_ID }
+                            else playlists.firstOrNull { it.id != DOWNLOADS_PLAYLIST_ID && it.name.equals(bp.name.trim(), ignoreCase = true) }
+                        playlists = if (target != null) {
+                            playlists.map { if (it.id == target.id) it.copy(trackIds = (it.trackIds + ids).distinct()) else it }
+                        } else {
+                            val id = if (playlists.none { it.id == bp.id }) bp.id else java.util.UUID.randomUUID().toString()
+                            playlists + Playlist(id = id, name = bp.name, trackIds = ids.distinct())
+                        }
+                    }
+                    val counts = s.playCounts.toMutableMap()
+                    backup.playCounts.forEach { (id, n) -> idMap[id]?.let { counts[it] = maxOf(counts[it] ?: 0, n) } }
+                    val listened = s.listenedByMonth.toMutableMap()
+                    backup.listenedByMonth.forEach { (k, v) -> listened[k] = maxOf(listened[k] ?: 0, v) }
+                    fun mergeEvents(a: List<PlayEvent>, b: List<PlayEvent>, max: Int) =
+                        (a + b.mapNotNull { e -> idMap[e.trackId]?.let { e.copy(trackId = it) } })
+                            .distinctBy { it.trackId to it.at }.sortedByDescending { it.at }.take(max)
+                    s.copy(
+                        tracks = s.tracks + newTracks,
+                        playlists = playlists,
+                        pinned = (s.pinned + map(backup.pinned)).distinct(),
+                        favorites = (s.favorites + map(backup.favorites)).distinct(),
+                        playCounts = counts,
+                        history = mergeEvents(s.history, backup.history, MAX_HISTORY),
+                        plays = mergeEvents(s.plays, backup.plays, Stats.MAX_PLAYS),
+                        listenedByMonth = listened,
+                    )
+                }
+            }
+            save()
+            return RestoreResult(added, matched, missing, backup.playlists.size)
+        } finally {
+            mutex.withLock { importing -= reserved.toSet() }
+        }
+    }
+
+    // endregion
+
     // region Speichern
 
     private fun load() {
@@ -395,6 +534,7 @@ class Library(
             .onSuccess { loaded -> _state.value = loaded.copy(pinned = loaded.pinned.filter { id -> loaded.tracks.any { it.id == id } }) }
     }
 
+    @Synchronized
     private fun save() {
         val text = json.encodeToString(LibraryState.serializer(), _state.value.copy(version = LibraryState.CURRENT_VERSION))
         val tmp = File(storage.indexFile.parentFile, storage.indexFile.name + ".tmp")

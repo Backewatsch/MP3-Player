@@ -9,11 +9,14 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -258,5 +261,77 @@ class UiFlowTest {
         instrumentation.runOnMainSync { instrumentation.targetContext.app.browser.submit("https://m.youtube.com") }
         rule.waitUntilAtLeastOneExists(hasTestTag("youtubeHint"), 30_000)
         screenshot("a12-YouTube-Hinweis")
+    }
+
+    /** Sortieren, Mehrfachauswahl, Lieblingssongs, Statistik, Klang */
+    @Test fun t5_newFeatures() {
+        val app = instrumentation.targetContext.app
+        val dir = File(instrumentation.targetContext.cacheDir, "ui-features").apply { mkdirs() }
+        val tracks = listOf("Alpha", "Bravo", "Charlie").map { name ->
+            val f = File(dir, "$name.mp3")
+            instrumentation.context.assets.open("untagged.mp3").use { i -> f.outputStream().use { i.copyTo(it) } }
+            kotlinx.coroutines.runBlocking { app.library.import(f, move = true) }
+        }
+        tracks.forEach { app.library.recordPlay(it.id) }
+        app.library.recordPlay(tracks[1].id)
+        app.library.addListened(47 * 60_000L)
+
+        rule.onNodeWithTag("tab-library").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("category-Titel"), 5_000)
+        rule.onNodeWithTag("category-Titel").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("sortButton"), 5_000)
+
+        // Sortieren
+        rule.onNodeWithTag("sortButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("sort-MOST_PLAYED"), 5_000)
+        screenshot("a20-Sortieren")
+        rule.onNodeWithTag("sort-MOST_PLAYED").performClick()
+        rule.waitForIdle()
+        org.junit.Assert.assertEquals(com.backewatsch.mp3player.data.TrackSort.MOST_PLAYED, app.trackSort.value)
+
+        // Mehrfachauswahl: lange drücken, zweites antippen, Herz für beide
+        rule.onNodeWithTag("track-Alpha").performTouchInput { longClick() }
+        rule.waitUntilAtLeastOneExists(hasTestTag("selectionCount"), 5_000)
+        rule.onNodeWithTag("track-Charlie").performClick()
+        rule.waitUntilAtLeastOneExists(hasText("2 ausgewählt"), 5_000)
+        screenshot("a21-Mehrfachauswahl")
+        rule.onNodeWithTag("sel-fav").performClick()
+        rule.waitUntil(5_000) { app.library.state.value.favorites.size == 2 }
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag("selectionCount").fetchSemanticsNodes().isEmpty() }
+        app.setTrackSort(com.backewatsch.mp3player.data.TrackSort.TITLE)
+
+        // Lieblingssongs
+        rule.onNodeWithContentDescription("Zurück").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("category-Lieblingssongs"), 5_000)
+        rule.onNodeWithTag("category-Lieblingssongs").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("track-Charlie"), 5_000)
+        screenshot("a22-Lieblingssongs")
+        rule.onNodeWithContentDescription("Zurück").performClick()
+
+        // Statistik
+        rule.waitUntilAtLeastOneExists(hasTestTag("category-Statistik"), 5_000)
+        rule.onNodeWithTag("category-Statistik").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("stat-month"), 5_000)
+        org.junit.Assert.assertTrue(rule.onAllNodesWithText("47 Min.", substring = true).fetchSemanticsNodes().isNotEmpty())
+        screenshot("a23-Statistik")
+        rule.onNodeWithContentDescription("Zurück").performClick()
+
+        // Startseite zeigt Lieblingssongs und Statistik
+        rule.onNodeWithTag("tab-start").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("startStats"), 5_000)
+        screenshot("a24-Start-Favoriten")
+
+        // Player: Herz und Klang
+        instrumentation.runOnMainSync { app.player.play(tracks, 1) }
+        rule.waitUntilAtLeastOneExists(hasTestTag("miniPlayer"), 10_000)
+        rule.onNodeWithTag("miniPlayer").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("favButton"), 5_000)
+        rule.onNodeWithTag("favButton").performClick()
+        rule.waitUntil(5_000) { app.library.isFavorite(tracks[1]) }
+        rule.onNodeWithTag("soundButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("crossfadeSlider"), 5_000)
+        Thread.sleep(800)
+        screenshot("a25-Klang")
+        backUntil("tab-start")
     }
 }
