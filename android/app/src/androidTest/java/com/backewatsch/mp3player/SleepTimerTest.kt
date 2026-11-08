@@ -52,10 +52,11 @@ class SleepTimerTest {
         }
 
         instrumentation.runOnMainSync { app.player.startSleepTimerMs(3_000) }
-        Thread.sleep(1_500)
-        var stillPlaying = false
-        instrumentation.runOnMainSync { stillPlaying = app.player.state.value.isPlaying && app.player.sleepRemainingMs() != null }
-        assertTrue("vor Ablauf läuft die Musik weiter", stillPlaying)
+        // Beim Wiederholen eines 2-s-Liedes ist „läuft“ am Übergang kurz falsch → kurz warten statt Momentaufnahme
+        Thread.sleep(800)
+        waitFor("vor Ablauf läuft die Musik weiter", 1_000) {
+            app.player.state.value.isPlaying && app.player.sleepRemainingMs() != null
+        }
 
         waitFor("nach Ablauf ist die Musik aus und der Timer beendet", 8_000) {
             !app.player.state.value.isPlaying && app.player.sleepRemainingMs() == null
@@ -74,9 +75,7 @@ class SleepTimerTest {
             app.player.state.value.isPlaying && app.player.state.value.repeatMode == Player.REPEAT_MODE_ONE
         }
         instrumentation.runOnMainSync { app.player.startSleepTimerMs(2_000); app.player.cancelSleepTimer() }
-        Thread.sleep(3_500)
-        var playing = false
-        instrumentation.runOnMainSync { playing = app.player.state.value.isPlaying }
-        assertTrue("abgebrochener Timer schaltet nichts aus", playing)
+        Thread.sleep(3_000)
+        waitFor("abgebrochener Timer schaltet nichts aus", 1_500) { app.player.state.value.isPlaying }
     }
 }

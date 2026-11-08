@@ -204,7 +204,6 @@ final class MP3PlayerUITests: XCTestCase {
         gear.tap()
         XCTAssertTrue(app.staticTexts["currentVersion"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["checkUpdatesButton"].exists)
-        XCTAssertTrue(app.buttons["convertAllButton"].exists, "Konverter fehlt")
         let done = NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@",
                                "neueste Version", "Update verfügbar", "Keine öffentliche Version", "Fehler")
         _ = app.staticTexts.containing(done).firstMatch.waitForExistence(timeout: 20)
@@ -212,6 +211,8 @@ final class MP3PlayerUITests: XCTestCase {
         app.swipeUp()
         XCTAssertTrue(app.buttons["backupCreate"].waitForExistence(timeout: 5), "Sicherung fehlt")
         XCTAssertTrue(app.buttons["openSound"].exists, "Klang fehlt")
+        if !app.buttons["convertAllButton"].exists { app.swipeUp() }
+        XCTAssertTrue(app.buttons["convertAllButton"].waitForExistence(timeout: 5), "Konverter fehlt")
         screenshot("13b-Einstellungen-Sicherung")
         app.buttons["Fertig"].firstMatch.tap()
     }

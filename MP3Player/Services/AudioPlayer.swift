@@ -79,6 +79,8 @@ final class AudioPlayer: NSObject, ObservableObject {
     private var heardSeconds: Double = 0
     private var listenedPending: Double = 0
     private var lastTick: Date?
+    /// Wie viele Ticks die Position schon am Dateiende steht (Absicherung, falls die Engine das Ende nicht meldet)
+    private var endTicks = 0
 
     override init() {
         super.init()
@@ -484,6 +486,7 @@ final class AudioPlayer: NSObject, ObservableObject {
 
     private func trackFinished() {
         guard let i = index else { return }
+        endTicks = 0
         flushListening()
         if repeatMode == .one {
             schedule(from: 0)
@@ -541,9 +544,22 @@ final class AudioPlayer: NSObject, ObservableObject {
         let now = Date()
         let delta = min(1, max(0, now.timeIntervalSince(lastTick ?? now)))
         lastTick = now
-        let position = Double(currentFrame) / sampleRate
-        // Lautstärke (Ein-/Ausblenden, Schlafmodus) bei jedem Tick
-        currentTime = position
+        let frame = currentFrame
+        let position = Double(frame) / sampleRate
+        // Anzeige nur bei spürbarer Änderung aktualisieren (sonst zeichnet SwiftUI 10× pro Sekunde neu)
+        if abs(position - currentTime) >= 0.25 || frame >= fileLength { currentTime = position }
+        // Ende erreicht, aber keine Meldung der Engine → selbst weiterschalten
+        if fileLength > 0 && frame >= fileLength {
+            endTicks += 1
+            if endTicks >= 4 {
+                endTicks = 0
+                generation += 1 // eine evtl. noch kommende Meldung ignorieren
+                trackFinished()
+                return
+            }
+        } else {
+            endTicks = 0
+        }
         applyVolume()
         // Schlafmodus abgelaufen → Musik aus
         if let end = sleepEnd, end <= now {
