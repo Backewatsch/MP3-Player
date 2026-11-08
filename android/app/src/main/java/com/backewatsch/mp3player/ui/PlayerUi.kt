@@ -1,6 +1,7 @@
 package com.backewatsch.mp3player.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -70,19 +71,19 @@ fun MiniPlayer(onOpen: () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(Brush.horizontalGradient(listOf(CyberPanelHigh, CyberPanel)))
             .clickable(onClick = onOpen)
             .testTag("miniPlayer"),
     ) {
         val fraction = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
-        Box(Modifier.fillMaxWidth().height(2.dp)) {
-            Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Accent))
+        Box(Modifier.fillMaxWidth().height(3.dp).background(CyberLine)) {
+            Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Brush.horizontalGradient(listOf(Accent, NeonCyan))))
         }
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Artwork(track, 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(track.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(track.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = NeonCyan)
                 if (track.artist.isNotEmpty()) {
                     Text(track.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
@@ -91,6 +92,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
                 Icon(
                     if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     if (state.isPlaying) "Pause" else "Abspielen",
+                    tint = Accent,
                 )
             }
             IconButton(onClick = app.player::next) { Icon(Icons.Default.SkipNext, "Nächster Titel") }
@@ -113,13 +115,14 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color.Black,
+        containerColor = CyberBlack,
         dragHandle = null,
     ) {
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Accent.copy(alpha = 0.45f), AccentPurple.copy(alpha = 0.25f), Color.Black))),
+                .cyberBackground()
+                .background(Brush.verticalGradient(listOf(Accent.copy(alpha = 0.30f), AccentPurple.copy(alpha = 0.18f), Color.Transparent))),
         ) {
             if (track == null) {
                 EmptyHint("Nichts wird abgespielt", "Wähle einen Titel in der Mediathek.")
@@ -133,12 +136,15 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                     IconButton(onClick = { nav.actions.open(track) }) { Icon(Icons.Default.MoreVert, "Optionen") }
                 }
                 Spacer(Modifier.weight(1f))
-                Artwork(track, 300.dp, 16.dp)
+                // Cover mit Neon-Rahmen
+                Box(
+                    Modifier.border(2.dp, Brush.linearGradient(listOf(NeonCyan, Accent)),
+                        androidx.compose.foundation.shape.CutCornerShape(topStart = 24.dp, bottomEnd = 24.dp)).padding(6.dp),
+                ) { Artwork(track, 290.dp, 20.dp) }
                 Spacer(Modifier.height(28.dp))
-                Text(track.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center, maxLines = 2)
-                Text(track.artist.ifEmpty { "Unbekannter Interpret" }, style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                GlitchText(track.title.uppercase(), style = MaterialTheme.typography.headlineSmall, maxLines = 2)
+                Text("> " + track.artist.ifEmpty { "Unbekannter Interpret" }, style = MaterialTheme.typography.titleMedium,
+                    color = NeonCyan)
                 Spacer(Modifier.height(20.dp))
                 val duration = state.durationMs.coerceAtLeast(1)
                 Slider(
@@ -146,7 +152,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                     onValueChange = { scrubbing = true; scrubValue = it },
                     onValueChangeFinished = { app.player.seekTo(scrubValue.toLong()); scrubbing = false },
                     valueRange = 0f..duration.toFloat(),
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White),
+                    colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = Accent, inactiveTrackColor = CyberLine),
                 )
                 Row(Modifier.fillMaxWidth()) {
                     val pos = if (scrubbing) scrubValue.toLong() else state.positionMs
@@ -164,7 +170,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                     IconButton(onClick = app.player::togglePlayPause, modifier = Modifier.size(80.dp).testTag("bigPlayPause")) {
                         Icon(
                             if (state.isPlaying) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
-                            if (state.isPlaying) "Pause" else "Abspielen", Modifier.size(76.dp),
+                            if (state.isPlaying) "Pause" else "Abspielen", Modifier.size(76.dp), tint = Accent,
                         )
                     }
                     IconButton(onClick = app.player::next) { Icon(Icons.Default.SkipNext, "Nächster Titel", Modifier.size(36.dp)) }

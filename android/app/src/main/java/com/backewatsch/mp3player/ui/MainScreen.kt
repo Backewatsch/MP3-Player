@@ -1,7 +1,11 @@
 package com.backewatsch.mp3player.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -79,13 +83,20 @@ fun MainScreen() {
         BackHandler(enabled = nav.tab == TAB_DOWNLOADER) { app.browser.back() }
 
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+            modifier = Modifier.cyberBackground(),
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
             bottomBar = {
                 Column {
                     MiniPlayer(onOpen = { nav.showNowPlaying = true })
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        val colors = NavigationBarItemDefaults.colors(selectedIconColor = Accent, selectedTextColor = Accent,
-                            indicatorColor = Accent.copy(alpha = 0.18f))
+                    // Neon-Linie über der Navigationsleiste
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(
+                        androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Accent, NeonCyan, Accent))))
+                    NavigationBar(containerColor = CyberBlack.copy(alpha = 0.96f)) {
+                        val colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NeonCyan, selectedTextColor = NeonCyan,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            indicatorColor = NeonCyan.copy(alpha = 0.14f))
                         NavigationBarItem(
                             selected = nav.tab == TAB_START, onClick = { nav.tab = TAB_START },
                             icon = { Icon(Icons.Default.Home, null) }, label = { Text("Start") },

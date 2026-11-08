@@ -83,7 +83,7 @@ class UiFlowTest {
         screenshot("a00-Start-leer")
         saveAppIcon()
         rule.onNodeWithTag("tab-library").performClick()
-        rule.waitUntilAtLeastOneExists(hasText("Noch keine Musik"), 10_000)
+        rule.waitUntilAtLeastOneExists(hasText("Noch keine Musik", ignoreCase = true), 10_000)
         rule.onNodeWithText("Heruntergeladen").assertExists()
         screenshot("a01-Mediathek-leer")
 
@@ -91,11 +91,11 @@ class UiFlowTest {
         rule.onNodeWithTag("newPlaylistButton").performClick()
         rule.onNodeWithTag("dialogInput").performTextInput("Sommerhits")
         rule.onNodeWithTag("dialogConfirm").performClick()
-        rule.waitUntilAtLeastOneExists(hasText("Sommerhits"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasText("Sommerhits", ignoreCase = true), 5_000)
         screenshot("a02-Neue-Playlist")
         rule.onNodeWithContentDescription("Zurück").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("settingsButton"), 5_000)
-        rule.waitUntilAtLeastOneExists(hasText("Sommerhits"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasText("Sommerhits", ignoreCase = true), 5_000)
 
         // Info & Updates
         rule.onNodeWithTag("settingsButton").performClick()

@@ -63,10 +63,14 @@ fun StartScreen() {
 
     LazyColumn(Modifier.fillMaxSize().testTag("startScreen")) {
         item {
-            Text(greeting(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 20.dp, top = 24.dp, end = 20.dp))
-            Text("ILLEGAL FREEDOM MUSIC", style = MaterialTheme.typography.labelLarge, color = Accent,
-                modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
+            Column(Modifier.padding(start = 20.dp, top = 28.dp, end = 20.dp, bottom = 8.dp)) {
+                Text("> SYSTEM ONLINE_", style = MaterialTheme.typography.labelLarge, color = NeonYellow)
+                Spacer(Modifier.height(6.dp))
+                GlitchText("ILLEGAL", style = MaterialTheme.typography.headlineLarge)
+                GlitchText("FREEDOM MUSIC", style = MaterialTheme.typography.headlineMedium, color = Accent)
+                Spacer(Modifier.height(6.dp))
+                Text("// " + greeting().uppercase() + ", RUNNER", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+            }
         }
         (update as? UpdateChecker.State.Available)?.let { available ->
             item {
@@ -138,7 +142,8 @@ fun StartScreen() {
                         .padding(horizontal = 16.dp, vertical = 6.dp).testTag("mostPlayed-${track.title}"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("${index + 1}", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
+                    Text("%02d".format(index + 1), color = NeonYellow, fontWeight = FontWeight.Bold,
+                        fontFamily = CyberMono, modifier = Modifier.width(32.dp))
                     Artwork(track, 44.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -148,7 +153,7 @@ fun StartScreen() {
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
                     Icon(Icons.Default.Whatshot, null, tint = Accent)
-                    Text("${count}×", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
+                    Text("${count}×", style = MaterialTheme.typography.labelLarge, color = NeonYellow, modifier = Modifier.padding(start = 4.dp))
                 }
             }
         }

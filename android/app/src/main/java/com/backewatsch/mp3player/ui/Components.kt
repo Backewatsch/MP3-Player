@@ -3,6 +3,12 @@ package com.backewatsch.mp3player.ui
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -59,15 +65,24 @@ fun Artwork(track: Track?, size: Dp, corner: Dp = 6.dp) {
             }
         }
     }
-    val shape = RoundedCornerShape(corner)
+    val shape = CutCornerShape(topStart = corner, bottomEnd = corner)
     if (bitmap != null) {
         Image(bitmap!!, null, Modifier.size(size).clip(shape), contentScale = ContentScale.Crop)
     } else {
         Box(
-            Modifier.size(size).clip(shape).background(Brush.linearGradient(listOf(Accent, AccentPurple))),
+            Modifier.size(size).clip(shape)
+                .background(Brush.linearGradient(listOf(AccentPurple, Accent, NeonCyan)))
+                .drawBehind {
+                    // feines Raster über dem Verlauf
+                    val step = this.size.width / 6
+                    for (i in 1 until 6) {
+                        drawLine(Color.White.copy(alpha = 0.12f), Offset(step * i, 0f), Offset(step * i, this.size.height), 1f)
+                        drawLine(Color.White.copy(alpha = 0.12f), Offset(0f, step * i), Offset(this.size.width, step * i), 1f)
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.MusicNote, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(size * 0.45f))
+            Icon(Icons.Default.MusicNote, null, tint = Color.White.copy(alpha = 0.95f), modifier = Modifier.size(size * 0.45f))
         }
     }
 }
@@ -89,14 +104,15 @@ fun TrackRow(track: Track, isCurrent: Boolean, isPlaying: Boolean, onPlay: () ->
         Column(Modifier.weight(1f)) {
             Text(
                 track.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = if (isCurrent) Accent else MaterialTheme.colorScheme.onSurface,
+                color = if (isCurrent) NeonCyan else MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
             )
             Text(
                 track.artist.ifEmpty { "Unbekannter Interpret" }, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (isCurrent && isPlaying) Icon(Icons.Default.GraphicEq, null, tint = Accent, modifier = Modifier.size(18.dp))
+        if (isCurrent && isPlaying) Icon(Icons.Default.GraphicEq, null, tint = NeonCyan, modifier = Modifier.size(18.dp))
         Text(
             formatTime(track.durationMs), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp),
@@ -107,35 +123,82 @@ fun TrackRow(track: Track, isCurrent: Boolean, isPlaying: Boolean, onPlay: () ->
     }
 }
 
-/** Überschrift eines Abschnitts */
+/** Überschrift eines Abschnitts im Terminal-Stil: „▮ // OFT GESPIELT“ */
 @Composable
 fun SectionHeader(text: String) {
-    Text(
-        text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 6.dp),
-    )
+    Row(Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(width = 3.dp, height = 14.dp).background(Accent))
+        Spacer(Modifier.width(8.dp))
+        Text("// ", style = MaterialTheme.typography.titleSmall, color = Accent)
+        Text(text.uppercase(), style = MaterialTheme.typography.titleSmall, color = NeonCyan)
+    }
 }
 
-/** Abgerundete Gruppe wie bei iOS-Listen */
+/** Gruppe im Cyberpunk-Stil: abgeschrägte Ecken, Neon-Rand */
 @Composable
 fun Card(content: @Composable () -> Unit) {
+    val shape = CutCornerShape(topStart = 14.dp, bottomEnd = 14.dp)
     Column(
         Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(CyberPanelHigh, CyberPanel)))
+            .border(1.dp, Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.7f), Accent.copy(alpha = 0.5f))), shape),
         verticalArrangement = Arrangement.Top,
     ) { content() }
+}
+
+/** Text mit Glitch-Effekt (versetzte Cyan- und Magenta-Kopie) */
+@Composable
+fun GlitchText(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+    maxLines: Int = 1,
+) {
+    Box(modifier) {
+        Text(text, style = style, color = NeonCyan.copy(alpha = 0.85f), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.offset(x = (-1.5).dp, y = 0.5.dp))
+        Text(text, style = style, color = Accent.copy(alpha = 0.85f), maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.offset(x = 1.5.dp, y = (-0.5).dp))
+        Text(text, style = style, color = color, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Cyberpunk-Hintergrund: Neon-Raster, Leuchten und Scanlines */
+fun Modifier.cyberBackground(): Modifier = this.drawBehind {
+    drawRect(CyberBlack)
+    drawRect(Brush.radialGradient(listOf(Accent.copy(alpha = 0.16f), Color.Transparent),
+        center = Offset(size.width * 0.85f, 0f), radius = size.width * 0.9f))
+    drawRect(Brush.radialGradient(listOf(NeonCyan.copy(alpha = 0.10f), Color.Transparent),
+        center = Offset(0f, size.height), radius = size.width * 1.1f))
+    val step = 48.dp.toPx()
+    var x = 0f
+    while (x < size.width) {
+        drawLine(NeonCyan.copy(alpha = 0.045f), Offset(x, 0f), Offset(x, size.height), 1f)
+        x += step
+    }
+    var y = 0f
+    while (y < size.height) {
+        drawLine(NeonCyan.copy(alpha = 0.045f), Offset(0f, y), Offset(size.width, y), 1f)
+        y += step
+    }
+    var s = 0f
+    val gap = 4.dp.toPx()
+    while (s < size.height) {
+        drawLine(Color.Black.copy(alpha = 0.22f), Offset(0f, s), Offset(size.width, s), 1f)
+        s += gap
+    }
 }
 
 @Composable
 fun EmptyHint(title: String, message: String) {
     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.MusicNote, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(Icons.Default.MusicNote, null, Modifier.size(40.dp), tint = NeonCyan)
         Spacer(Modifier.size(8.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium)
+        GlitchText(title.uppercase(), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.size(4.dp))
         Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

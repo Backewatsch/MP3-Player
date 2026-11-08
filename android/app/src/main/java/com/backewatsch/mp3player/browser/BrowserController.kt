@@ -211,9 +211,11 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
 object StartPage {
     const val OFFLINE = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{font-family:sans-serif;margin:0;padding:48px 24px;background:#000;color:#fff;text-align:center}
-h1{font-size:24px} p{color:#aaa;line-height:1.5} .ok{margin-top:28px;padding:14px;border-radius:14px;background:#1c1c1e;color:#fff}</style>
-</head><body><div style="font-size:56px">📴</div><h1>Keine Internetverbindung</h1>
+<style>body{font-family:monospace;margin:0;padding:48px 24px;background:#05030a;color:#ede7ff;text-align:center}
+h1{font-size:22px;letter-spacing:2px;text-transform:uppercase;text-shadow:-2px 0 #00f0ff,2px 0 #ff2bd6}
+p{color:#9c94c8;line-height:1.5} .err{color:#ff3b5c;letter-spacing:2px}
+.ok{margin-top:28px;padding:14px;background:#0d0a1c;border:1px solid rgba(0,240,255,.55);color:#00f0ff}</style>
+</head><body><div class="err">&gt; ERROR 0x00 // NO SIGNAL</div><h1>Keine Internetverbindung</h1>
 <p>Zum Herunterladen brauchst du Internet. Sobald du wieder online bist, tippe auf „Neu laden“.</p>
 <div class="ok">🎵 Deine Musik in der <b>Mediathek</b> funktioniert auch offline.</div></body></html>"""
 
@@ -225,13 +227,22 @@ h1{font-size:24px} p{color:#aaa;line-height:1.5} .ok{margin-top:28px;padding:14p
     const val HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
- body{font-family:sans-serif;margin:0;padding:20px 16px 40px;background:#000;color:#fff}
- h1{font-size:26px;margin:8px 0 4px} p{color:#aaa;line-height:1.4;margin:6px 0 18px}
- a.card{display:block;padding:14px 16px;margin:10px 0;border-radius:14px;text-decoration:none;color:inherit;background:#1c1c1e}
- a.card b{display:block;font-size:17px} a.card span{font-size:14px;color:#999}
- .hint{font-size:14px;padding:12px 14px;border-radius:12px;background:rgba(250,46,102,.18);margin-top:22px}
+ body{font-family:monospace;margin:0;padding:22px 16px 40px;color:#ede7ff;
+   background:#05030a linear-gradient(rgba(0,240,255,.05) 1px,transparent 1px) 0 0/40px 40px,
+   linear-gradient(90deg,rgba(0,240,255,.05) 1px,transparent 1px) 0 0/40px 40px}
+ .sys{color:#f7f000;font-size:13px;letter-spacing:1px}
+ h1{font-size:28px;margin:6px 0 4px;letter-spacing:3px;text-transform:uppercase;color:#fff;
+   text-shadow:-2px 0 #00f0ff,2px 0 #ff2bd6}
+ p{color:#9c94c8;line-height:1.5;margin:6px 0 18px}
+ a.card{display:block;padding:14px 16px;margin:12px 0;text-decoration:none;color:inherit;background:#0d0a1c;
+   border:1px solid rgba(0,240,255,.55);clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
+   box-shadow:0 0 14px rgba(255,43,214,.25) inset}
+ a.card b{display:block;font-size:16px;color:#00f0ff;letter-spacing:1px;text-transform:uppercase}
+ a.card span{font-size:13px;color:#9c94c8}
+ .hint{font-size:13px;padding:12px 14px;border-left:3px solid #ff2bd6;background:rgba(255,43,214,.10);margin-top:22px}
 </style></head><body>
-<h1>🎵 Musik finden</h1>
+<div class="sys">&gt; SYSTEM ONLINE_ // NETRUNNER-MODUS</div>
+<h1>Musik finden</h1>
 <p>Tippe auf einen Link zu einer Audio- oder Videodatei – oder starte ein Audio/Video auf einer Seite und tippe auf <b>„Als Audio laden“</b>. Alles wird automatisch in MP3 umgewandelt und landet in „Heruntergeladen“ und in deiner Wiedergabeliste.</p>
 <a class="card" href="https://archive.org/details/audio"><b>Internet Archive</b><span>Millionen freie Aufnahmen, Live-Konzerte, Hörbücher</span></a>
 <a class="card" href="https://freemusicarchive.org/"><b>Free Music Archive</b><span>Kostenlose, legal nutzbare Musik</span></a>

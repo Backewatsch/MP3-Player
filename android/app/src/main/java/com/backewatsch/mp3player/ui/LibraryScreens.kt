@@ -104,10 +104,13 @@ fun LibraryHost() {
 @Composable
 fun ScreenTopBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
     CenterAlignedTopAppBar(
-        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        title = { GlitchText(title.uppercase(), style = MaterialTheme.typography.titleLarge) },
         navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") } },
         actions = { actions() },
-        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            navigationIconContentColor = NeonCyan, actionIconContentColor = NeonCyan,
+        ),
     )
 }
 
