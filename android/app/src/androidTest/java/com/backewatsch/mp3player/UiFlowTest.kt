@@ -83,6 +83,7 @@ class UiFlowTest {
         rule.onNodeWithTag("convertAllButton").assertExists()
         Thread.sleep(3000)
         screenshot("a13-Info-Updates")
+        back() // Info-Blatt schließen
         backUntil("tab-downloader")
 
         // Browser-Tab
@@ -141,8 +142,7 @@ class UiFlowTest {
     @Test fun t3_youTubeHint() {
         rule.onNodeWithTag("tab-downloader").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("addressField"), 5_000)
-        rule.onNodeWithTag("addressField").performTextInput("https://m.youtube.com")
-        rule.onNodeWithTag("addressField").performImeAction()
+        instrumentation.runOnMainSync { instrumentation.targetContext.app.browser.submit("https://m.youtube.com") }
         rule.waitUntilAtLeastOneExists(hasTestTag("youtubeHint"), 30_000)
         screenshot("a12-YouTube-Hinweis")
     }
