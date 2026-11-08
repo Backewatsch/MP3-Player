@@ -477,3 +477,64 @@ final class AudioPlayerTests: XCTestCase {
         XCTAssertNotNil(player.errorMessage)
     }
 }
+
+// MARK: - Updates
+
+final class UpdateCheckerTests: XCTestCase {
+    private let sample = """
+    {
+      "tag_name": "v1.0.42",
+      "html_url": "https://github.com/Backewatsch/MP3-Player/releases/tag/v1.0.42",
+      "body": "Neue Funktionen",
+      "published_at": "2026-11-08T13:00:00Z",
+      "assets": [
+        { "name": "altstore-source.json", "browser_download_url": "https://github.com/x/altstore-source.json" },
+        { "name": "MP3Player.ipa", "browser_download_url": "https://github.com/Backewatsch/MP3-Player/releases/download/v1.0.42/MP3Player.ipa" }
+      ]
+    }
+    """
+
+    func testParseRelease() throws {
+        let release = try XCTUnwrap(UpdateChecker.parseRelease(Data(sample.utf8)))
+        XCTAssertEqual(release.version, "1.0.42")
+        XCTAssertEqual(release.build, 42)
+        XCTAssertEqual(release.notes, "Neue Funktionen")
+        XCTAssertEqual(release.ipaURL?.lastPathComponent, "MP3Player.ipa")
+        XCTAssertNotNil(release.date)
+    }
+
+    func testParseRejectsGarbage() {
+        XCTAssertNil(UpdateChecker.parseRelease(Data("{}".utf8)))
+        XCTAssertNil(UpdateChecker.parseRelease(Data("kein json".utf8)))
+        XCTAssertNil(UpdateChecker.parseRelease(Data(#"{"tag_name":"beta","html_url":"https://x"}"#.utf8)))
+    }
+
+    func testBuildNumberAndComparison() throws {
+        XCTAssertEqual(UpdateChecker.buildNumber(fromTag: "v1.0.7"), 7)
+        XCTAssertEqual(UpdateChecker.buildNumber(fromTag: "v1.0.123"), 123)
+        XCTAssertNil(UpdateChecker.buildNumber(fromTag: "latest"))
+        let release = try XCTUnwrap(UpdateChecker.parseRelease(Data(sample.utf8)))
+        XCTAssertTrue(UpdateChecker.isNewer(release, thanBuild: 41))
+        XCTAssertFalse(UpdateChecker.isNewer(release, thanBuild: 42))
+        XCTAssertFalse(UpdateChecker.isNewer(release, thanBuild: 50))
+    }
+
+    func testAltStoreDeepLinks() throws {
+        let ipa = URL(string: "https://github.com/Backewatsch/MP3-Player/releases/download/v1.0.42/MP3Player.ipa")!
+        let install = try XCTUnwrap(UpdateChecker.altStoreInstallURL(for: ipa))
+        XCTAssertEqual(install.scheme, "altstore")
+        XCTAssertEqual(install.host, "install")
+        let items = URLComponents(url: install, resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertEqual(items?.first { $0.name == "url" }?.value, ipa.absoluteString)
+
+        let source = try XCTUnwrap(UpdateChecker.altStoreAddSourceURL())
+        XCTAssertEqual(source.host, "source")
+        XCTAssertEqual(URLComponents(url: source, resolvingAgainstBaseURL: false)?.queryItems?.first?.value,
+                       UpdateChecker.sourceURL.absoluteString)
+    }
+
+    func testAppHasVersionInfo() {
+        XCTAssertFalse((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "").isEmpty)
+        XCTAssertNotNil(Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))
+    }
+}

@@ -120,6 +120,20 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["1 Titel"].waitForExistence(timeout: 5))
     }
 
+    func test5_SettingsShowsVersionAndUpdates() {
+        let gear = app.buttons["settingsButton"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 10))
+        gear.tap()
+        XCTAssertTrue(app.staticTexts["currentVersion"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["checkUpdatesButton"].exists)
+        // Ergebnis der Update-Prüfung abwarten (egal welches)
+        let done = NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@",
+                               "neueste Version", "Update verfügbar", "Noch keine Version", "Fehler")
+        _ = app.staticTexts.containing(done).firstMatch.waitForExistence(timeout: 20)
+        screenshot("13-Info-Updates")
+        app.buttons["Fertig"].tap()
+    }
+
     func test4_YouTubeShowsHint() {
         tab("Browser")
         let address = app.textFields["addressField"]

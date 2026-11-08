@@ -49,7 +49,26 @@ YouTube liefert keine MP3-Dateien aus, sondern verschlüsselte/segmentierte Vide
 
 ### Variante B: Ohne Mac (unsignierte IPA)
 
-Bei jedem Push baut GitHub Actions (`.github/workflows/build.yml`) die App auf einem macOS-Server und stellt eine **unsignierte IPA** als Artefakt bereit (*Actions → neuester Lauf → Artifacts → MP3Player-unsigned-ipa*). Diese kannst du mit einem Sideloading-Tool wie **Sideloadly** oder **AltStore** mit deiner Apple-ID signieren und installieren.
+Bei jedem Push baut GitHub Actions (`.github/workflows/build.yml`) die App auf einem macOS-Server und stellt eine **unsignierte IPA** als Artefakt bereit (*Releases* (oder *Actions → neuester Lauf → Artifacts → MP3Player-unsigned-ipa*)). Diese kannst du mit einem Sideloading-Tool wie **Sideloadly** oder **AltStore** mit deiner Apple-ID signieren und installieren.
+
+## Updates aufs iPhone (ohne Mac)
+
+iOS erlaubt nicht, dass eine selbst installierte App sich selbst ersetzt. Updates laufen deshalb über **AltStore** oder **SideStore**: Diese Apps signieren die IPA mit deiner Apple-ID und installieren sie, und sie melden neue Versionen automatisch.
+
+**So funktioniert es:**
+1. Bei jedem Push baut GitHub die App und testet sie im Simulator. Nur wenn **alle Tests bestehen**, wird automatisch ein neues Release `v1.0.<Build>` mit `MP3Player.ipa` veröffentlicht.
+2. Zu jedem Release gehört eine AltStore-/SideStore-Quelle. Ihre Adresse bleibt immer gleich:
+   ```
+   https://github.com/Backewatsch/MP3-Player/releases/latest/download/altstore-source.json
+   ```
+3. In der App: **Zahnrad (Titel-Tab) → Info & Updates**. Die App sucht beim Start nach neuen Versionen und zeigt dann oben in der Bibliothek „Update verfügbar“ an.
+
+**Einmalige Einrichtung:**
+- **AltStore** ([altstore.io](https://altstore.io)): AltServer auf einem Windows-PC oder Mac installieren, damit AltStore aufs iPhone bringen. Dann in der MP3-App *Info & Updates → „Als Quelle zu AltStore hinzufügen“* antippen. Danach installierst du die App über AltStore → *Durchsuchen*. Updates kommen per *Meine Apps → Aktualisieren* oder direkt per *„Mit AltStore installieren“* aus der MP3-App.
+- **SideStore** ([sidestore.io](https://sidestore.io)): braucht nach der Einrichtung keinen Computer mehr. In der MP3-App „Quellen-Link kopieren“ und in SideStore unter *Quellen → +* einfügen.
+- **Sideloadly** (Windows/Mac): „IPA herunterladen“ und mit Sideloadly installieren. Updates musst du hier selbst einspielen.
+
+Deine Musik und Playlists bleiben bei einem Update erhalten, solange du die App nicht vorher löschst. Mit einer kostenlosen Apple-ID muss AltStore/SideStore die App alle 7 Tage auffrischen. Das passiert automatisch im Hintergrund, wenn das iPhone im WLAN ist (bei AltStore muss dafür auch AltServer laufen).
 
 ## Automatische Tests
 

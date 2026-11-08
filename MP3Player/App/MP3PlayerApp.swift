@@ -7,6 +7,7 @@ struct MP3PlayerApp: App {
     @StateObject private var player = AudioPlayer()
     @StateObject private var downloads = DownloadManager()
     @StateObject private var browser = BrowserModel()
+    @StateObject private var updates = UpdateChecker()
     @Environment(\.scenePhase) private var scenePhase
     @State private var openError: String?
 
@@ -24,6 +25,7 @@ struct MP3PlayerApp: App {
                 .environmentObject(player)
                 .environmentObject(downloads)
                 .environmentObject(browser)
+                .environmentObject(updates)
                 .onAppear(perform: connect)
                 .onOpenURL { url in
                     // „Öffnen in … MP3 Player“ aus der Dateien-App oder anderen Apps
@@ -42,7 +44,10 @@ struct MP3PlayerApp: App {
                 }
         }
         .onChange(of: scenePhase) { phase in
-            if phase == .active { Task { await library.rescan() } }
+            if phase == .active {
+                Task { await library.rescan() }
+                Task { await updates.checkIfDue() }
+            }
         }
     }
 

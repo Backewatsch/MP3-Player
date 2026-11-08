@@ -4,6 +4,11 @@ on:
   push:
   workflow_dispatch:
 
+env:
+  # Jede Workflow-Ausführung bekommt eine eigene, steigende Build-Nummer
+  APP_VERSION: 1.0.${{ github.run_number }}
+  APP_BUILD: ${{ github.run_number }}
+
 jobs:
   build:
     name: IPA bauen (iPhone)
@@ -29,6 +34,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" \
             build 2>&1 | tee build.log
 
       - name: Warnungen prüfen
@@ -45,17 +51,19 @@ jobs:
           plutil -p "$PLIST"
           plutil -extract UIBackgroundModes json -o - "$PLIST" | grep -q audio
           plutil -extract UIFileSharingEnabled raw -o - "$PLIST" | grep -q true
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")" = "$APP_VERSION"
+          test "$(plutil -extract CFBundleVersion raw -o - "$PLIST")" = "$APP_BUILD"
 
       - name: Unsignierte IPA packen
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/MP3Player.app Payload/
-          zip -qry MP3Player-unsigned.ipa Payload
+          zip -qry MP3Player.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
           name: MP3Player-unsigned-ipa
-          path: MP3Player-unsigned.ipa
+          path: MP3Player.ipa
 
   test:
     name: Tests im iOS-Simulator
@@ -122,3 +130,42 @@ jobs:
         with:
           name: test-log
           path: test.log
+
+  release:
+    name: Release veröffentlichen (für Updates)
+    needs: [build, test]
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MP3Player-unsigned-ipa
+
+      - name: AltStore-/SideStore-Quelle erzeugen
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          python3 scripts/make_altstore_source.py \
+            --ipa MP3Player.ipa \
+            --version "$APP_VERSION" --build "$APP_BUILD" \
+            --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" \
+            --notes "$COMMIT_MESSAGE" \
+            --out altstore-source.json
+
+      - name: GitHub-Release erstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          # Commit-Text ohne Signaturzeilen als Änderungsnotiz
+          printf '%s\n' "$COMMIT_MESSAGE" | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md
+          gh release create "v$APP_VERSION" MP3Player.ipa altstore-source.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "MP3 Player $APP_VERSION" \
+            --notes-file notes.md \
+            --latest

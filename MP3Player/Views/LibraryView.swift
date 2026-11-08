@@ -13,6 +13,7 @@ struct LibraryView: View {
     @State private var editing: Track?
     @State private var importError: String?
     @State private var pendingDelete: Track?
+    @State private var showSettings = false
 
     private var visibleTracks: [Track] {
         let all = library.sortedTracks
@@ -23,7 +24,8 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                UpdateBanner { showSettings = true }
                 if library.tracks.isEmpty {
                     EmptyStateView(
                         title: "Noch keine Musik",
@@ -37,6 +39,11 @@ struct LibraryView: View {
             .navigationTitle("Titel")
             .searchable(text: $search, prompt: "Titel oder Interpret")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Info & Updates")
+                        .accessibilityIdentifier("settingsButton")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button { showImporter = true } label: { Label("Aus Dateien importieren", systemImage: "folder") }
@@ -87,6 +94,9 @@ struct LibraryView: View {
             }
             .sheet(item: $editing) { track in
                 EditTrackSheet(track: track)
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
             }
         }
     }
