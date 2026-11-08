@@ -24,6 +24,6 @@
                 android:startColor="#FFFF2E63" android:endColor="#FFFF9A00" />
         </aapt:attr>
     </path>
-    <path android:fillColor="#E600E5FF" android:pathData="M33,47.4 L82,47.4 L82,48.8 L33,48.8 Z" />
-    <path android:fillColor="#E6FF0040" android:pathData="M30,58.2 L78,58.2 L78,59.3 L30,59.3 Z" />
+    <path android:fillColor="#B300E5FF" android:pathData="M44,47.6 L77,47.6 L77,48.5 L44,48.5 Z" />
+    <path android:fillColor="#B3FF0040" android:pathData="M40,58.4 L70,58.4 L70,59.1 L40,59.1 Z" />
 </vector>
