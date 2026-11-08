@@ -1,4 +1,4 @@
-# MP3 Player für iPhone und Android
+# ILLEGAL FREEDOM MUSIC – MP3-Player für Android und iPhone
 
 Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiodateien – mit eingebautem Browser, über den du Audiodateien aus dem Internet herunterladen kannst. Heruntergeladene Titel landen automatisch in der Bibliothek und in der Playlist **„Heruntergeladen“**.
 

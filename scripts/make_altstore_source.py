@@ -27,14 +27,14 @@ notes = "\n".join(l for l in args.notes.splitlines()
 tag = f"v{args.version}"
 base = f"https://github.com/{args.repo}"
 source = {
-    "name": "MP3 Player",
+    "name": "ILLEGAL FREEDOM MUSIC",
     "identifier": "com.backewatsch.mp3player.source",
-    "subtitle": "Updates für den MP3 Player",
+    "subtitle": "Updates für ILLEGAL FREEDOM MUSIC",
     "sourceURL": f"{base}/releases/latest/download/altstore-source.json",
     "website": base,
     "apps": [
         {
-            "name": "MP3 Player",
+            "name": "ILLEGAL FREEDOM MUSIC",
             "bundleIdentifier": "com.backewatsch.mp3player",
             "developerName": args.repo.split("/")[0],
             "subtitle": "MP3s abspielen und herunterladen",

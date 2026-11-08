@@ -255,6 +255,6 @@ jobs:
           gh release create "v$APP_VERSION" MP3Player.ipa MP3Player.apk altstore-source.json \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "MP3 Player $APP_VERSION" \
+            --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" \
             --notes-file notes.md \
             --latest

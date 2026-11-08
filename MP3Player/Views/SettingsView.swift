@@ -24,7 +24,7 @@ struct SettingsView: View {
                                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                                         in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("MP3 Player").font(.headline)
+                            Text("ILLEGAL FREEDOM MUSIC").font(.headline)
                             Text("Version \(updates.currentVersion) (Build \(updates.currentBuild))")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)

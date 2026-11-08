@@ -68,7 +68,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 Artwork(null, 56.dp, 13.dp)
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    Text("MP3 Player", fontWeight = FontWeight.SemiBold)
+                    Text("ILLEGAL FREEDOM MUSIC", fontWeight = FontWeight.SemiBold)
                     Text("Version ${app.updates.currentVersion} (Build ${app.updates.currentBuild})",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("currentVersion"))
                     Text("${lib.tracks.size} Titel · ${lib.playlists.size} Playlists", style = MaterialTheme.typography.bodySmall,

@@ -37,7 +37,7 @@ targets:
     info:
       path: MP3Player/Info.plist
       properties:
-        CFBundleDisplayName: MP3 Player
+        CFBundleDisplayName: ILLEGAL FREEDOM MUSIC
         CFBundleDevelopmentRegion: de
         CFBundleLocalizations: [de]
         CFBundleShortVersionString: $(MARKETING_VERSION)
