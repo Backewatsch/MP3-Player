@@ -61,6 +61,8 @@ class UpdateChecker(private val context: Context, val currentVersion: String, va
                     }
                     else -> State.Failed("GitHub antwortet mit Fehler $code.")
                 }
+            } catch (e: java.io.IOException) {
+                State.Failed("Offline – Update-Suche nicht möglich.")
             } catch (e: Exception) {
                 State.Failed(e.message ?: "Keine Verbindung.")
             }

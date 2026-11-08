@@ -64,6 +64,7 @@ Hinweise:
 - Google Play Protect zeigt eventuell eine Warnung („unbekannter Entwickler“), weil die App nicht aus dem Play Store kommt → *Trotzdem installieren*.
 - Musik liegt in `Android/data/com.backewatsch.mp3player/files/Music` (per USB am PC erreichbar). Kopierte Dateien werden automatisch erkannt und zu MP3 umgewandelt.
 - Android kann zusätzlich **WebM, OGG und Opus** lesen und in MP3 umwandeln.
+- **Offline:** Musik, Playlists, Player und Umwandeln funktionieren komplett ohne Internet. Nur Browser, Downloads und die Update-Suche brauchen eine Verbindung (der Browser zeigt dann eine Offline-Seite).
 - Signierschlüssel: liegt bewusst im Repository (`android/keystore/`), damit Updates ohne Einrichtung funktionieren. Wer einen eigenen, geheimen Schlüssel möchte, kann ihn als GitHub-Secret hinterlegen (Umgebungsvariablen `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) – Achtung: Ein Schlüsselwechsel erfordert einmal Neuinstallation.
 
 ## App bauen und aufs iPhone bringen

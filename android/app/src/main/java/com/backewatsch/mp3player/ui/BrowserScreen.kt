@@ -95,6 +95,15 @@ fun BrowserScreen() {
             )
         }
         if (state.loading) LinearProgressIndicator(progress = { state.progress / 100f }, Modifier.fillMaxWidth(), color = Accent)
+        if (state.offline) {
+            Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(10.dp).testTag("offlineHint"),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Info, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Offline – Downloads brauchen Internet. Deine Musik in der Mediathek spielt trotzdem.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        }
         if (FileNames.isYouTube(state.host)) {
             Row(Modifier.fillMaxWidth().background(Color(0x33FF9500)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Info, null)

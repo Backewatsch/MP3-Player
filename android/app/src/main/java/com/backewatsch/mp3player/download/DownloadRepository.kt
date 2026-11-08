@@ -88,6 +88,10 @@ class DownloadRepository(
             val track = library.import(file, move = true, addToDownloads = true, extraPlaylistId = item.playlistId)
             update(item.id) { it.copy(name = track.title, state = State.Finished) }
             _unseen.value += 1
+        } catch (e: java.net.UnknownHostException) {
+            update(item.id) { it.copy(state = State.Failed("Keine Internetverbindung – bitte später erneut versuchen.")) }
+        } catch (e: java.net.ConnectException) {
+            update(item.id) { it.copy(state = State.Failed("Keine Internetverbindung – bitte später erneut versuchen.")) }
         } catch (e: Exception) {
             update(item.id) { it.copy(state = State.Failed(e.message ?: "Download fehlgeschlagen.")) }
         } finally {

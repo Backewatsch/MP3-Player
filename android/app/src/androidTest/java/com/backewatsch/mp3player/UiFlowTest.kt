@@ -4,6 +4,7 @@ import android.Manifest
 import android.graphics.Bitmap
 import androidx.test.rule.GrantPermissionRule
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -139,6 +140,38 @@ class UiFlowTest {
         rule.onNodeWithTag("action-Mitwirkende an Song anzeigen").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("info-Format"), 10_000)
         screenshot("a15-Mitwirkende")
+    }
+
+    /** Ohne Internet: Musik spielt, Browser zeigt die Offline-Seite */
+    @Test fun t4_worksOffline() {
+        val app = instrumentation.targetContext.app
+        // Einen Titel in die Bibliothek legen (wie ein früherer Download)
+        val dir = File(instrumentation.targetContext.cacheDir, "offline-test").apply { mkdirs() }
+        val file = File(dir, "Offline.mp3")
+        instrumentation.context.assets.open("tagged.mp3").use { input -> file.outputStream().use { input.copyTo(it) } }
+        kotlinx.coroutines.runBlocking { app.library.import(file, move = true) }
+
+        val shell = instrumentation.uiAutomation
+        fun run(cmd: String) = shell.executeShellCommand(cmd).close()
+        run("cmd connectivity airplane-mode enable"); run("svc wifi disable"); run("svc data disable")
+        try {
+            Thread.sleep(3000)
+            rule.onNodeWithTag("category-Titel").performClick()
+            rule.waitUntilAtLeastOneExists(hasTestTag("playAllButton"), 5_000)
+            rule.onNodeWithTag("playAllButton").performClick()
+            rule.waitUntilAtLeastOneExists(hasContentDescription("Pause"), 10_000)
+            screenshot("a16-Offline-spielt")
+
+            rule.onNodeWithTag("tab-downloader").performClick()
+            rule.waitUntilAtLeastOneExists(hasTestTag("addressField"), 5_000)
+            instrumentation.runOnMainSync { app.browser.submit("https://archive.org") }
+            rule.waitUntilAtLeastOneExists(hasTestTag("offlineHint"), 30_000)
+            Thread.sleep(1000)
+            screenshot("a17-Offline-Browser")
+        } finally {
+            run("cmd connectivity airplane-mode disable"); run("svc wifi enable"); run("svc data enable")
+            Thread.sleep(3000)
+        }
     }
 
     @Test fun t3_youTubeHint() {

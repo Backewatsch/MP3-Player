@@ -34,6 +34,8 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
         val found: List<String> = emptyList(),
         val detected: Detected? = null,
         val notice: String? = null,
+        /** Letzter Seitenaufruf scheiterte, weil kein Internet da war */
+        val offline: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -147,7 +149,9 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-            _state.value = _state.value.copy(loading = true, found = emptyList(), detected = null)
+            val offlinePage = url?.contains("start.mp3player.local/offline") == true
+            _state.value = _state.value.copy(loading = true, found = emptyList(), detected = null,
+                offline = offlinePage && _state.value.offline)
             syncNavigation(url)
         }
 
@@ -159,6 +163,15 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) = syncNavigation(url)
+
+        /** Ohne Internet: freundliche Offline-Seite statt Fehlerseite */
+        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+            if (!request.isForMainFrame) return
+            val offline = error.errorCode in setOf(ERROR_HOST_LOOKUP, ERROR_CONNECT, ERROR_TIMEOUT, ERROR_IO)
+            val html = if (offline) StartPage.OFFLINE else StartPage.error(error.description?.toString().orEmpty())
+            view.loadDataWithBaseURL("https://start.mp3player.local/offline", html, "text/html", "utf-8", request.url.toString())
+            _state.value = _state.value.copy(offline = offline)
+        }
     }
 
     private inner class Bridge {
@@ -196,6 +209,19 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
 }
 
 object StartPage {
+    const val OFFLINE = """<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{font-family:sans-serif;margin:0;padding:48px 24px;background:#000;color:#fff;text-align:center}
+h1{font-size:24px} p{color:#aaa;line-height:1.5} .ok{margin-top:28px;padding:14px;border-radius:14px;background:#1c1c1e;color:#fff}</style>
+</head><body><div style="font-size:56px">📴</div><h1>Keine Internetverbindung</h1>
+<p>Zum Herunterladen brauchst du Internet. Sobald du wieder online bist, tippe auf „Neu laden“.</p>
+<div class="ok">🎵 Deine Musik in der <b>Mediathek</b> funktioniert auch offline.</div></body></html>"""
+
+    fun error(message: String) = """<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{font-family:sans-serif;margin:0;padding:48px 24px;background:#000;color:#fff;text-align:center} p{color:#aaa}</style>
+</head><body><h1>Seite nicht erreichbar</h1><p>${android.text.TextUtils.htmlEncode(message)}</p></body></html>"""
+
     const val HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>

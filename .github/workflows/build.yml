@@ -215,7 +215,11 @@ jobs:
   release:
     name: Release veröffentlichen (für Updates)
     needs: [build, test, android]
-    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc')
+    # Android-Release hängt nur am Android-Test; die iPhone-Tests blockieren nicht
+    if: >-
+      always() && github.event_name == 'push' &&
+      (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc') &&
+      needs.android.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
