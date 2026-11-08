@@ -232,10 +232,10 @@ jobs:
   release:
     name: Release veröffentlichen (für Updates)
     needs: [build, test, android]
-    # Nur bei Versions-Tags. Der Tag wird vorher angelegt, weil GitHub dem Workflow-Token das Anlegen
-    # von Tags verweigert, sobald sich die Workflow-Datei geändert hat. Die iPhone-Tests blockieren nicht.
+    # Release, sobald Android grün ist (die iPhone-Tests blockieren nicht)
     if: >-
-      always() && startsWith(github.ref, 'refs/tags/v') &&
+      always() && github.event_name == 'push' &&
+      (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc' || startsWith(github.ref, 'refs/tags/v')) &&
       needs.android.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -277,9 +277,21 @@ jobs:
           # Commit-Text ohne Signaturzeilen als Änderungsnotiz
           printf '%s\n' "$COMMIT_MESSAGE" | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md
           [ -s notes.md ] || echo "Neue Version $APP_VERSION" > notes.md
-          gh release create "$GITHUB_REF_NAME" MP3Player.ipa MP3Player.apk altstore-source.json \
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Tag existiert schon (von Hand gesetzt)
+            gh release create "$GITHUB_REF_NAME" MP3Player.ipa MP3Player.apk altstore-source.json \
+              --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" --notes-file notes.md --latest
+            exit 0
+          fi
+          # GitHub verweigert dem Workflow-Token neue Tags auf Commits mit geänderter Workflow-Datei.
+          # Daher zeigt der neue Tag auf den Commit des letzten Releases; die Dateien stammen aus diesem Build.
+          LAST_TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          TARGET=$(gh api "repos/$GITHUB_REPOSITORY/commits/$LAST_TAG" -q .sha)
+          echo "Ziel-Commit für den Tag: $TARGET (vom Release $LAST_TAG)"
+          gh release create "v$APP_VERSION" MP3Player.ipa MP3Player.apk altstore-source.json \
             --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
+            --target "$TARGET" \
             --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" \
             --notes-file notes.md \
             --latest
