@@ -125,6 +125,7 @@ final class LibraryTests: XCTestCase {
         let track = try await importFixture("tagged.mp3", as: "tagged-\(UUID().uuidString.prefix(6)).mp3")
         XCTAssertEqual(track.title, "Testlied")
         XCTAssertEqual(track.artist, "Testband")
+        XCTAssertEqual(track.album, "Testalbum")
         XCTAssertEqual(track.duration, 3.0, accuracy: 0.3)
         XCTAssertTrue(FileManager.default.fileExists(atPath: track.fileURL.path), "Datei liegt im Musikordner")
         XCTAssertTrue(FileManager.default.fileExists(atPath: track.artworkURL.path), "Cover wurde gespeichert")
@@ -263,6 +264,138 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(reloaded.track(id: track.id)?.fileName, track.fileName)
         XCTAssertEqual(reloaded.playlist(id: playlist.id)?.trackIDs, [track.id])
         library.deletePlaylist(playlist)
+    }
+}
+
+// MARK: - Konverter, Album, Kurzwahl, Mitwirkende
+
+@MainActor
+final class ConverterAndExtrasTests: XCTestCase {
+    private var library: Library!
+    private var created: [Track] = []
+
+    override func setUp() async throws {
+        library = Library(autoScan: false)
+        created = []
+    }
+
+    override func tearDown() async throws {
+        for track in created { library.delete(track) }
+        library = nil
+    }
+
+    func testVideoIsConvertedToM4A() async throws {
+        let src = try Fixture.tempCopy("clip.mp4", as: "video-\(UUID().uuidString.prefix(6)).mp4")
+        let track = try await library.importAudio(from: src, move: true, addToDownloads: true)
+        created.append(track)
+        XCTAssertTrue(track.fileName.hasSuffix(".m4a"), "Ergebnis ist M4A: \(track.fileName)")
+        XCTAssertEqual(track.duration, 2.0, accuracy: 0.4)
+        XCTAssertEqual(track.title, "Videolied", "Metadaten werden übernommen")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: src.path), "Video wurde nach dem Umwandeln entfernt")
+        let downloads = try XCTUnwrap(library.playlist(id: Library.downloadsPlaylistID))
+        XCTAssertTrue(downloads.trackIDs.contains(track.id))
+
+        // Umgewandelter Titel lässt sich abspielen
+        let player = AudioPlayer()
+        player.play([track], startAt: 0)
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertNil(player.errorMessage)
+        player.stop()
+    }
+
+    func testVideoWithoutSoundFails() async throws {
+        let src = try Fixture.tempCopy("silent.mp4", as: "stumm-\(UUID().uuidString.prefix(6)).mp4")
+        do {
+            _ = try await library.importAudio(from: src, move: false)
+            XCTFail("Video ohne Ton darf nicht importiert werden")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("keine Tonspur"), error.localizedDescription)
+        }
+    }
+
+    func testVideoDownloadNamesAreAccepted() {
+        XCTAssertEqual(DownloadManager.audioFileName(suggested: "videoplayback", mime: "video/mp4", url: nil), "videoplayback.mp4")
+        XCTAssertEqual(DownloadManager.audioFileName(suggested: "film.mov", mime: "video/quicktime", url: nil), "film.mov")
+        XCTAssertNil(DownloadManager.audioFileName(suggested: "clip.webm", mime: "video/webm", url: nil))
+        XCTAssertTrue(DownloadError.notAudio("video/webm").localizedDescription.contains("nicht unterstützt"))
+    }
+
+    func testDownloadIntoExtraPlaylist() async throws {
+        let manager = DownloadManager()
+        manager.library = library
+        let playlist = library.createPlaylist(named: "Von Webseite")
+        let src = try Fixture.tempCopy("untagged.mp3", as: "seite-\(UUID().uuidString.prefix(6)).mp3")
+        manager.download(from: src, into: playlist.id)
+        let done = await waitUntil(timeout: 15) { manager.items.first?.state == .finished }
+        XCTAssertTrue(done, "Status: \(String(describing: manager.items.first?.state))")
+        let tracks = library.tracks(in: try XCTUnwrap(library.playlist(id: playlist.id)))
+        XCTAssertEqual(tracks.count, 1)
+        created.append(contentsOf: tracks)
+        library.deletePlaylist(playlist)
+    }
+
+    func testPinAlbumArtistAndMix() async throws {
+        let a = try await library.importAudio(from: try Fixture.tempCopy("tagged.mp3", as: "mix-a-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        let b = try await library.importAudio(from: try Fixture.tempCopy("tagged.mp3", as: "mix-b-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        let c = try await library.importAudio(from: try Fixture.tempCopy("untagged.mp3", as: "mix-c-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        created += [a, b, c]
+
+        // Kurzwahl
+        library.togglePin(a)
+        XCTAssertTrue(library.isPinned(a))
+        XCTAssertEqual(library.pinnedTracks.first?.id, a.id)
+        XCTAssertEqual(Library(autoScan: false).pinnedIDs.first, a.id, "Kurzwahl wird gespeichert")
+        library.togglePin(a)
+        XCTAssertFalse(library.isPinned(a))
+
+        // Album / Interpret
+        XCTAssertTrue(Set([a.id, b.id]).isSubset(of: Set(library.tracks(inAlbum: "Testalbum").map(\.id))))
+        XCTAssertFalse(library.tracks(inAlbum: "Testalbum").contains { $0.id == c.id })
+        XCTAssertTrue(library.tracks(byArtist: "testband").contains { $0.id == b.id }, "ohne Groß-/Kleinschreibung")
+
+        // Mix: Starttitel zuerst, dann derselbe Interpret
+        let player = AudioPlayer()
+        player.startMix(with: a, from: [a, b, c])
+        XCTAssertEqual(player.queue.first?.id, a.id)
+        XCTAssertEqual(player.queue.count, 3)
+        XCTAssertEqual(player.queue[1].id, b.id, "gleicher Interpret kommt zuerst")
+        XCTAssertTrue(player.isPlaying)
+        player.stop()
+        XCTAssertTrue(player.queue.isEmpty, "Wiedergabeliste geschlossen")
+
+        // Aus Playlist entfernen
+        let playlist = library.createPlaylist(named: "Temp")
+        library.add(a, to: playlist)
+        library.remove(a, from: playlist)
+        XCTAssertEqual(library.playlist(id: playlist.id)?.trackIDs, [])
+        library.deletePlaylist(playlist)
+    }
+
+    func testSongInfoReadsCredits() async throws {
+        let track = try await library.importAudio(from: try Fixture.tempCopy("tagged.mp3", as: "info-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+        created.append(track)
+        let info = await SongInfo.load(for: track)
+        let credits = Dictionary(uniqueKeysWithValues: info.credits.map { ($0.label, $0.value) })
+        XCTAssertEqual(credits["Interpret"], "Testband")
+        XCTAssertEqual(credits["Album"], "Testalbum")
+        XCTAssertEqual(credits["Komponist"], "Testkomponist")
+        XCTAssertEqual(credits["Genre"], "Pop")
+        XCTAssertEqual(credits["Jahr"], "2024")
+        let file = Dictionary(uniqueKeysWithValues: info.file.map { ($0.label, $0.value) })
+        XCTAssertEqual(file["Format"], "MP3")
+        XCTAssertNotNil(file["Bitrate (ca.)"])
+    }
+
+    func testOldLibraryFormatStillLoads() throws {
+        // Bibliothek aus Version 1.0.8 (ohne Album, ohne Kurzwahl)
+        let json = """
+        {"tracks":[{"id":"11111111-1111-1111-1111-111111111111","fileName":"a.mp3","title":"A","artist":"B","duration":3,"addedAt":0}],
+         "playlists":[]}
+        """
+        let state = try JSONDecoder().decode(LibraryState.self, from: Data(json.utf8))
+        XCTAssertEqual(state.version, 1)
+        XCTAssertEqual(state.tracks.first?.album, "")
+        XCTAssertEqual(state.pinned, [])
     }
 }
 

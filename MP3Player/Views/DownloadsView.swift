@@ -10,7 +10,7 @@ struct DownloadsView: View {
             List {
                 Section {
                     HStack {
-                        TextField("Link zu einer MP3-Datei", text: $linkText)
+                        TextField("Link zu MP3- oder Videodatei", text: $linkText)
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -23,7 +23,7 @@ struct DownloadsView: View {
                             .accessibilityIdentifier("downloadStartButton")
                     }
                 } footer: {
-                    Text("Fertige Downloads landen automatisch in der Bibliothek und in der Playlist „Heruntergeladen“.")
+                    Text("Audiodateien werden direkt übernommen, Videos (MP4, MOV, M4V) automatisch in Audio (M4A) umgewandelt. Fertige Titel landen in der Bibliothek und in der Playlist „Heruntergeladen“.")
                 }
 
                 if downloads.items.isEmpty {
@@ -78,7 +78,8 @@ private struct DownloadRow: View {
                     ProgressView(value: item.progress)
                     Text("\(Int(item.progress * 100)) %").font(.caption).foregroundStyle(.secondary)
                 case .importing:
-                    Text("Wird importiert …").font(.caption).foregroundStyle(.secondary)
+                    Text(item.converting ? "Wird in Audio umgewandelt …" : "Wird importiert …")
+                        .font(.caption).foregroundStyle(.secondary)
                 case .finished:
                     Text("In der Playlist „Heruntergeladen“").font(.caption).foregroundStyle(.secondary)
                 case .failed(let message):

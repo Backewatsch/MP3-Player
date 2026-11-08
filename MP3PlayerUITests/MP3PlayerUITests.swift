@@ -101,6 +101,30 @@ final class MP3PlayerUITests: XCTestCase {
         tab("Titel")
         XCTAssertFalse(app.staticTexts["Noch keine Musik"].exists)
         screenshot("09-Bibliothek")
+
+        // Optionsmenü („…“) mit allen Punkten
+        let more = app.buttons["trackMore"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.tap()
+        for title in ["Als Nächstes abspielen", "Zu Playlist hinzufügen", "Mix starten", "In die Wiedergabeliste",
+                      "Mitwirkende an Song anzeigen", "An Kurzwahl anpinnen"] {
+            XCTAssertTrue(app.buttons["action-\(title)"].waitForExistence(timeout: 5), "Menüpunkt fehlt: \(title)")
+        }
+        screenshot("14-Optionen")
+
+        app.buttons["action-Mitwirkende an Song anzeigen"].tap()
+        XCTAssertTrue(app.staticTexts["Format"].waitForExistence(timeout: 10), "Mitwirkende-Ansicht fehlt")
+        screenshot("15-Mitwirkende")
+        app.buttons["Fertig"].firstMatch.tap()
+
+        // An Kurzwahl anpinnen → erscheint oben in der Bibliothek
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        more.tap()
+        let pin = app.buttons["action-An Kurzwahl anpinnen"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        pin.tap()
+        XCTAssertTrue(app.staticTexts["Kurzwahl"].waitForExistence(timeout: 5) || app.staticTexts["KURZWAHL"].exists)
+        screenshot("16-Kurzwahl")
     }
 
     func test3_DownloadThroughInternalBrowser() {

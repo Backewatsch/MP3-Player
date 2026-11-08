@@ -11,6 +11,21 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 - Zufallswiedergabe, Wiederholen (alle / einen), Warteschlange („Als Nächstes“, „Zur Warteschlange“)
 - Pausiert bei Anrufen und wenn Kopfhörer abgezogen werden
 
+**Titel-Optionen (Tippen auf „…“ oder lange drücken)**
+- Als Nächstes abspielen · Zu Playlist hinzufügen (auch neue Playlist) · Teilen
+- Mix starten (Titel zuerst, dann gemischt – gleicher Interpret bevorzugt)
+- In die Wiedergabeliste · Album anzeigen · Künstlerseite anzeigen
+- Mitwirkende an Song anzeigen (Komponist, Genre, Jahr, Label, Dateiinfos aus den Tags)
+- An Kurzwahl anpinnen (Leiste oben in der Bibliothek)
+- Infos bearbeiten · Aus Playlist entfernen · Wiedergabeliste schließen · Aus Mediathek entfernen
+
+**Konverter**
+- Videos (MP4, MOV, M4V) aus dem Internet oder aus der Dateien-App werden automatisch in Audio umgewandelt und landen in der Bibliothek
+- Ausgabeformat ist **M4A (AAC)**, nicht MP3: iOS bringt keinen MP3-Encoder mit. M4A spielt in dieser App und fast überall sonst und klingt bei gleicher Größe mindestens so gut
+- Streaming-Dienste (YouTube, Spotify …) werden nicht unterstützt (siehe unten)
+
+**Design**: durchgehend dunkles Design (Dark Mode)
+
 **Bibliothek & Playlists**
 - Suche nach Titel/Interpret, Titel-Infos bearbeiten, löschen
 - Eigene Playlists anlegen, umbenennen, sortieren (Bearbeiten → ziehen)
@@ -21,7 +36,7 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 - Interner Browser mit Adress-/Suchleiste (DuckDuckGo), Vor/Zurück, Startseite mit freien Musikquellen
 - Ein Tipp auf einen Link zu einer Audiodatei lädt sie herunter
 - Lange auf einen Link drücken → **„Als Audio herunterladen“**
-- Wellen-Symbol: durchsucht die Seite nach Audiodateien und `<audio>`-Elementen, einzeln oder „Alle laden“
+- Wellen-Symbol: durchsucht die Seite nach Audio- und Videodateien, einzeln laden, „Alle laden“ oder **„Alle als neue Playlist laden“**
 - Download direkt per Link im Tab „Downloads“ (oder ＋ → „Von Link herunterladen“)
 - Fortschrittsanzeige, Fehlermeldungen, erneut versuchen
 

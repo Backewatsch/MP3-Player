@@ -37,6 +37,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
         UIBackgroundModes: [audio]
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
@@ -61,6 +62,13 @@ targets:
               - public.mp3
               - public.mpeg-4-audio
               - public.audio
+          - CFBundleTypeName: Video
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.mpeg-4
+              - com.apple.quicktime-movie
+              - com.apple.m4v-video
 
   MP3PlayerTests:
     type: bundle.unit-test

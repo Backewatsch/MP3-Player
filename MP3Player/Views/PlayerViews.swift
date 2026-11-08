@@ -52,6 +52,7 @@ struct MiniPlayerBar: View {
 
 struct NowPlayingView: View {
     @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var actions: TrackActions
     @Environment(\.dismiss) private var dismiss
     @State private var scrubbing = false
     @State private var scrubValue: Double = 0
@@ -71,14 +72,26 @@ struct NowPlayingView: View {
                     Button { dismiss() } label: { Image(systemName: "chevron.down") }
                         .accessibilityLabel("Schließen")
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button { showQueue = true } label: { Image(systemName: "list.bullet") }
-                        .accessibilityLabel("Warteschlange")
+                        .accessibilityLabel("Wiedergabeliste")
                         .disabled(player.queue.isEmpty)
+                    if let track = player.current {
+                        Button { actions.open(track) } label: { Image(systemName: "ellipsis") }
+                            .accessibilityLabel("Optionen")
+                            .accessibilityIdentifier("nowPlayingMore")
+                    }
                 }
             }
+            .background(nowPlayingBackground.ignoresSafeArea())
             .sheet(isPresented: $showQueue) { QueueView() }
         }
+    }
+
+    /// Dunkler Verlauf mit der Akzentfarbe hinter dem Player
+    private var nowPlayingBackground: some View {
+        LinearGradient(colors: [Color.accentColor.opacity(0.45), Color.purple.opacity(0.25), Color.black],
+                       startPoint: .top, endPoint: .bottom)
     }
 
     private func content(_ track: Track) -> some View {
@@ -167,7 +180,7 @@ struct QueueView: View {
                 .onDelete { player.removeFromQueue(at: $0) }
                 .onMove { player.moveInQueue(from: $0, to: $1) }
             }
-            .navigationTitle("Warteschlange")
+            .navigationTitle("Wiedergabeliste")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { EditButton() }

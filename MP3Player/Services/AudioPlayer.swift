@@ -130,6 +130,15 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         load(index: queueIndex, autoplay: true)
     }
 
+    /// „Mix starten“: der Titel zuerst, dann gemischt – Titel desselben Interpreten bevorzugt.
+    func startMix(with seed: Track, from all: [Track]) {
+        let others = all.filter { $0.id != seed.id }
+        let sameArtist = seed.artist.isEmpty ? [] : others.filter { $0.artist == seed.artist }.shuffled()
+        let rest = others.filter { seed.artist.isEmpty || $0.artist != seed.artist }.shuffled()
+        shuffle = false
+        play([seed] + sameArtist + rest, startAt: 0, allTracks: true)
+    }
+
     func playNext(_ track: Track) {
         if queue.isEmpty { play([track], startAt: 0); return }
         let insertAt = (index ?? -1) + 1

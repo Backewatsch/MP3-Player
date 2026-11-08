@@ -131,8 +131,11 @@ struct WebView: UIViewRepresentable {
 struct FoundAudioSheet: View {
     @EnvironmentObject private var browser: BrowserModel
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var library: Library
     @Environment(\.dismiss) private var dismiss
     @State private var started = Set<URL>()
+    @State private var showPlaylistPrompt = false
+    @State private var playlistName = ""
 
     var body: some View {
         NavigationStack {
@@ -156,7 +159,37 @@ struct FoundAudioSheet: View {
                     }
                 }
             }
-            .navigationTitle("\(browser.foundAudio.count) Audiodateien")
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    playlistName = browser.pageTitle
+                    showPlaylistPrompt = true
+                } label: {
+                    Label("Alle als neue Playlist laden", systemImage: "text.badge.plus")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding()
+                .disabled(started.count == browser.foundAudio.count)
+                .accessibilityIdentifier("downloadAllAsPlaylist")
+            }
+            .alert("Neue Playlist", isPresented: $showPlaylistPrompt) {
+                TextField("Name", text: $playlistName)
+                Button("Abbrechen", role: .cancel) {}
+                Button("Laden") {
+                    let playlist = library.createPlaylist(named: playlistName)
+                    for url in browser.foundAudio where !started.contains(url) {
+                        browser.startDownload(url, into: playlist.id)
+                        started.insert(url)
+                    }
+                    browser.notice = "Downloads gestartet – die Titel landen in der Playlist „\(playlist.name)“."
+                    dismiss()
+                }
+            } message: {
+                Text("Alle \(browser.foundAudio.count) Dateien werden heruntergeladen und in dieser Playlist gesammelt.")
+            }
+            .navigationTitle("\(browser.foundAudio.count) Dateien gefunden")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Fertig") { dismiss() } }

@@ -25,6 +25,12 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     private var observations: [NSKeyValueObservation] = []
 
     /// Auf YouTube wird kein Download angeboten (siehe README).
+    /// Seitentitel als Vorschlag für den Playlist-Namen
+    var pageTitle: String {
+        let title = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return title.isEmpty ? (currentHost ?? "Neue Playlist") : String(title.prefix(60))
+    }
+
     var isYouTube: Bool {
         guard let host = currentHost?.lowercased() else { return false }
         return host == "youtu.be" || host.hasSuffix("youtube.com") || host.hasSuffix("youtube-nocookie.com")
@@ -91,13 +97,13 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     }
 
     /// Lädt über die Browser-Sitzung herunter (Cookies/Anmeldung der Seite bleiben erhalten).
-    func startDownload(_ url: URL) {
+    func startDownload(_ url: URL, into playlistID: UUID? = nil) {
         var request = URLRequest(url: url)
         if let referer = webView.url, referer.scheme?.hasPrefix("http") == true {
             request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
         }
         webView.startDownload(using: request) { [weak self] download in
-            self?.downloads?.track(download, source: url)
+            self?.downloads?.track(download, source: url, into: playlistID)
         }
     }
 
@@ -105,11 +111,12 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     func scanForAudio() {
         let js = """
         (function() {
-          var re = /\\.(mp3|m4a|aac|wav|flac|aiff?|caf)([?#]|$)/i;
+          var re = /\\.(mp3|m4a|aac|wav|flac|aiff?|caf|mp4|mov|m4v)([?#]|$)/i;
           var out = [];
           var add = function(u) { if (u && /^https?:/i.test(u) && out.indexOf(u) < 0) out.push(u); };
           document.querySelectorAll('audio').forEach(function(a) { add(a.currentSrc || a.src); });
-          document.querySelectorAll('audio source[src]').forEach(function(s) { add(s.src); });
+          document.querySelectorAll('audio source[src], video source[src]').forEach(function(s) { add(s.src); });
+          document.querySelectorAll('video').forEach(function(v) { add(v.currentSrc || v.src); });
           document.querySelectorAll('a[href]').forEach(function(a) { if (re.test(a.href)) add(a.href); });
           return out.slice(0, 200);
         })();
@@ -121,7 +128,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
                 guard let self else { return }
                 self.foundAudio = urls
                 if urls.isEmpty {
-                    self.notice = "Auf dieser Seite wurden keine Audiodateien gefunden."
+                    self.notice = "Auf dieser Seite wurden keine herunterladbaren Audio- oder Videodateien gefunden."
                 } else {
                     self.showFoundAudio = true
                 }
@@ -156,8 +163,8 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         if let url = navigationAction.request.url,
            navigationAction.targetFrame?.isMainFrame != false,
-           Storage.audioExtensions.contains(url.pathExtension.lowercased()) {
-            // Link auf eine Audiodatei → herunterladen statt im Browser abspielen
+           Storage.isImportable(url.lastPathComponent) {
+            // Link auf eine Audio-/Videodatei → herunterladen (Videos werden umgewandelt)
             decisionHandler(.download)
             return
         }
@@ -174,7 +181,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         let response = navigationResponse.response
         let mime = response.mimeType?.lowercased() ?? ""
         let disposition = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
-        let isAudio = mime.hasPrefix("audio/")
+        let isAudio = mime.hasPrefix("audio/") || mime.hasPrefix("video/")
             || DownloadManager.audioFileName(suggested: response.suggestedFilename, mime: mime, url: response.url) != nil
                 && !mime.hasPrefix("text/")
         if isAudio || disposition.hasPrefix("attachment") || !navigationResponse.canShowMIMEType {

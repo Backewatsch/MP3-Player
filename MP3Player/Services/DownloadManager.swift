@@ -19,6 +19,10 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         var progress: Double
         var state: State
         let startedAt: Date
+        /// Zusätzliche Ziel-Playlist (z. B. „Alle als Playlist laden“)
+        var playlistID: UUID? = nil
+        /// Video wird gerade in Audio umgewandelt
+        var converting = false
     }
 
     @Published private(set) var items: [Item] = []
@@ -51,10 +55,10 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
 
     // MARK: Direkter Download per Link
 
-    func download(from url: URL) {
+    func download(from url: URL, into playlistID: UUID? = nil) {
         let id = UUID()
         items.insert(Item(id: id, name: url.lastPathComponent.isEmpty ? url.absoluteString : url.lastPathComponent,
-                          source: url, progress: 0, state: .running, startedAt: Date()), at: 0)
+                          source: url, progress: 0, state: .running, startedAt: Date(), playlistID: playlistID), at: 0)
         updateBackgroundTask()
 
         let task = URLSession.shared.downloadTask(with: url) { [weak self] tempURL, response, error in
@@ -90,7 +94,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
 
     // MARK: Downloads aus dem Browser (WKDownload)
 
-    func track(_ download: WKDownload, source: URL?) {
+    func track(_ download: WKDownload, source: URL?, into playlistID: UUID? = nil) {
         let id = UUID()
         let pending = Pending(id: id)
         pending.observation = download.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
@@ -101,7 +105,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         download.delegate = self
         let name = source?.lastPathComponent ?? "Download"
         items.insert(Item(id: id, name: name.isEmpty ? "Download" : name, source: source,
-                          progress: 0, state: .running, startedAt: Date()), at: 0)
+                          progress: 0, state: .running, startedAt: Date(), playlistID: playlistID), at: 0)
         updateBackgroundTask()
     }
 
@@ -155,7 +159,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
     func retry(_ item: Item) {
         guard let source = item.source else { return }
         items.removeAll { $0.id == item.id }
-        download(from: source)
+        download(from: source, into: item.playlistID)
     }
 
     private func cleanup(_ download: WKDownload) {
@@ -170,11 +174,17 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         case .failure(let error):
             update(id) { $0.state = .failed(error.localizedDescription) }
         case .success(let fileURL):
-            update(id) { $0.state = .importing; $0.progress = 1 }
+            update(id) {
+                $0.state = .importing
+                $0.progress = 1
+                $0.converting = Storage.isVideoFile(fileURL.lastPathComponent)
+            }
             Task {
                 do {
                     guard let library else { throw DownloadError.noLibrary }
-                    let track = try await library.importAudio(from: fileURL, move: true, addToDownloads: true)
+                    let target = items.first { $0.id == id }?.playlistID
+                    let track = try await library.importAudio(from: fileURL, move: true, addToDownloads: true,
+                                                              alsoAddTo: target)
                     update(id) { $0.state = .finished; $0.name = track.title }
                     unseenCount += 1
                 } catch {
@@ -215,7 +225,9 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/m4a": "m4a", "audio/aac": "aac", "audio/aacp": "aac",
         "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/vnd.wave": "wav",
         "audio/aiff": "aiff", "audio/x-aiff": "aiff", "audio/flac": "flac", "audio/x-flac": "flac",
-        "audio/x-caf": "caf"
+        "audio/x-caf": "caf",
+        // Videos werden nach dem Download in M4A umgewandelt
+        "video/mp4": "mp4", "video/quicktime": "mov", "video/x-m4v": "m4v", "video/3gpp": "3gp"
     ]
 
     /// Liefert einen passenden Dateinamen mit Audio-Endung – oder `nil`, wenn es keine Audiodatei ist.
@@ -225,14 +237,14 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         if name.isEmpty || name == "/" { name = "Download" }
         name = Library.sanitize(name)
 
-        if Storage.isAudioFile(name) { return name }
+        if Storage.isImportable(name) { return name }
 
         let urlExt = url?.pathExtension.lowercased() ?? ""
         let base = (name as NSString).deletingPathExtension.isEmpty ? "Download" : (name as NSString).deletingPathExtension
         if let mime = mime?.lowercased(), let ext = mimeExtensions[mime] {
             return "\(base).\(ext)"
         }
-        if Storage.audioExtensions.contains(urlExt), mime?.lowercased().hasPrefix("text/") != true {
+        if Storage.isImportable("x.\(urlExt)"), mime?.lowercased().hasPrefix("text/") != true {
             return "\(base).\(urlExt)"
         }
         return nil
@@ -247,8 +259,8 @@ enum DownloadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAudio(let mime):
-            if let mime, mime.lowercased().hasPrefix("audio/") {
-                return "Das Audioformat \(mime) wird nicht unterstützt (nur MP3, M4A, AAC, WAV, AIFF, FLAC)."
+            if let mime, mime.lowercased().hasPrefix("audio/") || mime.lowercased().hasPrefix("video/") {
+                return "Das Format \(mime) wird nicht unterstützt (Audio: MP3, M4A, AAC, WAV, AIFF, FLAC; Video: MP4, MOV, M4V)."
             }
             if let mime, mime.lowercased().hasPrefix("text/html") {
                 return "Der Link führt zu einer Webseite, nicht direkt zu einer Audiodatei."

@@ -60,7 +60,6 @@ struct PlaylistDetailView: View {
     @State private var showAddTracks = false
     @State private var showRename = false
     @State private var renameText = ""
-    @State private var editing: Track?
 
     var body: some View {
         if let playlist = library.playlist(id: playlistID) {
@@ -91,17 +90,8 @@ struct PlaylistDetailView: View {
             }
             Section {
                 ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                    Button {
+                    TrackListRow(track: track, playlist: playlist) {
                         player.play(tracks, startAt: index, playlistID: playlist.id)
-                    } label: {
-                        TrackRow(track: track)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        TrackMenu(track: track,
-                                  onEdit: { editing = track },
-                                  onDelete: { library.delete(track) },
-                                  removeFromPlaylist: { library.removeTracks(at: IndexSet(integer: index), from: playlist) })
                     }
                 }
                 .onDelete { library.removeTracks(at: $0, from: playlist) }
@@ -133,7 +123,6 @@ struct PlaylistDetailView: View {
         .sheet(isPresented: $showAddTracks) {
             AddTracksSheet(playlist: playlist)
         }
-        .sheet(item: $editing) { EditTrackSheet(track: $0) }
         .alert("Playlist umbenennen", isPresented: $showRename) {
             TextField("Name", text: $renameText)
             Button("Abbrechen", role: .cancel) {}

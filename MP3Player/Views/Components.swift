@@ -57,33 +57,6 @@ struct TrackRow: View {
     }
 }
 
-/// Kontextmenü für einen Titel (als Nächstes, Warteschlange, Playlist, Bearbeiten, Löschen).
-struct TrackMenu: View {
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var player: AudioPlayer
-    let track: Track
-    var onEdit: () -> Void
-    var onDelete: () -> Void
-    var removeFromPlaylist: (() -> Void)?
-
-    var body: some View {
-        Button { player.playNext(track) } label: { Label("Als Nächstes spielen", systemImage: "text.insert") }
-        Button { player.addToQueue(track) } label: { Label("Zur Warteschlange", systemImage: "text.append") }
-        Menu {
-            ForEach(library.playlists) { playlist in
-                Button(playlist.name) { library.add(track, to: playlist) }
-            }
-        } label: {
-            Label("Zu Playlist hinzufügen", systemImage: "music.note.list")
-        }
-        Button { onEdit() } label: { Label("Infos bearbeiten", systemImage: "pencil") }
-        if let removeFromPlaylist {
-            Button { removeFromPlaylist() } label: { Label("Aus Playlist entfernen", systemImage: "minus.circle") }
-        }
-        Button(role: .destructive) { onDelete() } label: { Label("Löschen", systemImage: "trash") }
-    }
-}
-
 /// Dialog zum Bearbeiten von Titel und Interpret.
 struct EditTrackSheet: View {
     @EnvironmentObject private var library: Library

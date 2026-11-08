@@ -5,14 +5,13 @@ struct LibraryView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var actions: TrackActions
 
     @State private var search = ""
     @State private var showImporter = false
     @State private var showLinkPrompt = false
     @State private var linkText = ""
-    @State private var editing: Track?
     @State private var importError: String?
-    @State private var pendingDelete: Track?
     @State private var showSettings = false
 
     private var visibleTracks: [Track] {
@@ -46,7 +45,7 @@ struct LibraryView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button { showImporter = true } label: { Label("Aus Dateien importieren", systemImage: "folder") }
+                        Button { showImporter = true } label: { Label("Aus Dateien importieren / Video umwandeln", systemImage: "folder") }
                         Button { linkText = UIPasteboard.general.string ?? ""; showLinkPrompt = true } label: {
                             Label("Von Link herunterladen", systemImage: "link")
                         }
@@ -56,7 +55,7 @@ struct LibraryView: View {
                     .accessibilityLabel("Hinzufügen")
                 }
             }
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio, .mp3Audio], allowsMultipleSelection: true) { result in
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio, .mp3Audio, .movie, .mpeg4Movie, .quickTimeMovie], allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls):
                     Task {
@@ -85,15 +84,6 @@ struct LibraryView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(importError ?? "")
-            }
-            .confirmationDialog("Titel löschen?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-                                titleVisibility: .visible, presenting: pendingDelete) { track in
-                Button("„\(track.title)“ löschen", role: .destructive) { library.delete(track) }
-            } message: { _ in
-                Text("Die Datei wird vom iPhone entfernt.")
-            }
-            .sheet(item: $editing) { track in
-                EditTrackSheet(track: track)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -125,21 +115,25 @@ struct LibraryView: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 }
             }
+            if search.isEmpty && !library.pinnedTracks.isEmpty {
+                Section("Kurzwahl") {
+                    PinnedStrip(tracks: library.pinnedTracks)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+                }
+            }
             Section {
                 ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                    Button {
+                    TrackListRow(track: track) {
                         player.play(tracks, startAt: index, allTracks: search.isEmpty)
-                    } label: {
-                        TrackRow(track: track)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        TrackMenu(track: track, onEdit: { editing = track }, onDelete: { pendingDelete = track })
                     }
                     .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { pendingDelete = track } label: { Label("Löschen", systemImage: "trash") }
-                        Button { player.addToQueue(track) } label: { Label("Warteschlange", systemImage: "text.append") }
+                        Button(role: .destructive) { actions.requestDelete(track) } label: { Label("Entfernen", systemImage: "trash") }
+                        Button { player.addToQueue(track) } label: { Label("Wiedergabeliste", systemImage: "text.append") }
                             .tint(.indigo)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button { player.playNext(track) } label: { Label("Als Nächstes", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                            .tint(.accentColor)
                     }
                 }
             } footer: {
@@ -161,4 +155,36 @@ struct LibraryView: View {
 
 extension UTType {
     static let mp3Audio = UTType("public.mp3") ?? .audio
+}
+
+/// Angepinnte Titel als waagerechte Leiste („Kurzwahl“).
+struct PinnedStrip: View {
+    @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var actions: TrackActions
+    let tracks: [Track]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                    Button {
+                        player.play(tracks, startAt: index)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ArtworkView(track: track, size: 110, cornerRadius: 12)
+                            Text(track.title).font(.footnote.weight(.semibold)).lineLimit(1)
+                            Text(track.artist.isEmpty ? " " : track.artist)
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .frame(width: 110)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { actions.open(track) } label: { Label("Optionen …", systemImage: "ellipsis.circle") }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
 }

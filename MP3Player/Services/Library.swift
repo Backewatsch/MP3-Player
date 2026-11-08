@@ -9,6 +9,8 @@ final class Library: ObservableObject {
 
     @Published private(set) var tracks: [Track] = []
     @Published private(set) var playlists: [Playlist] = []
+    /// Angepinnte Titel („Kurzwahl“)
+    @Published private(set) var pinnedIDs: [UUID] = []
 
     /// Wird aufgerufen, sobald ein neuer Titel hinzugekommen ist (z. B. für die Warteschlange).
     var onTrackAdded: ((Track, _ playlistID: UUID?) -> Void)?
@@ -17,10 +19,17 @@ final class Library: ObservableObject {
     /// Dateien, die gerade importiert werden (damit `rescan()` sie nicht doppelt aufnimmt).
     private var importing = Set<String>()
 
+    private var needsMetadataUpgrade = false
+
     init(autoScan: Bool = true) {
         load()
         ensureDownloadsPlaylist()
-        if autoScan { Task { await rescan() } }
+        if autoScan {
+            Task {
+                await rescan()
+                await upgradeMetadataIfNeeded()
+            }
+        }
     }
 
     // MARK: Abfragen
@@ -34,6 +43,27 @@ final class Library: ObservableObject {
         return playlist.trackIDs.compactMap { byID[$0] }
     }
 
+    var pinnedTracks: [Track] { pinnedIDs.compactMap { track(id: $0) } }
+
+    func isPinned(_ track: Track) -> Bool { pinnedIDs.contains(track.id) }
+
+    func togglePin(_ track: Track) {
+        if let i = pinnedIDs.firstIndex(of: track.id) {
+            pinnedIDs.remove(at: i)
+        } else {
+            pinnedIDs.insert(track.id, at: 0)
+        }
+        save()
+    }
+
+    func tracks(byArtist artist: String) -> [Track] {
+        sortedTracks.filter { $0.artist.localizedCaseInsensitiveCompare(artist) == .orderedSame }
+    }
+
+    func tracks(inAlbum album: String) -> [Track] {
+        sortedTracks.filter { $0.album.localizedCaseInsensitiveCompare(album) == .orderedSame }
+    }
+
     var sortedTracks: [Track] {
         tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
@@ -45,9 +75,22 @@ final class Library: ObservableObject {
     ///   - move: `true` verschiebt die Datei (temporäre Downloads), `false` kopiert sie (Dateien-App).
     ///   - addToDownloads: fügt den Titel zusätzlich der Playlist „Heruntergeladen“ hinzu.
     @discardableResult
-    func importAudio(from source: URL, preferredName: String? = nil, move: Bool, addToDownloads: Bool = false) async throws -> Track {
+    func importAudio(from source: URL, preferredName: String? = nil, move: Bool, addToDownloads: Bool = false,
+                     alsoAddTo extraPlaylistID: UUID? = nil) async throws -> Track {
         let name = Self.sanitize(preferredName ?? source.lastPathComponent)
-        guard Storage.isAudioFile(name) else { throw LibraryError.unsupportedFormat(name) }
+        guard Storage.isImportable(name) else { throw LibraryError.unsupportedFormat(name) }
+
+        // Video → Tonspur als M4A umwandeln, dann wie eine normale Audiodatei übernehmen
+        if Storage.isVideoFile(name) {
+            let accessing = source.startAccessingSecurityScopedResource()
+            defer { if accessing { source.stopAccessingSecurityScopedResource() } }
+            let baseName = (name as NSString).deletingPathExtension
+            let converted = try await AudioConverter.convertToM4A(source, baseName: baseName)
+            defer { try? FileManager.default.removeItem(at: converted.deletingLastPathComponent()) }
+            if move { try? FileManager.default.removeItem(at: source) }
+            return try await importAudio(from: converted, move: true, addToDownloads: addToDownloads,
+                                         alsoAddTo: extraPlaylistID)
+        }
 
         // Datei liegt schon im Musikordner (z. B. in der Dateien-App angetippt) → nicht kopieren
         if source.deletingLastPathComponent().standardizedFileURL.path == Storage.documents.standardizedFileURL.path {
@@ -86,9 +129,27 @@ final class Library: ObservableObject {
             playlists[index].trackIDs.append(track.id)
             targetPlaylist = Self.downloadsPlaylistID
         }
+        if let extraPlaylistID, let index = playlists.firstIndex(where: { $0.id == extraPlaylistID }),
+           !playlists[index].trackIDs.contains(track.id) {
+            playlists[index].trackIDs.append(track.id)
+            targetPlaylist = extraPlaylistID
+        }
         save()
         onTrackAdded?(track, targetPlaylist)
         return track
+    }
+
+    /// Liest bei Bibliotheken aus älteren Versionen einmalig die Alben nach.
+    func upgradeMetadataIfNeeded() async {
+        guard needsMetadataUpgrade else { return }
+        needsMetadataUpgrade = false
+        for track in tracks where track.album.isEmpty {
+            let fresh = await Self.makeTrack(for: track.fileURL)
+            if let i = tracks.firstIndex(where: { $0.id == track.id }), !fresh.album.isEmpty {
+                tracks[i].album = fresh.album
+            }
+        }
+        save()
     }
 
     /// Gleicht die Bibliothek mit dem Dokumente-Ordner ab (z. B. Dateien, die per Finder/Dateien-App kopiert wurden).
@@ -130,6 +191,7 @@ final class Library: ObservableObject {
         try? FileManager.default.removeItem(at: track.artworkURL)
         tracks.removeAll { $0.id == track.id }
         for i in playlists.indices { playlists[i].trackIDs.removeAll { $0 == track.id } }
+        pinnedIDs.removeAll { $0 == track.id }
         ArtworkCache.shared.remove(track.id)
         save()
     }
@@ -181,6 +243,12 @@ final class Library: ObservableObject {
         save()
     }
 
+    func remove(_ track: Track, from playlist: Playlist) {
+        guard let i = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
+        playlists[i].trackIDs.removeAll { $0 == track.id }
+        save()
+    }
+
     func removeTracks(at offsets: IndexSet, from playlist: Playlist) {
         guard let i = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
         // Offsets beziehen sich auf die angezeigten (existierenden) Titel
@@ -205,10 +273,12 @@ final class Library: ObservableObject {
               let state = try? JSONDecoder().decode(LibraryState.self, from: data) else { return }
         tracks = state.tracks
         playlists = state.playlists
+        pinnedIDs = state.pinned.filter { id in state.tracks.contains { $0.id == id } }
+        needsMetadataUpgrade = state.version < LibraryState.currentVersion
     }
 
     private func save() {
-        let state = LibraryState(tracks: tracks, playlists: playlists)
+        let state = LibraryState(tracks: tracks, playlists: playlists, pinned: pinnedIDs)
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: Storage.indexFile, options: .atomic)
         }
@@ -256,6 +326,7 @@ final class Library: ObservableObject {
         let asset = AVURLAsset(url: url)
         var title: String?
         var artist: String?
+        var album: String?
         var artworkData: Data?
         var duration: Double = 0
 
@@ -268,6 +339,8 @@ final class Library: ObservableObject {
                     title = try? await item.load(.stringValue)
                 } else if item.commonKey == .commonKeyArtist {
                     artist = try? await item.load(.stringValue)
+                } else if item.commonKey == .commonKeyAlbumName {
+                    album = try? await item.load(.stringValue)
                 } else if item.commonKey == .commonKeyArtwork, artworkData == nil {
                     artworkData = try? await item.load(.dataValue)
                 }
@@ -281,7 +354,8 @@ final class Library: ObservableObject {
             title: (title?.isEmpty == false ? title! : fallbackTitle),
             artist: artist ?? "",
             duration: duration,
-            addedAt: Date()
+            addedAt: Date(),
+            album: album?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         )
         if let artworkData, let image = UIImage(data: artworkData) {
             let thumb = image.preparingThumbnail(of: CGSize(width: 600, height: 600)) ?? image

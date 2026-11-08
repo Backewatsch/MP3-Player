@@ -12,11 +12,13 @@ struct ContentView: View {
         TabView(selection: $tab) {
             LibraryView()
                 .miniPlayer($showNowPlaying)
+                .trackActionsHost()
                 .tabItem { Label("Titel", systemImage: "music.note") }
                 .tag(Tab.tracks)
 
             PlaylistsView()
                 .miniPlayer($showNowPlaying)
+                .trackActionsHost()
                 .tabItem { Label("Playlists", systemImage: "music.note.list") }
                 .tag(Tab.playlists)
 
@@ -39,7 +41,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
+                .trackActionsHost()
         }
+        .preferredColorScheme(.dark)
         .alert("Hinweis", isPresented: Binding(
             get: { player.errorMessage != nil },
             set: { if !$0 { player.errorMessage = nil } }
