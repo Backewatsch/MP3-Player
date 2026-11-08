@@ -156,6 +156,11 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
             return false
         }
 
+        override fun onPageCommitVisible(view: WebView, url: String?) {
+            // Früh abdunkeln, damit helle Seiten nicht erst weiß aufblitzen
+            view.evaluateJavascript(DARKEN_SCRIPT, null)
+        }
+
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
             val offlinePage = url?.contains("start.mp3player.local/offline") == true
             _state.value = _state.value.copy(loading = true, found = emptyList(), detected = null,
@@ -167,6 +172,7 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
             _state.value = _state.value.copy(loading = false)
             syncNavigation(url)
             view.evaluateJavascript(WATCH_SCRIPT, null)
+            view.evaluateJavascript(DARKEN_SCRIPT, null)
             scan()
         }
 
@@ -199,6 +205,34 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
                 if (!el || (el.tagName !== 'AUDIO' && el.tagName !== 'VIDEO')) return;
                 try { MP3PlayerBridge.mediaPlaying(el.currentSrc || el.src || ''); } catch (err) {}
               }, true);
+            })();
+        """
+
+        /**
+         * Dunkel-Modus für Webseiten: Ist der Seitenhintergrund hell, wird die Seite umgefärbt
+         * (Farben umkehren, Farbton erhalten). Bilder und Videos werden zurückgedreht und behalten ihre Farben.
+         */
+        private const val DARKEN_SCRIPT = """
+            (function() {
+              if (document.getElementById('__mp3DarkStyle')) return;
+              function lum(el) {
+                if (!el) return null;
+                var c = getComputedStyle(el).backgroundColor || '';
+                var m = c.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/);
+                if (!m) return null;
+                if (m[4] !== undefined && parseFloat(m[4]) < 0.1) return null; // durchsichtig
+                return (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]) / 255;
+              }
+              var l = lum(document.body);
+              if (l === null) l = lum(document.documentElement);
+              if (l === null) l = 1; // kein Hintergrund gesetzt → Browser-Standard Weiß
+              if (l < 0.5) return;   // Seite ist schon dunkel
+              var s = document.createElement('style');
+              s.id = '__mp3DarkStyle';
+              s.textContent =
+                'html{filter:invert(1) hue-rotate(180deg) !important;background:#fff !important}' +
+                'img,video,picture,canvas,svg image,iframe,[style*="background-image"]{filter:invert(1) hue-rotate(180deg) !important}';
+              (document.head || document.documentElement).appendChild(s);
             })();
         """
 
