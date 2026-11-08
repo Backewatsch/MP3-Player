@@ -166,7 +166,7 @@ struct MediathekView: View {
                         player.shuffle = false
                         player.play(library.sortedTracks, startAt: 0, allTracks: true)
                     } label: {
-                        Label("Alle abspielen", systemImage: "play.fill").frame(maxWidth: .infinity)
+                        Label("Abspielen", systemImage: "play.fill").frame(maxWidth: .infinity)
                     }
                     Button {
                         let all = library.sortedTracks

@@ -33,10 +33,15 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
 
     private final class Pending {
         let id: UUID
+        /// Der Download wird bis zum Ende festgehalten, sonst kann WebKit ihn verwerfen
+        let download: WKDownload?
         var destination: URL?
         var failed = false
         var observation: NSKeyValueObservation?
-        init(id: UUID) { self.id = id }
+        init(id: UUID, download: WKDownload? = nil) {
+            self.id = id
+            self.download = download
+        }
     }
 
     private var pendingWK: [ObjectIdentifier: Pending] = [:]
@@ -96,7 +101,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
 
     func track(_ download: WKDownload, source: URL?, into playlistID: UUID? = nil) {
         let id = UUID()
-        let pending = Pending(id: id)
+        let pending = Pending(id: id, download: download)
         pending.observation = download.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
             let value = progress.fractionCompleted
             Task { @MainActor in self?.update(id) { $0.progress = value } }

@@ -57,9 +57,11 @@ final class MP3PlayerUITests: XCTestCase {
 
     func test1_AllTabsShowUp() {
         XCTAssertTrue(app.staticTexts["Noch keine Musik"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["Heruntergeladen"].exists, "Playlists stehen in der Mediathek")
-        XCTAssertTrue(app.buttons["newPlaylistButton"].exists, "Neue Playlist in der Mediathek")
         screenshot("01-Mediathek-leer")
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Heruntergeladen"].waitForExistence(timeout: 5), "Playlists stehen in der Mediathek")
+        XCTAssertTrue(app.buttons["newPlaylistButton"].exists, "Neue Playlist in der Mediathek")
+        screenshot("01b-Mediathek-Playlists")
 
         tab("Lieder downloaden")
         XCTAssertTrue(app.textFields["addressField"].waitForExistence(timeout: 5))
@@ -76,6 +78,7 @@ final class MP3PlayerUITests: XCTestCase {
 
     func test2_CreatePlaylistInLibrary() {
         let new = app.buttons["newPlaylistButton"]
+        if !new.waitForExistence(timeout: 5) { app.swipeUp() }
         XCTAssertTrue(new.waitForExistence(timeout: 10))
         new.tap()
         let field = app.alerts.textFields.firstMatch
@@ -86,6 +89,7 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Sommerhits"].waitForExistence(timeout: 5), "Neue Playlist wird nicht geöffnet")
         screenshot("02-Neue-Playlist")
         goBackToRoot()
+        if !app.staticTexts["Sommerhits"].waitForExistence(timeout: 3) { app.swipeUp() }
         XCTAssertTrue(app.staticTexts["Sommerhits"].waitForExistence(timeout: 5), "Playlist steht nicht in der Mediathek")
     }
 
@@ -167,11 +171,12 @@ final class MP3PlayerUITests: XCTestCase {
         screenshot("10-Browser-Download")
 
         app.buttons["downloadsButton"].tap()
-        waitForFinishedDownload(timeout: 120)
+        waitForFinishedDownload(timeout: 180)
         screenshot("11-Browser-Download-fertig")
         app.buttons["closeDownloads"].tap()
 
         tab("Mediathek")
+        if !app.staticTexts["1 Titel"].waitForExistence(timeout: 5) { app.swipeUp() }
         XCTAssertTrue(app.staticTexts["1 Titel"].waitForExistence(timeout: 5))
     }
 
