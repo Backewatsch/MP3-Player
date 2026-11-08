@@ -102,6 +102,15 @@ jobs:
           xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots/attachments || true
           ls -la screenshots screenshots/attachments || true
 
+      - name: Screenshots als Vorschau ins Log schreiben
+        if: always()
+        run: |
+          for f in screenshots/*.png; do
+            [ -f "$f" ] || continue
+            sips -Z 640 -s format jpeg -s formatOptions 55 "$f" --out /tmp/preview.jpg >/dev/null
+            echo "SCREENSHOT $(basename "$f" .png) $(base64 -i /tmp/preview.jpg | tr -d '\n')"
+          done
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -3,6 +3,7 @@ import SwiftUI
 struct DownloadsView: View {
     @EnvironmentObject private var downloads: DownloadManager
     @State private var linkText = ""
+    @FocusState private var linkFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -13,6 +14,8 @@ struct DownloadsView: View {
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .focused($linkFocused)
+                            .submitLabel(.go)
                             .onSubmit(start)
                             .accessibilityIdentifier("downloadLinkField")
                         Button("Laden", action: start)
@@ -35,6 +38,7 @@ struct DownloadsView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Downloads")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -56,6 +60,7 @@ struct DownloadsView: View {
         guard let url = validURL else { return }
         downloads.download(from: url)
         linkText = ""
+        linkFocused = false // Tastatur schließen
     }
 }
 

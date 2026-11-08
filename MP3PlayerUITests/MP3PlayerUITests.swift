@@ -50,7 +50,8 @@ final class MP3PlayerUITests: XCTestCase {
 
         tab("Browser")
         XCTAssertTrue(app.textFields["addressField"].waitForExistence(timeout: 5))
-        let startPage = app.webViews.staticTexts["Internet Archive"].firstMatch
+        let startPage = app.webViews.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Internet Archive")).firstMatch
         XCTAssertTrue(startPage.waitForExistence(timeout: 15), "Startseite des Browsers wird nicht angezeigt")
         screenshot("03-Browser-Startseite")
 
