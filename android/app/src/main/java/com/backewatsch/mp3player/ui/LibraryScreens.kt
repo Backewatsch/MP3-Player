@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
@@ -158,6 +159,8 @@ fun MediathekRoot() {
                         onClick = { showMenu = false; importer.launch(arrayOf("audio/*", "video/*")) })
                     DropdownMenuItem(text = { Text("Von Link herunterladen") }, leadingIcon = { Icon(Icons.Default.Link, null) },
                         onClick = { showMenu = false; showLink = true })
+                    DropdownMenuItem(text = { Text("Von Samsung Music übertragen") }, leadingIcon = { Icon(Icons.Default.PhoneAndroid, null) },
+                        onClick = { showMenu = false; nav.showTransfer = true }, modifier = Modifier.testTag("menuTransfer"))
                 }
             }
         })
@@ -217,7 +220,14 @@ fun MediathekRoot() {
             if (lib.tracks.isEmpty()) {
                 item {
                     EmptyHint("Noch keine Musik",
-                        "Lade im Tab „Lieder downloaden“ Musik aus dem Internet oder importiere Dateien über ＋.")
+                        "Lade im Tab „Lieder downloaden“ Musik aus dem Internet, importiere Dateien über ＋ oder übertrage deine Musik aus Samsung Music.")
+                }
+                item {
+                    FilledTonalButton(onClick = { nav.showTransfer = true },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("transferButton")) {
+                        Icon(Icons.Default.PhoneAndroid, null, tint = Accent); Spacer(Modifier.width(8.dp))
+                        Text("Von Samsung Music übertragen", color = Accent)
+                    }
                 }
             } else {
                 item {

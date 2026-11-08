@@ -26,6 +26,7 @@ class App : Application() {
     lateinit var downloads: DownloadRepository
     lateinit var player: PlayerConnection
     lateinit var updates: UpdateChecker
+    lateinit var deviceImporter: com.backewatsch.mp3player.data.DeviceMusicImporter
     val browser: BrowserController by lazy { BrowserController(this, downloads) }
 
     override fun onCreate() {
@@ -35,6 +36,7 @@ class App : Application() {
         downloads = DownloadRepository(library, storage, scope)
         player = PlayerConnection(this, library, scope)
         updates = UpdateChecker(this, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
+        deviceImporter = com.backewatsch.mp3player.data.DeviceMusicImporter(this, library)
 
         // Heruntergeladene Titel kommen in die Wiedergabeliste (pausiert, wenn gerade nichts läuft)
         library.onTrackAdded = { track, playlistId -> if (playlistId != null) player.enqueue(track) }

@@ -91,6 +91,7 @@ class Library(
         move: Boolean,
         addToDownloads: Boolean = false,
         extraPlaylistId: String? = null,
+        sourceKey: String = "",
     ): Track {
         val name = FileNames.sanitize(preferredName ?: source.name)
         if (!FileNames.isImportable(name)) {
@@ -104,7 +105,8 @@ class Library(
             try {
                 withContext(Dispatchers.Default) { Mp3Converter.convert(source, converted) }
                 if (move) source.delete()
-                return import(converted, move = true, addToDownloads = addToDownloads, extraPlaylistId = extraPlaylistId)
+                return import(converted, move = true, addToDownloads = addToDownloads, extraPlaylistId = extraPlaylistId,
+                    sourceKey = sourceKey)
             } finally {
                 dir.deleteRecursively()
             }
@@ -119,7 +121,7 @@ class Library(
                 source.copyTo(destination, overwrite = false)
                 if (move) source.delete()
             }
-            val track = withContext(Dispatchers.IO) { makeTrack(destination) }
+            val track = withContext(Dispatchers.IO) { makeTrack(destination) }.copy(source = sourceKey)
             var target: String? = null
             mutex.withLock {
                 _state.update { s ->
@@ -282,6 +284,17 @@ class Library(
             s.copy(pinned = if (track.id in s.pinned) s.pinned - track.id else listOf(track.id) + s.pinned)
         }
         save()
+    }
+
+    /** Titel, der aus dieser Quelle stammt (bereits übertragen?) */
+    fun trackFromSource(sourceKey: String) = tracks.firstOrNull { it.source.isNotEmpty() && it.source == sourceKey }
+
+    /** Playlist mit diesem Namen holen oder anlegen und Titel (ohne Doppelte) anhängen */
+    fun mergePlaylist(name: String, trackIds: List<String>): Playlist {
+        val existing = playlists.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) && it.id != DOWNLOADS_PLAYLIST_ID }
+        val playlist = existing ?: createPlaylist(name)
+        updatePlaylist(playlist.id) { p -> p.copy(trackIds = (p.trackIds + trackIds).distinct()) }
+        return playlist(playlist.id) ?: playlist
     }
 
     fun createPlaylist(name: String): Playlist {

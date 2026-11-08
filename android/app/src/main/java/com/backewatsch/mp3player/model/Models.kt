@@ -13,6 +13,8 @@ data class Track(
     /** Dauer in Millisekunden */
     val durationMs: Long = 0,
     val addedAt: Long = System.currentTimeMillis(),
+    /** Herkunft (z. B. Pfad der Originaldatei bei Übernahme aus Samsung Music) – verhindert Doppelte */
+    val source: String = "",
 )
 
 @Serializable
