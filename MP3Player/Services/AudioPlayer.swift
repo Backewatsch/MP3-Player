@@ -81,6 +81,10 @@ final class AudioPlayer: NSObject, ObservableObject {
     private var lastTick: Date?
     /// Wie viele Ticks die Position schon am Dateiende steht (Absicherung, falls die Engine das Ende nicht meldet)
     private var endTicks = 0
+    /// Position der letzten Ticks – steht sie still, ist das echte Ende der Datei erreicht
+    /// (manche MP3s melden eine etwas zu große Länge, dann kommt keine Ende-Meldung)
+    private var lastFrame: AVAudioFramePosition = -1
+    private var stallTicks = 0
 
     override init() {
         super.init()
@@ -152,6 +156,8 @@ final class AudioPlayer: NSObject, ObservableObject {
         startEngineIfNeeded()
         node.play()
         isPlaying = true
+        stallTicks = 0
+        lastFrame = -1
         noteStart()
         startTimer()
         updateNowPlaying()
@@ -195,6 +201,8 @@ final class AudioPlayer: NSObject, ObservableObject {
         let frame = min(AVAudioFramePosition(clamped * sampleRate), fileLength)
         schedule(from: frame)
         pausedFrame = frame
+        stallTicks = 0
+        lastFrame = -1
         if isPlaying {
             startEngineIfNeeded()
             node.play()
@@ -433,6 +441,9 @@ final class AudioPlayer: NSObject, ObservableObject {
             startedID = nil
             countedID = nil
             heardSeconds = 0
+            stallTicks = 0
+            endTicks = 0
+            lastFrame = -1
             duration = Double(fileLength) / sampleRate
             currentTime = 0
             pausedFrame = 0
@@ -487,6 +498,8 @@ final class AudioPlayer: NSObject, ObservableObject {
     private func trackFinished() {
         guard let i = index else { return }
         endTicks = 0
+        stallTicks = 0
+        lastFrame = -1
         flushListening()
         if repeatMode == .one {
             schedule(from: 0)
@@ -548,11 +561,19 @@ final class AudioPlayer: NSObject, ObservableObject {
         let position = Double(frame) / sampleRate
         // Anzeige nur bei spürbarer Änderung aktualisieren (sonst zeichnet SwiftUI 10× pro Sekunde neu)
         if abs(position - currentTime) >= 0.25 || frame >= fileLength { currentTime = position }
-        // Ende erreicht, aber keine Meldung der Engine → selbst weiterschalten
-        if fileLength > 0 && frame >= fileLength {
+        // Position bewegt sich nicht mehr, obwohl Musik läuft → Datei ist zu Ende
+        if frame == lastFrame && frame > 0 {
+            stallTicks += 1
+        } else {
+            stallTicks = 0
+        }
+        lastFrame = frame
+        // Ende erreicht (oder stehengeblieben), aber keine Meldung der Engine → selbst weiterschalten
+        if stallTicks >= 12 || (fileLength > 0 && frame >= fileLength) {
             endTicks += 1
-            if endTicks >= 4 {
+            if endTicks >= 4 || stallTicks >= 12 {
                 endTicks = 0
+                stallTicks = 0
                 generation += 1 // eine evtl. noch kommende Meldung ignorieren
                 trackFinished()
                 return
