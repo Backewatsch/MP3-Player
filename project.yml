@@ -4,6 +4,7 @@ options:
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
+  developmentLanguage: de
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -31,6 +32,8 @@ targets:
       path: MP3Player/Info.plist
       properties:
         CFBundleDisplayName: MP3 Player
+        CFBundleDevelopmentRegion: de
+        CFBundleLocalizations: [de]
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
