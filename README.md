@@ -51,6 +51,15 @@ YouTube liefert keine MP3-Dateien aus, sondern verschlüsselte/segmentierte Vide
 
 Bei jedem Push baut GitHub Actions (`.github/workflows/build.yml`) die App auf einem macOS-Server und stellt eine **unsignierte IPA** als Artefakt bereit (*Actions → neuester Lauf → Artifacts → MP3Player-unsigned-ipa*). Diese kannst du mit einem Sideloading-Tool wie **Sideloadly** oder **AltStore** mit deiner Apple-ID signieren und installieren.
 
+## Automatische Tests
+
+Bei jedem Push laufen auf GitHub (macOS, aktueller iPhone-Simulator):
+
+- **Unit-Tests** (`MP3PlayerTests`): ID3-Tags und Cover lesen, Import/Ablehnung von Dateien, doppelte Dateinamen, Ordner-Scan ohne Duplikate, Playlists (anlegen, sortieren, entfernen, speichern), Downloads → Playlist „Heruntergeladen“, Player (Weiter/Zurück, automatischer Titelwechsel, Wiederholen, Zufall, Warteschlange, gelöschte Titel)
+- **UI-Tests** (`MP3PlayerUITests`): bedienen die App wie ein Mensch – MP3 per Link laden, in der Playlist finden und abspielen, MP3 über den internen Browser laden, YouTube-Hinweis. Die Screenshots liegen im Artefakt *test-screenshots*.
+
+Lokal auf dem Mac: `xcodegen generate`, dann in Xcode **⌘U**.
+
 ## Projektstruktur
 
 ```
@@ -63,4 +72,6 @@ MP3Player/
   Services/DownloadManager.swift  Downloads (Browser + Link) → Bibliothek
   Services/BrowserModel.swift     WKWebView, Download-Erkennung, Startseite
   Views/                     SwiftUI-Oberfläche
+MP3PlayerTests/              Unit-Tests (+ Test-MP3s mit ID3-Tags)
+MP3PlayerUITests/            UI-Tests im Simulator
 ```
