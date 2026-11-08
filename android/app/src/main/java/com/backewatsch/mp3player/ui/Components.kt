@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -58,8 +59,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun Artwork(track: Track?, size: Dp, corner: Dp = 6.dp) {
     val context = LocalContext.current
-    val bitmap by produceState<ImageBitmap?>(null, track?.id) {
-        value = track?.let { t ->
+    val ownCovers by context.app.showOwnCovers.collectAsState()
+    val bitmap by produceState<ImageBitmap?>(null, track?.id, ownCovers) {
+        value = if (!ownCovers) null else track?.let { t ->
             withContext(Dispatchers.IO) {
                 context.app.library.artworkOf(t)?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
             }
@@ -69,21 +71,8 @@ fun Artwork(track: Track?, size: Dp, corner: Dp = 6.dp) {
     if (bitmap != null) {
         Image(bitmap!!, null, Modifier.size(size).clip(shape), contentScale = ContentScale.Crop)
     } else {
-        Box(
-            Modifier.size(size).clip(shape)
-                .background(Brush.linearGradient(listOf(Color(0xFF2B1F4A), Color(0xFF5C2A55), Color(0xFF235A63))))
-                .drawBehind {
-                    // feines Raster über dem Verlauf
-                    val step = this.size.width / 6
-                    for (i in 1 until 6) {
-                        drawLine(Color.White.copy(alpha = 0.06f), Offset(step * i, 0f), Offset(step * i, this.size.height), 1f)
-                        drawLine(Color.White.copy(alpha = 0.06f), Offset(0f, step * i), Offset(this.size.width, step * i), 1f)
-                    }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Default.MusicNote, null, tint = Color(0xFFCFC9DE).copy(alpha = 0.8f), modifier = Modifier.size(size * 0.45f))
-        }
+        // Kein eigenes Cover (oder ausgeschaltet) → App-Logo
+        LogoArt(size, shape)
     }
 }
 

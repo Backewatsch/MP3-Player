@@ -108,6 +108,22 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
 
+            SectionHeader("Darstellung")
+            Card {
+                val own by app.showOwnCovers.collectAsState()
+                Row(
+                    Modifier.fillMaxWidth().clickable { app.setShowOwnCovers(!own) }.padding(16.dp).testTag("ownCoversSwitch"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Eigene Cover der Lieder anzeigen")
+                        Text(if (own) "Lieder zeigen ihr eigenes Cover (falls vorhanden)" else "Neben jedem Lied steht das App-Logo",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.Switch(checked = own, onCheckedChange = { app.setShowOwnCovers(it) })
+                }
+            }
+
             SectionHeader("Konverter")
             Card {
                 if (conversion != null) {

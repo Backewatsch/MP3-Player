@@ -65,6 +65,7 @@ Hinweise:
 - Musik liegt in `Android/data/com.backewatsch.mp3player/files/Music` (per USB am PC erreichbar). Kopierte Dateien werden automatisch erkannt und zu MP3 umgewandelt.
 - Android kann zusätzlich **WebM, OGG und Opus** lesen und in MP3 umwandeln.
 - **Als Nächstes abspielen** (⋮ oder lange drücken): reiht das Lied direkt hinter dem laufenden ein – auch bei Zufallswiedergabe; mehrere in der gewählten Reihenfolge. In der Wiedergabeliste lassen sich kommende Lieder verschieben und entfernen.
+- **App-Logo als Cover** neben jedem Lied (auch in Benachrichtigung und Sperrbildschirm); eigene Cover lassen sich unter *Info & Updates → Darstellung* einschalten.
 - **Start-Seite** mit „Weiterhören“, **„Oft gespielt“** (zählt ab 30 Sekunden Hören) und **Verlauf** (löschbar).
 - **Von Samsung Music übertragen** (Mediathek → ＋ oder Start-Seite): **alle Lieder** auf einmal oder **einzeln auswählen** (mit Suche); überträgt Lieder vom Handy (ohne Doppelte, Nicht-MP3 wird umgewandelt). Playlists vorher in Samsung Music exportieren (*Playlists → ⋮ → Exportieren*, landen als .m3u im Ordner „Music“) und dann in der App auswählen – fehlende Lieder werden automatisch mitgenommen.
 - **Offline:** Musik, Playlists, Player und Umwandeln funktionieren komplett ohne Internet. Nur Browser, Downloads und die Update-Suche brauchen eine Verbindung (der Browser zeigt dann eine Offline-Seite).

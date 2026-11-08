@@ -145,8 +145,18 @@ class PlayerConnection(
         if (c != null) action(c) else pending += action
     }
 
+    /** Nach dem Umschalten „eigene Cover“: Bilder in der Wiedergabeliste aktualisieren */
+    fun refreshArtwork() = withController { c ->
+        val byId = library.tracks.associateBy { it.id }
+        for (i in 0 until c.mediaItemCount) {
+            if (i == c.currentMediaItemIndex) continue
+            byId[c.getMediaItemAt(i).mediaId]?.let { c.replaceMediaItem(i, item(it)) }
+        }
+    }
+
     private fun item(track: Track): MediaItem {
-        val artwork = library.artworkOf(track)
+        val ownCovers = (context.applicationContext as com.backewatsch.mp3player.App).showOwnCovers.value
+        val artwork = if (ownCovers) library.artworkOf(track) else null
         return MediaItem.Builder()
             .setMediaId(track.id)
             .setUri(Uri.fromFile(library.fileOf(track)))
@@ -155,7 +165,10 @@ class PlayerConnection(
                     .setTitle(track.title)
                     .setArtist(track.artist.ifEmpty { null })
                     .setAlbumTitle(track.album.ifEmpty { null })
-                    .setArtworkUri(artwork?.let { Uri.fromFile(it) })
+                    .apply {
+                        if (artwork != null) setArtworkUri(Uri.fromFile(artwork))
+                        else setArtworkData(com.backewatsch.mp3player.ui.LogoBitmap.png(context), MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                    }
                     .build(),
             )
             .build()

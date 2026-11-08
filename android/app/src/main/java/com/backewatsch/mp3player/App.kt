@@ -29,6 +29,15 @@ class App : Application() {
     lateinit var deviceImporter: com.backewatsch.mp3player.data.DeviceMusicImporter
     val browser: BrowserController by lazy { BrowserController(this, downloads) }
 
+    /** Eigene Cover der Lieder statt des App-Logos anzeigen (Standard: aus → immer das Logo) */
+    private val settings by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+    val showOwnCovers by lazy { kotlinx.coroutines.flow.MutableStateFlow(settings.getBoolean("showOwnCovers", false)) }
+    fun setShowOwnCovers(value: Boolean) {
+        settings.edit().putBoolean("showOwnCovers", value).apply()
+        showOwnCovers.value = value
+        player.refreshArtwork()
+    }
+
     override fun onCreate() {
         super.onCreate()
         storage = Storage(this)
