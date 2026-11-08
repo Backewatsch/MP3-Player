@@ -46,6 +46,7 @@ struct LibraryView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Hinzufügen")
                 }
             }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio, .mp3Audio], allowsMultipleSelection: true) { result in

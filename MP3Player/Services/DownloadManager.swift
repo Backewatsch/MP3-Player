@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import WebKit
 
 /// Lädt Audiodateien herunter (aus dem internen Browser oder per Link) und übernimmt sie in die Bibliothek.
@@ -36,6 +37,13 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
 
     private var pendingWK: [ObjectIdentifier: Pending] = [:]
     private var pendingTasks: [UUID: NSKeyValueObservation] = [:]
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+    override init() {
+        super.init()
+        // Reste abgebrochener Downloads vom letzten Start entfernen
+        try? FileManager.default.removeItem(at: Storage.incomingRoot)
+    }
 
     var activeCount: Int {
         items.filter { $0.state == .running || $0.state == .importing }.count
@@ -47,6 +55,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         let id = UUID()
         items.insert(Item(id: id, name: url.lastPathComponent.isEmpty ? url.absoluteString : url.lastPathComponent,
                           source: url, progress: 0, state: .running, startedAt: Date()), at: 0)
+        updateBackgroundTask()
 
         let task = URLSession.shared.downloadTask(with: url) { [weak self] tempURL, response, error in
             // Die temporäre Datei wird nach diesem Block gelöscht → hier sofort verschieben.
@@ -93,6 +102,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         let name = source?.lastPathComponent ?? "Download"
         items.insert(Item(id: id, name: name.isEmpty ? "Download" : name, source: source,
                           progress: 0, state: .running, startedAt: Date()), at: 0)
+        updateBackgroundTask()
     }
 
     func download(_ download: WKDownload,
@@ -178,6 +188,24 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
     private func update(_ id: UUID, _ change: (inout Item) -> Void) {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         change(&items[i])
+        updateBackgroundTask()
+    }
+
+    /// Hält die App kurz im Hintergrund am Leben, solange Downloads laufen.
+    private func updateBackgroundTask() {
+        if activeCount > 0, backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Downloads") { [weak self] in
+                Task { @MainActor in self?.endBackgroundTask() }
+            }
+        } else if activeCount == 0 {
+            endBackgroundTask()
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
     }
 
     // MARK: Dateiname / Typ bestimmen
@@ -219,6 +247,12 @@ enum DownloadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAudio(let mime):
+            if let mime, mime.lowercased().hasPrefix("audio/") {
+                return "Das Audioformat \(mime) wird nicht unterstützt (nur MP3, M4A, AAC, WAV, AIFF, FLAC)."
+            }
+            if let mime, mime.lowercased().hasPrefix("text/html") {
+                return "Der Link führt zu einer Webseite, nicht direkt zu einer Audiodatei."
+            }
             return "Keine Audiodatei" + (mime.map { " (\($0))" } ?? "") + "."
         case .http(let code):
             return "Server-Fehler \(code) – \(HTTPURLResponse.localizedString(forStatusCode: code))."

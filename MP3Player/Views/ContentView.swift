@@ -34,6 +34,9 @@ struct ContentView: View {
         .onChange(of: tab) { newTab in
             if newTab == .downloads { downloads.unseenCount = 0 }
         }
+        .onChange(of: downloads.unseenCount) { count in
+            if tab == .downloads && count > 0 { downloads.unseenCount = 0 }
+        }
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
         }

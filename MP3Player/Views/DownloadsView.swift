@@ -14,8 +14,10 @@ struct DownloadsView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .onSubmit(start)
+                            .accessibilityIdentifier("downloadLinkField")
                         Button("Laden", action: start)
                             .disabled(validURL == nil)
+                            .accessibilityIdentifier("downloadStartButton")
                     }
                 } footer: {
                     Text("Fertige Downloads landen automatisch in der Bibliothek und in der Playlist „Heruntergeladen“.")
@@ -82,6 +84,7 @@ private struct DownloadRow: View {
                 Spacer()
                 Button { downloads.retry(item) } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("Erneut versuchen")
             }
         }
         .padding(.vertical, 2)

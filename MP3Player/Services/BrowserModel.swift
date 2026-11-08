@@ -16,6 +16,10 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var notice: String?
     @Published var foundAudio: [URL] = []
     @Published var showFoundAudio = false
+    /// Solange der Nutzer tippt, wird die Adresszeile nicht überschrieben.
+    var isEditingAddress = false {
+        didSet { if !isEditingAddress { syncState(updateAddress: true) } }
+    }
 
     weak var downloads: DownloadManager?
     private var observations: [NSKeyValueObservation] = []
@@ -79,8 +83,22 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     /// Die aktuell geöffnete Adresse direkt als Audiodatei laden.
     func downloadCurrentPage() {
-        guard let url = webView.url, url.scheme?.hasPrefix("http") == true else { return }
-        downloads?.download(from: url)
+        guard let url = webView.url, url.scheme?.hasPrefix("http") == true else {
+            notice = "Öffne zuerst eine Seite bzw. einen Link zu einer Audiodatei."
+            return
+        }
+        startDownload(url)
+    }
+
+    /// Lädt über die Browser-Sitzung herunter (Cookies/Anmeldung der Seite bleiben erhalten).
+    func startDownload(_ url: URL) {
+        var request = URLRequest(url: url)
+        if let referer = webView.url, referer.scheme?.hasPrefix("http") == true {
+            request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
+        }
+        webView.startDownload(using: request) { [weak self] download in
+            self?.downloads?.track(download, source: url)
+        }
     }
 
     /// Sucht Audio-Elemente und Links auf Audiodateien auf der aktuellen Seite.
@@ -118,7 +136,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         progress = webView.estimatedProgress
         let url = webView.url
         currentHost = url?.host
-        if updateAddress {
+        if updateAddress && !isEditingAddress {
             if let url, url.scheme?.hasPrefix("http") == true {
                 address = url.absoluteString
             } else {
@@ -214,7 +232,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         let configuration = UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] suggested in
             let action = UIAction(title: "Als Audio herunterladen", image: UIImage(systemName: "arrow.down.circle")) { _ in
-                Task { @MainActor in self?.downloads?.download(from: url) }
+                Task { @MainActor in self?.startDownload(url) }
             }
             return UIMenu(title: "", children: [action] + suggested)
         }

@@ -57,7 +57,9 @@ struct BrowserView: View {
                     .autocorrectionDisabled()
                     .submitLabel(.go)
                     .focused($addressFocused)
+                    .accessibilityIdentifier("addressField")
                     .onSubmit { browser.submitAddress() }
+                    .onChange(of: addressFocused) { browser.isEditingAddress = $0 }
                 if addressFocused && !browser.address.isEmpty {
                     Button { browser.address = "" } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
@@ -75,6 +77,7 @@ struct BrowserView: View {
             } label: {
                 Image(systemName: "ellipsis.circle").font(.title3)
             }
+            .accessibilityLabel("Mehr")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -96,15 +99,20 @@ struct BrowserView: View {
         HStack {
             Button(action: browser.goBack) { Image(systemName: "chevron.backward") }
                 .disabled(!browser.canGoBack)
+                .accessibilityLabel("Zurück")
             Spacer()
             Button(action: browser.goForward) { Image(systemName: "chevron.forward") }
                 .disabled(!browser.canGoForward)
+                .accessibilityLabel("Vor")
             Spacer()
             Button(action: browser.scanForAudio) { Image(systemName: "waveform") }
+                .accessibilityLabel("Audiodateien auf Seite suchen")
             Spacer()
             Button(action: browser.loadStartPage) { Image(systemName: "house") }
+                .accessibilityLabel("Startseite")
             Spacer()
             Button(action: browser.reload) { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }
+                .accessibilityLabel(browser.isLoading ? "Stopp" : "Neu laden")
         }
         .font(.title3)
         .padding(.horizontal, 28)
@@ -139,7 +147,7 @@ struct FoundAudioSheet: View {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                     } else {
                         Button {
-                            downloads.download(from: url)
+                            browser.startDownload(url)
                             started.insert(url)
                         } label: {
                             Image(systemName: "arrow.down.circle").font(.title2)
@@ -155,7 +163,7 @@ struct FoundAudioSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Alle laden") {
                         for url in browser.foundAudio where !started.contains(url) {
-                            downloads.download(from: url)
+                            browser.startDownload(url)
                             started.insert(url)
                         }
                     }

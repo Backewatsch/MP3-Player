@@ -10,7 +10,7 @@ struct MiniPlayerBar: View {
                 GeometryReader { geo in
                     Rectangle()
                         .fill(Color.accentColor)
-                        .frame(width: player.duration > 0 ? geo.size.width * player.currentTime / player.duration : 0)
+                        .frame(width: player.duration > 0 ? geo.size.width * min(1, player.currentTime / player.duration) : 0)
                 }
                 .frame(height: 2)
 
@@ -28,11 +28,14 @@ struct MiniPlayerBar: View {
                             .font(.title2)
                             .frame(width: 44, height: 44)
                     }
+                    .accessibilityLabel(player.isPlaying ? "Pause" : "Abspielen")
+                    .accessibilityIdentifier("miniPlayPause")
                     Button(action: player.next) {
                         Image(systemName: "forward.fill")
                             .font(.title3)
                             .frame(width: 40, height: 44)
                     }
+                    .accessibilityLabel("Nächster Titel")
                 }
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 12)
@@ -41,6 +44,8 @@ struct MiniPlayerBar: View {
             .background(.regularMaterial)
             .contentShape(Rectangle())
             .onTapGesture { showNowPlaying = true }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("miniPlayer")
         }
     }
 }
@@ -64,9 +69,11 @@ struct NowPlayingView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { Image(systemName: "chevron.down") }
+                        .accessibilityLabel("Schließen")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showQueue = true } label: { Image(systemName: "list.bullet") }
+                        .accessibilityLabel("Warteschlange")
                         .disabled(player.queue.isEmpty)
                 }
             }
@@ -121,16 +128,22 @@ struct NowPlayingView: View {
                     Image(systemName: "shuffle").font(.title3)
                         .foregroundStyle(player.shuffle ? Color.accentColor : .secondary)
                 }
+                .accessibilityLabel(player.shuffle ? "Zufallswiedergabe an" : "Zufallswiedergabe aus")
                 Button(action: player.previous) { Image(systemName: "backward.fill").font(.title) }
+                    .accessibilityLabel("Vorheriger Titel")
                 Button(action: player.togglePlayPause) {
                     Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                         .font(.system(size: 72))
                 }
+                .accessibilityLabel(player.isPlaying ? "Pause" : "Abspielen")
+                .accessibilityIdentifier("bigPlayPause")
                 Button(action: player.next) { Image(systemName: "forward.fill").font(.title) }
+                    .accessibilityLabel("Nächster Titel")
                 Button(action: player.cycleRepeatMode) {
                     Image(systemName: player.repeatMode.symbol).font(.title3)
                         .foregroundStyle(player.repeatMode == .off ? .secondary : Color.accentColor)
                 }
+                .accessibilityLabel(player.repeatMode == .off ? "Wiederholen aus" : player.repeatMode == .all ? "Alle wiederholen" : "Titel wiederholen")
             }
             .foregroundStyle(.primary)
             Spacer(minLength: 0)
@@ -152,10 +165,12 @@ struct QueueView: View {
                         .deleteDisabled(index == player.index)
                 }
                 .onDelete { player.removeFromQueue(at: $0) }
+                .onMove { player.moveInQueue(from: $0, to: $1) }
             }
             .navigationTitle("Warteschlange")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { EditButton() }
                 ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
             }
         }

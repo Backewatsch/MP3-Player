@@ -14,11 +14,13 @@ final class Library: ObservableObject {
     var onTrackAdded: ((Track, _ playlistID: UUID?) -> Void)?
 
     private var isScanning = false
+    /// Dateien, die gerade importiert werden (damit `rescan()` sie nicht doppelt aufnimmt).
+    private var importing = Set<String>()
 
-    init() {
+    init(autoScan: Bool = true) {
         load()
         ensureDownloadsPlaylist()
-        Task { await rescan() }
+        if autoScan { Task { await rescan() } }
     }
 
     // MARK: Abfragen
@@ -47,10 +49,23 @@ final class Library: ObservableObject {
         let name = Self.sanitize(preferredName ?? source.lastPathComponent)
         guard Storage.isAudioFile(name) else { throw LibraryError.unsupportedFormat(name) }
 
+        // Datei liegt schon im Musikordner (z. B. in der Dateien-App angetippt) → nicht kopieren
+        if source.deletingLastPathComponent().standardizedFileURL.path == Storage.documents.standardizedFileURL.path {
+            if let existing = tracks.first(where: { $0.fileName == source.lastPathComponent }) { return existing }
+            let track = await Self.makeTrack(for: source)
+            if let existing = tracks.first(where: { $0.fileName == track.fileName }) { return existing }
+            tracks.append(track)
+            save()
+            onTrackAdded?(track, nil)
+            return track
+        }
+
         let accessing = source.startAccessingSecurityScopedResource()
         defer { if accessing { source.stopAccessingSecurityScopedResource() } }
 
         let destination = Self.uniqueDestination(for: name)
+        importing.insert(destination.lastPathComponent)
+        defer { importing.remove(destination.lastPathComponent) }
         let fm = FileManager.default
         if move {
             try fm.moveItem(at: source, to: destination)
@@ -58,10 +73,16 @@ final class Library: ObservableObject {
             try fm.copyItem(at: source, to: destination)
         }
 
-        let track = await Self.makeTrack(for: destination)
-        tracks.append(track)
+        let track: Track
+        if let existing = tracks.first(where: { $0.fileName == destination.lastPathComponent }) {
+            track = existing
+        } else {
+            track = await Self.makeTrack(for: destination)
+            tracks.append(track)
+        }
         var targetPlaylist: UUID?
-        if addToDownloads, let index = playlists.firstIndex(where: { $0.id == Self.downloadsPlaylistID }) {
+        if addToDownloads, let index = playlists.firstIndex(where: { $0.id == Self.downloadsPlaylistID }),
+           !playlists[index].trackIDs.contains(track.id) {
             playlists[index].trackIDs.append(track.id)
             targetPlaylist = Self.downloadsPlaylistID
         }
@@ -84,7 +105,7 @@ final class Library: ObservableObject {
 
         var changed = false
         // Entfernte Dateien aus der Bibliothek löschen
-        let missing = tracks.filter { !present.contains($0.fileName) }
+        let missing = tracks.filter { !present.contains($0.fileName) && !importing.contains($0.fileName) }
         if !missing.isEmpty {
             let ids = Set(missing.map(\.id))
             tracks.removeAll { ids.contains($0.id) }
@@ -92,9 +113,9 @@ final class Library: ObservableObject {
             changed = true
         }
         // Neue Dateien aufnehmen
-        for url in audioFiles where !known.contains(url.lastPathComponent) {
+        for url in audioFiles where !known.contains(url.lastPathComponent) && !importing.contains(url.lastPathComponent) {
             let track = await Self.makeTrack(for: url)
-            if !tracks.contains(where: { $0.fileName == track.fileName }) {
+            if !tracks.contains(where: { $0.fileName == track.fileName }) && !importing.contains(track.fileName) {
                 tracks.append(track)
                 changed = true
             }
@@ -118,6 +139,15 @@ final class Library: ObservableObject {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         tracks[i].title = t.isEmpty ? tracks[i].title : t
         tracks[i].artist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        save()
+    }
+
+    /// Korrigiert die Dauer, wenn der Player sie genauer kennt als die Metadaten.
+    func updateDuration(of trackID: UUID, to duration: Double) {
+        guard duration.isFinite, duration > 0,
+              let i = tracks.firstIndex(where: { $0.id == trackID }),
+              abs(tracks[i].duration - duration) > 1 else { return }
+        tracks[i].duration = duration
         save()
     }
 
@@ -197,7 +227,15 @@ final class Library: ObservableObject {
         let invalid = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines).union(.controlCharacters)
         let cleaned = name.components(separatedBy: invalid).joined(separator: "_")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "Titel.mp3" : cleaned
+        // Führende Punkte würden die Datei verstecken
+        let visible = String(cleaned.drop(while: { $0 == "." }))
+        guard !visible.isEmpty else { return "Titel.mp3" }
+        guard visible.count > 180 else { return visible }
+        // Zu lange Namen kürzen, Endung behalten
+        let ext = (visible as NSString).pathExtension
+        let base = String((visible as NSString).deletingPathExtension.prefix(170))
+        return ext.isEmpty ? base : "\(base).\(ext)"
+
     }
 
     nonisolated static func uniqueDestination(for name: String) -> URL {

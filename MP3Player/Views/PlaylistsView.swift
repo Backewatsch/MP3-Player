@@ -28,9 +28,9 @@ struct PlaylistsView: View {
                     .deleteDisabled(playlist.id == Library.downloadsPlaylistID)
                 }
                 .onDelete { offsets in
-                    for i in offsets where library.playlists.indices.contains(i) {
-                        library.deletePlaylist(library.playlists[i])
-                    }
+                    // Erst die Playlists bestimmen, dann löschen (Indizes verschieben sich sonst)
+                    let doomed = offsets.compactMap { library.playlists.indices.contains($0) ? library.playlists[$0] : nil }
+                    doomed.forEach(library.deletePlaylist)
                 }
             }
             .navigationTitle("Playlists")
@@ -40,6 +40,7 @@ struct PlaylistsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { newName = ""; showNewPrompt = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("Neue Playlist")
                 }
             }
             .alert("Neue Playlist", isPresented: $showNewPrompt) {
@@ -126,6 +127,7 @@ struct PlaylistDetailView: View {
                         Button { renameText = playlist.name; showRename = true } label: { Label("Umbenennen", systemImage: "pencil") }
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
+                .accessibilityLabel("Mehr")
             }
         }
         .sheet(isPresented: $showAddTracks) {

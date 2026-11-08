@@ -6,6 +6,7 @@ on:
 
 jobs:
   build:
+    name: IPA bauen (iPhone)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,13 +31,20 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee build.log
 
-      - name: Warnungen prüfen (nicht aufgerufene Delegate-Methoden)
+      - name: Warnungen prüfen
         run: |
-          grep -E "warning:" build.log | sort -u || true
+          grep -E "\.swift:[0-9]+:[0-9]+: warning:" build.log | sort -u || true
           if grep -q "nearly matches" build.log; then
             echo "::error::Delegate-Methode passt nicht exakt zur Protokoll-Signatur"
             exit 1
           fi
+
+      - name: Info.plist prüfen (Hintergrund-Audio, Dateifreigabe)
+        run: |
+          PLIST=build/Build/Products/Release-iphoneos/MP3Player.app/Info.plist
+          plutil -p "$PLIST"
+          plutil -extract UIBackgroundModes json -o - "$PLIST" | grep -q audio
+          plutil -extract UIFileSharingEnabled raw -o - "$PLIST" | grep -q true
 
       - name: Unsignierte IPA packen
         run: |
@@ -48,3 +56,60 @@ jobs:
         with:
           name: MP3Player-unsigned-ipa
           path: MP3Player-unsigned.ipa
+
+  test:
+    name: Tests im iOS-Simulator
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen installieren
+        run: brew install xcodegen
+
+      - name: Xcode-Projekt erzeugen
+        run: xcodegen generate
+
+      - name: iPhone-Simulator wählen
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          found = [(rt, d) for rt, lst in devices.items() if ".iOS-" in rt for d in lst if d["name"].startswith("iPhone")]
+          found.sort(key=lambda t: [int(x) for x in t[0].split(".iOS-")[1].split("-")])
+          rt, d = found[-1]
+          print(d["udid"])
+          print(rt, d["name"], file=sys.stderr)
+          ')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+
+      - name: Unit- und UI-Tests
+        run: |
+          set -o pipefail
+          mkdir -p screenshots
+          TEST_RUNNER_SCREENSHOT_DIR="$PWD/screenshots" xcodebuild \
+            -project MP3Player.xcodeproj \
+            -scheme MP3Player \
+            -destination "id=$UDID" \
+            -derivedDataPath build-test \
+            -resultBundlePath TestResults.xcresult \
+            test 2>&1 | tee test.log | grep -E "Test (Case|Suite)|error:|\*\* TEST|Executed" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" test.log
+
+      - name: Screenshots aus dem Testergebnis holen
+        if: always()
+        run: |
+          xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots/attachments || true
+          ls -la screenshots screenshots/attachments || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-screenshots
+          path: screenshots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-log
+          path: test.log

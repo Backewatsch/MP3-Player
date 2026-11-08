@@ -23,12 +23,23 @@ enum Storage {
     static let indexFile: URL = support.appendingPathComponent("library.json")
 
     /// Neuer, leerer temporärer Ordner für eine eingehende Datei.
+    static let incomingRoot: URL = FileManager.default.temporaryDirectory.appendingPathComponent("Incoming", isDirectory: true)
+
     static func makeIncomingDirectory() -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Incoming", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = incomingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    /// Löscht Musik, Cover und Bibliotheksindex (nur für automatische Tests).
+    static func resetAll() {
+        let fm = FileManager.default
+        for url in (try? fm.contentsOfDirectory(at: documents, includingPropertiesForKeys: nil)) ?? [] {
+            try? fm.removeItem(at: url)
+        }
+        try? fm.removeItem(at: artwork)
+        try? fm.createDirectory(at: artwork, withIntermediateDirectories: true)
+        try? fm.removeItem(at: indexFile)
     }
 
     static func isAudioFile(_ name: String) -> Bool {

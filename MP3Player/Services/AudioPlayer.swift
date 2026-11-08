@@ -25,6 +25,9 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var repeatMode: RepeatMode = .off
     @Published var errorMessage: String?
 
+    /// Meldet die vom Decoder ermittelte Dauer (genauer als die Metadaten bei VBR-MP3s).
+    var onDurationLoaded: ((UUID, TimeInterval) -> Void)?
+
     /// ID der Playlist, aus der die Warteschlange stammt (`nil` = Alle Titel).
     private(set) var sourcePlaylistID: UUID?
     private(set) var queueIsAllTracks = false
@@ -140,10 +143,19 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func removeFromQueue(at offsets: IndexSet) {
-        guard let current else { queue.remove(atOffsets: offsets); return }
         if let i = index, offsets.contains(i) { return } // laufenden Titel nicht entfernen
+        let removedBefore = index.map { i in offsets.filter { $0 < i }.count } ?? 0
         queue.remove(atOffsets: offsets)
-        index = queue.firstIndex(of: current)
+        if let i = index { index = i - removedBefore }
+        history = []
+    }
+
+    func moveInQueue(from source: IndexSet, to destination: Int) {
+        guard let i = index else { queue.move(fromOffsets: source, toOffset: destination); return }
+        var positions = Array(queue.indices)
+        positions.move(fromOffsets: source, toOffset: destination)
+        queue = positions.map { queue[$0] }
+        index = positions.firstIndex(of: i)
         history = []
     }
 
@@ -166,18 +178,23 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     /// Titel wurde gelöscht bzw. geändert.
     func libraryDidChange(_ tracks: [Track]) {
         guard !queue.isEmpty else { return }
-        let byID = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, $0) })
-        let currentID = current?.id
-        let newQueue = queue.compactMap { byID[$0.id] }
-        if newQueue != queue {
-            queue = newQueue
-            history = []
-            if let currentID, let newIndex = newQueue.firstIndex(where: { $0.id == currentID }) {
-                index = newIndex
-                updateNowPlaying()
-            } else if currentID != nil {
-                stop()
-            }
+        let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var newQueue: [Track] = []
+        var newIndex: Int?
+        for (position, track) in queue.enumerated() {
+            guard let updated = byID[track.id] else { continue }
+            if position == index { newIndex = newQueue.count }
+            newQueue.append(updated)
+        }
+        guard newQueue != queue else { return }
+        let hadCurrent = index != nil
+        queue = newQueue
+        history = []
+        if let newIndex {
+            index = newIndex
+            updateNowPlaying()
+        } else if hadCurrent {
+            stop()
         }
     }
 
@@ -207,6 +224,7 @@ final class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             index = i
             duration = p.duration
             currentTime = 0
+            onDurationLoaded?(track.id, p.duration)
             if autoplay {
                 try? AVAudioSession.sharedInstance().setActive(true)
                 p.play()
