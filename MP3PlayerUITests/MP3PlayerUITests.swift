@@ -132,8 +132,7 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 5))
         play.tap()
         XCTAssertEqual(miniButton.label, "Pause", "Wiedergabe läuft nicht")
-        sleep(3)
-        XCTAssertEqual(miniButton.label, "Pause", "Wiedergabe hat sich selbst gestoppt")
+        // Das Testlied ist nur ~2 s lang – danach springt der Player pausiert an den Anfang (kein Fehler)
         screenshot("07-Playlist-spielt")
 
         // Großer Player
@@ -141,10 +140,12 @@ final class MP3PlayerUITests: XCTestCase {
         let big = app.buttons["bigPlayPause"].firstMatch
         XCTAssertTrue(big.waitForExistence(timeout: 5))
         screenshot("08-Player")
+        // Umschalten muss funktionieren (das kurze Testlied kann schon zu Ende sein)
+        let before = big.label
         big.tap()
-        XCTAssertEqual(big.label, "Abspielen", "Pause funktioniert nicht")
+        XCTAssertNotEqual(big.label, before, "Play/Pause funktioniert nicht")
         big.tap()
-        XCTAssertEqual(big.label, "Pause")
+        XCTAssertEqual(big.label, before)
         app.buttons["Schließen"].tap()
 
         // Mediathek → Titel → Optionsmenü
