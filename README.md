@@ -1,4 +1,4 @@
-# MP3 Player für iPhone
+# MP3 Player für iPhone und Android
 
 Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiodateien – mit eingebautem Browser, über den du Audiodateien aus dem Internet herunterladen kannst. Heruntergeladene Titel landen automatisch in der Bibliothek und in der Playlist **„Heruntergeladen“**.
 
@@ -50,6 +50,21 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 ### Warum kein YouTube-Download?
 
 YouTube liefert keine MP3-Dateien aus, sondern verschlüsselte/segmentierte Videostreams. Sie herunterzuladen und umzuwandeln verstößt gegen die YouTube-Nutzungsbedingungen und bei urheberrechtlich geschützter Musik in der Regel auch gegen das Urheberrecht (in Deutschland u. a. § 95a UrhG – Umgehung technischer Schutzmaßnahmen). Deshalb zeigt der Browser auf YouTube nur einen Hinweis. Legale Alternativen sind auf der Startseite verlinkt (Internet Archive, Free Music Archive, Jamendo, ccMixter, Incompetech, LibriVox), außerdem bieten viele Künstler auf Bandcamp oder ihrer eigenen Seite MP3-Downloads an.
+
+## Android (Samsung & alle anderen) – direkt aus dem Internet installieren
+
+Die Android-App (Ordner `android/`, Kotlin + Jetpack Compose, ab Android 8) hat dieselben Funktionen wie die iPhone-App – und lässt sich **ohne Computer** installieren:
+
+1. Auf dem Handy diese Seite öffnen: **https://github.com/Backewatsch/MP3-Player/releases/latest**
+2. Unter *Assets* auf **`MP3Player.apk`** tippen und herunterladen.
+3. Die Datei öffnen. Android fragt beim ersten Mal, ob der Browser (z. B. Samsung Internet oder Chrome) **„Apps aus unbekannten Quellen installieren“** darf → in den Einstellungen erlauben → zurück → **Installieren**.
+4. Fertig. Updates: Die App zeigt „Update verfügbar“ → *Info & Updates* → **Jetzt installieren** (beim ersten Mal erlauben, dass die App Updates installieren darf). Musik und Playlists bleiben erhalten.
+
+Hinweise:
+- Google Play Protect zeigt eventuell eine Warnung („unbekannter Entwickler“), weil die App nicht aus dem Play Store kommt → *Trotzdem installieren*.
+- Musik liegt in `Android/data/com.backewatsch.mp3player/files/Music` (per USB am PC erreichbar). Kopierte Dateien werden automatisch erkannt und zu MP3 umgewandelt.
+- Android kann zusätzlich **WebM, OGG und Opus** lesen und in MP3 umwandeln.
+- Signierschlüssel: liegt bewusst im Repository (`android/keystore/`), damit Updates ohne Einrichtung funktionieren. Wer einen eigenen, geheimen Schlüssel möchte, kann ihn als GitHub-Secret hinterlegen (Umgebungsvariablen `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) – Achtung: Ein Schlüsselwechsel erfordert einmal Neuinstallation.
 
 ## App bauen und aufs iPhone bringen
 
@@ -115,7 +130,8 @@ MP3Player/
   Services/DownloadManager.swift  Downloads (Browser + Link) → Bibliothek
   Services/BrowserModel.swift     WKWebView, Download-Erkennung, Startseite
   Views/                     SwiftUI-Oberfläche
-ThirdParty/lame/             LAME-MP3-Encoder (LGPL)
+ThirdParty/lame/             LAME-MP3-Encoder (LGPL), von iPhone- und Android-App gemeinsam genutzt
+android/                     Android-App (Kotlin, Jetpack Compose, Media3, LAME per JNI)
 MP3PlayerTests/              Unit-Tests (+ Test-MP3s mit ID3-Tags)
 MP3PlayerUITests/            UI-Tests im Simulator
 ```

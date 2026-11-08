@@ -7,3 +7,11 @@ DerivedData/
 Payload/
 xcuserdata/
 .DS_Store
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+*.apk

@@ -1,0 +1,42 @@
+package com.backewatsch.mp3player.data
+
+import android.content.Context
+import android.os.Environment
+import java.io.File
+import java.util.UUID
+
+/**
+ * Speicherorte der App. Musik liegt in Android/data/<App>/files/Music (per USB am PC erreichbar).
+ * @param testRoot eigener Ordner für automatische Tests
+ */
+class Storage(context: Context, testRoot: File? = null) {
+    val musicDir: File = (testRoot?.let { File(it, "Music") }
+        ?: context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(context.filesDir, "Music")).apply { mkdirs() }
+    val artworkDir: File = File(testRoot ?: context.filesDir, "artwork").apply { mkdirs() }
+    val indexFile: File = File(testRoot ?: context.filesDir, "library.json")
+    val incomingRoot: File = File(testRoot ?: context.cacheDir, "incoming")
+
+    fun newIncomingDir(): File = File(incomingRoot, UUID.randomUUID().toString()).apply { mkdirs() }
+
+    fun fileFor(fileName: String) = File(musicDir, fileName)
+    fun artworkFor(trackId: String) = File(artworkDir, "$trackId.jpg")
+
+    fun uniqueDestination(name: String): File {
+        var candidate = File(musicDir, name)
+        val base = FileNames.baseName(name)
+        val ext = FileNames.extension(name)
+        var n = 2
+        while (candidate.exists()) {
+            candidate = File(musicDir, "$base ($n).$ext")
+            n++
+        }
+        return candidate
+    }
+
+    /** Nur für automatische Tests */
+    fun resetAll() {
+        musicDir.listFiles()?.forEach { it.deleteRecursively() }
+        artworkDir.listFiles()?.forEach { it.delete() }
+        indexFile.delete()
+    }
+}

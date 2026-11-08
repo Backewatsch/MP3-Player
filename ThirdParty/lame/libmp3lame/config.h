@@ -1,5 +1,5 @@
 /*
- * Handgeschriebene config.h für LAME 3.100 auf Apple-Plattformen (iOS arm64 / Simulator arm64+x86_64).
+ * Handgeschriebene config.h für LAME 3.100 (iOS und Android, 32/64 Bit).
  * Ersetzt die von ./configure erzeugte Datei. Nur der Encoder wird gebaut (kein mpglib-Decoder,
  * kein NASM/SSE-Code).
  */
@@ -22,10 +22,10 @@
 
 #define SIZEOF_SHORT 2
 #define SIZEOF_INT 4
-#define SIZEOF_LONG 8
+#define SIZEOF_LONG __SIZEOF_LONG__
 #define SIZEOF_UNSIGNED_SHORT 2
 #define SIZEOF_UNSIGNED_INT 4
-#define SIZEOF_UNSIGNED_LONG 8
+#define SIZEOF_UNSIGNED_LONG __SIZEOF_LONG__
 #define SIZEOF_FLOAT 4
 #define SIZEOF_DOUBLE 8
 #define SIZEOF_LONG_DOUBLE __SIZEOF_LONG_DOUBLE__
