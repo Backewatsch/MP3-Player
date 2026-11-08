@@ -71,7 +71,7 @@ struct SelectionBar: View {
         }
         .padding(12)
         .background(Color.cyberPanelHigh.opacity(0.97))
-        .overlay(alignment: .top) { Rectangle().fill(Color.cyberAccent.opacity(0.4)).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(Color.cyberAccent.opacity(0.4)).frame(height: 1) }
         .sheet(isPresented: $showAdd) {
             AddManyToPlaylistSheet(tracks: chosen) { selection.clear() }
         }

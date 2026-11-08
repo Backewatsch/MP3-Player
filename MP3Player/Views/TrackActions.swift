@@ -380,7 +380,7 @@ struct TrackCollectionList: View {
                     Button(selection.active ? "Fertig" : "Auswählen") { if selection.active { selection.clear() } else { selection.start() } }
                 }
             }
-            .safeAreaInset(edge: .bottom) {
+            .safeAreaInset(edge: .top) {
                 if selection.active { SelectionBar(selection: selection, all: tracks) }
             }
     }

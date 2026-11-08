@@ -60,7 +60,7 @@ struct PlaylistDetailView: View {
         .listStyle(.insetGrouped)
         .cyberList()
         .navigationTitle(playlist.name)
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .top) {
             if selection.active { SelectionBar(selection: selection, all: tracks, playlist: playlist) }
         }
         .toolbar {

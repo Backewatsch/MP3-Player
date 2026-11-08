@@ -404,7 +404,7 @@ struct AllTracksView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .top) {
             if selection.active { SelectionBar(selection: selection, all: tracks) }
         }
     }
