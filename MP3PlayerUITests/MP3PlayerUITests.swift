@@ -128,7 +128,7 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["checkUpdatesButton"].exists)
         // Ergebnis der Update-Prüfung abwarten (egal welches)
         let done = NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@",
-                               "neueste Version", "Update verfügbar", "Noch keine Version", "Fehler")
+                               "neueste Version", "Update verfügbar", "Keine öffentliche Version", "Fehler")
         _ = app.staticTexts.containing(done).firstMatch.waitForExistence(timeout: 20)
         screenshot("13-Info-Updates")
         app.buttons["Fertig"].tap()

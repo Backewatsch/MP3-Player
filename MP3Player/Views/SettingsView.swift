@@ -115,8 +115,13 @@ struct SettingsView: View {
                 .foregroundStyle(Color.accentColor)
                 .font(.body.weight(.semibold))
         case .noReleases:
-            Label("Noch keine Version veröffentlicht.", systemImage: "clock")
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Keine öffentliche Version gefunden.", systemImage: "lock")
+                    .foregroundStyle(.secondary)
+                Text("Ist das GitHub-Repository privat, können iPhone und AltStore die Updates nicht laden. Stelle es unter GitHub → Settings → „Change visibility“ auf öffentlich.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)

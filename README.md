@@ -55,6 +55,8 @@ Bei jedem Push baut GitHub Actions (`.github/workflows/build.yml`) die App auf e
 
 iOS erlaubt nicht, dass eine selbst installierte App sich selbst ersetzt. Updates laufen deshalb über **AltStore** oder **SideStore**: Diese Apps signieren die IPA mit deiner Apple-ID und installieren sie, und sie melden neue Versionen automatisch.
 
+> **Voraussetzung:** Das GitHub-Repository muss **öffentlich** sein. Aus einem privaten Repository können iPhone und AltStore die Releases nicht herunterladen (GitHub → *Settings → General → Danger Zone → Change visibility*).
+
 **So funktioniert es:**
 1. Bei jedem Push baut GitHub die App und testet sie im Simulator. Nur wenn **alle Tests bestehen**, wird automatisch ein neues Release `v1.0.<Build>` mit `MP3Player.ipa` veröffentlicht.
 2. Zu jedem Release gehört eine AltStore-/SideStore-Quelle. Ihre Adresse bleibt immer gleich:
