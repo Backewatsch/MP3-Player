@@ -1,9 +1,9 @@
 import XCTest
 
 final class MP3PlayerUITests: XCTestCase {
-    /// Frei verfügbare Beispiel-MP3s (SoundHelix, für Tests gedacht).
-    private let mp3URL1 = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-    private let mp3URL2 = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"
+    /// Test-MP3s vom lokalen Testserver des Workflows (python3 -m http.server auf dem Mac; der Simulator erreicht ihn über localhost)
+    private let mp3URL1 = "http://localhost:8765/tagged.mp3"
+    private let mp3URL2 = "http://localhost:8765/untagged.mp3"
 
     private var app: XCUIApplication!
 
@@ -34,9 +34,18 @@ final class MP3PlayerUITests: XCTestCase {
 
     private func openDownloads() {
         tab("Lieder downloaden")
+        tapDownloadsButton()
+    }
+
+    /// Download-Liste öffnen (bei Bedarf ein zweites Mal tippen, falls noch eine Animation lief)
+    private func tapDownloadsButton() {
         let button = app.buttons["downloadsButton"]
         XCTAssertTrue(button.waitForExistence(timeout: 5))
         button.tap()
+        if !app.buttons["closeDownloads"].waitForExistence(timeout: 3) {
+            button.tap()
+            XCTAssertTrue(app.buttons["closeDownloads"].waitForExistence(timeout: 5), "Download-Liste öffnet sich nicht")
+        }
     }
 
     private func waitForFinishedDownload(timeout: TimeInterval) {
@@ -108,6 +117,7 @@ final class MP3PlayerUITests: XCTestCase {
         // Heruntergeladener Titel steht pausiert in der Wiedergabeliste (Mini-Player sichtbar)
         let miniButton = app.buttons["miniPlayPause"].firstMatch
         XCTAssertTrue(miniButton.waitForExistence(timeout: 5), "Download ist nicht in der Wiedergabeliste")
+        XCTAssertEqual(miniButton.label, "Abspielen", "Download darf nicht von selbst losspielen")
 
         // Playlist „Heruntergeladen“ in der Mediathek
         tab("Mediathek")
@@ -170,8 +180,8 @@ final class MP3PlayerUITests: XCTestCase {
         sleep(2)
         screenshot("10-Browser-Download")
 
-        app.buttons["downloadsButton"].tap()
-        waitForFinishedDownload(timeout: 180)
+        tapDownloadsButton()
+        waitForFinishedDownload(timeout: 120)
         screenshot("11-Browser-Download-fertig")
         app.buttons["closeDownloads"].tap()
 

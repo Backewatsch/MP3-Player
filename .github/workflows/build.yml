@@ -91,6 +91,12 @@ jobs:
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
 
+      - name: Lokalen Testserver für Downloads starten
+        run: |
+          (cd MP3PlayerTests/Fixtures && nohup python3 -m http.server 8765 > /tmp/testserver.log 2>&1 &)
+          sleep 2
+          curl -sSf -o /dev/null http://localhost:8765/tagged.mp3 && echo "Testserver läuft"
+
       - name: Unit- und UI-Tests
         run: |
           set -o pipefail
@@ -159,6 +165,12 @@ jobs:
         with:
           name: MP3Player-apk
           path: MP3Player.apk
+
+      - name: Lokalen Testserver für Downloads starten
+        run: |
+          (cd MP3PlayerTests/Fixtures && nohup python3 -m http.server 8765 > /tmp/testserver.log 2>&1 &)
+          sleep 2
+          curl -sSf -o /dev/null http://localhost:8765/tagged.mp3 && echo "Testserver läuft"
 
       - name: KVM für den Emulator freischalten
         run: |
