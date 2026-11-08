@@ -129,7 +129,11 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
             }
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Tile("Als Nächstes abspielen", Icons.Default.SkipNext, Modifier.weight(1f)) { app.player.playNext(current); close() }
+                Tile("Als Nächstes abspielen", Icons.Default.SkipNext, Modifier.weight(1f)) {
+                    app.player.playNext(current)
+                    Toast.makeText(context, "„${current.title}“ kommt als Nächstes", Toast.LENGTH_SHORT).show()
+                    close()
+                }
                 Tile("Zu Playlist hinzufügen", Icons.AutoMirrored.Filled.PlaylistAdd, Modifier.weight(1f)) {
                     close(); state.addToPlaylist = current
                 }
@@ -146,7 +150,11 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
             }
             Spacer(Modifier.height(10.dp))
             ActionRow("Mix starten", Icons.Default.Radio) { app.player.startMix(current, app.library.tracks); close() }
-            ActionRow("In die Wiedergabeliste", Icons.AutoMirrored.Filled.QueueMusic) { app.player.addToQueue(current); close() }
+            ActionRow("In die Wiedergabeliste", Icons.AutoMirrored.Filled.QueueMusic) {
+                app.player.addToQueue(current)
+                Toast.makeText(context, "„${current.title}“ ans Ende der Wiedergabeliste", Toast.LENGTH_SHORT).show()
+                close()
+            }
             if (current.album.isNotBlank()) ActionRow("Album anzeigen", Icons.Default.Album) { close(); nav.push(LibRoute.Album(current.album)) }
             if (current.artist.isNotBlank()) ActionRow("Künstlerseite anzeigen", Icons.Default.Mic) { close(); nav.push(LibRoute.Artist(current.artist)) }
             ActionRow("Mitwirkende an Song anzeigen", Icons.Default.People) { close(); state.info = current }

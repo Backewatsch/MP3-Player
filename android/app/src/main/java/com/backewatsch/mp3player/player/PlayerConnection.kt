@@ -42,6 +42,16 @@ class PlayerConnection(
     private var controller: MediaController? = null
     private val pending = mutableListOf<(MediaController) -> Unit>()
 
+    /**
+     * Zufallswiedergabe verwaltet die App selbst (statt des Player-Zufalls), damit „Als Nächstes abspielen“
+     * immer direkt nach dem laufenden Titel kommt. [originalOrder] ist die Reihenfolge ohne Zufall.
+     */
+    private var shuffled = false
+    private var originalOrder: List<String> = emptyList()
+
+    /** Wie viele Titel per „Als Nächstes“ schon hinter dem laufenden eingereiht sind (Reihenfolge bleibt erhalten) */
+    private var nextUpCount = 0
+
     /** Für Verlauf und „Oft gespielt“: welcher Titel schon eingetragen bzw. gezählt wurde */
     private var startedId: String? = null
     private var countedId: String? = null
@@ -52,6 +62,8 @@ class PlayerConnection(
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             startedId = null
             countedId = null
+            // Ein „Als Nächstes“-Titel ist dran (oder es wurde gesprungen) → Zähler neu beginnen
+            nextUpCount = 0
             if (controller?.isPlaying == true) noteStart()
         }
 
@@ -110,6 +122,11 @@ class PlayerConnection(
 
     private fun refresh() {
         val c = controller ?: return
+        if (c.shuffleModeEnabled) {
+            // Zufall von außen eingeschaltet (z. B. Kopfhörer/Auto) → auf eigenen Zufall umstellen
+            c.shuffleModeEnabled = false
+            if (!shuffled) toggleShuffle()
+        }
         val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
         _state.value = UiState(
             currentId = c.currentMediaItem?.mediaId,
@@ -118,7 +135,7 @@ class PlayerConnection(
             durationMs = duration(c),
             queueIds = ids,
             currentIndex = if (ids.isEmpty()) -1 else c.currentMediaItemIndex,
-            shuffle = c.shuffleModeEnabled,
+            shuffle = shuffled,
             repeatMode = c.repeatMode,
         )
     }
@@ -148,10 +165,22 @@ class PlayerConnection(
 
     fun play(tracks: List<Track>, startIndex: Int, shuffle: Boolean = false) = withController { c ->
         if (tracks.isEmpty()) return@withController
-        c.shuffleModeEnabled = shuffle
-        c.setMediaItems(tracks.map(::item), startIndex.coerceIn(0, tracks.lastIndex), 0)
+        val start = startIndex.coerceIn(0, tracks.lastIndex)
+        c.shuffleModeEnabled = false
+        originalOrder = tracks.map { it.id }
+        shuffled = shuffle
+        nextUpCount = 0
+        if (shuffle) {
+            // Gewählter Titel zuerst, der Rest gemischt
+            val first = tracks[start]
+            val rest = tracks.filterIndexed { i, _ -> i != start }.shuffled()
+            c.setMediaItems((listOf(first) + rest).map(::item), 0, 0)
+        } else {
+            c.setMediaItems(tracks.map(::item), start, 0)
+        }
         c.prepare()
         c.play()
+        refresh()
     }
 
     fun togglePlayPause() = withController { c ->
@@ -166,7 +195,35 @@ class PlayerConnection(
     fun seekTo(ms: Long) = withController { it.seekTo(ms); refresh() }
     fun playQueueIndex(index: Int) = withController { it.seekTo(index, 0); it.play() }
 
-    fun toggleShuffle() = withController { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+    /** Zufall an: kommende Titel mischen. Zufall aus: ursprüngliche Reihenfolge wiederherstellen. Der laufende Titel spielt weiter. */
+    fun toggleShuffle() = withController { c ->
+        val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+        val current = c.currentMediaItemIndex
+        if (!shuffled) {
+            if (originalOrder.isEmpty()) originalOrder = ids
+            val upcoming = ids.drop(current + 1).shuffled()
+            applyOrder(c, upcoming, current + 1)
+            shuffled = true
+        } else {
+            val known = originalOrder.filter { it in ids }
+            val extra = ids.filter { it !in originalOrder }
+            applyOrder(c, known + extra, 0)
+            shuffled = false
+        }
+        nextUpCount = 0
+        refresh()
+    }
+
+    /** Ordnet die Wiedergabeliste ab [from] in die Reihenfolge [desired] um (ohne die Wiedergabe zu unterbrechen) */
+    private fun applyOrder(c: MediaController, desired: List<String>, from: Int) {
+        desired.forEachIndexed { offset, id ->
+            val target = from + offset
+            if (target >= c.mediaItemCount) return
+            if (c.getMediaItemAt(target).mediaId == id) return@forEachIndexed
+            val j = (target until c.mediaItemCount).firstOrNull { c.getMediaItemAt(it).mediaId == id } ?: return@forEachIndexed
+            c.moveMediaItem(j, target)
+        }
+    }
 
     fun cycleRepeat() = withController {
         it.repeatMode = when (it.repeatMode) {
@@ -176,24 +233,47 @@ class PlayerConnection(
         }
     }
 
-    /** „Als Nächstes abspielen“ */
+    /**
+     * „Als Nächstes abspielen“: direkt hinter den laufenden Titel – mehrere hintereinander in der gewählten
+     * Reihenfolge. Gilt auch bei Zufallswiedergabe.
+     */
     fun playNext(track: Track) = withController { c ->
-        if (c.mediaItemCount == 0) play(listOf(track), 0) else c.addMediaItem(c.currentMediaItemIndex + 1, item(track))
+        if (c.mediaItemCount == 0) {
+            play(listOf(track), 0)
+            return@withController
+        }
+        val insertAt = (c.currentMediaItemIndex + 1 + nextUpCount).coerceAtMost(c.mediaItemCount)
+        c.addMediaItem(insertAt, item(track))
+        nextUpCount++
+        // Auch in der Reihenfolge ohne Zufall hinter den laufenden Titel setzen
+        val currentId = c.currentMediaItem?.mediaId
+        val pos = originalOrder.indexOf(currentId)
+        originalOrder = if (pos >= 0) {
+            originalOrder.toMutableList().apply { add((pos + nextUpCount).coerceAtMost(size), track.id) }
+        } else originalOrder + track.id
+        refresh()
     }
 
-    /** „In die Wiedergabeliste“ */
+    /** „In die Wiedergabeliste“: ans Ende */
     fun addToQueue(track: Track) = withController { c ->
-        if (c.mediaItemCount == 0) play(listOf(track), 0) else c.addMediaItem(item(track))
+        if (c.mediaItemCount == 0) play(listOf(track), 0) else {
+            c.addMediaItem(item(track))
+            originalOrder = originalOrder + track.id
+            refresh()
+        }
     }
 
     /** Anhängen ohne die Wiedergabe zu starten (Downloads); leere Liste → pausiert bereit. */
     fun enqueue(track: Track) = withController { c ->
         if ((0 until c.mediaItemCount).any { c.getMediaItemAt(it).mediaId == track.id }) return@withController
         if (c.mediaItemCount == 0) {
+            originalOrder = listOf(track.id)
+            shuffled = false
             c.setMediaItems(listOf(item(track)))
             c.prepare()
         } else {
             c.addMediaItem(item(track))
+            originalOrder = originalOrder + track.id
         }
     }
 
@@ -206,14 +286,21 @@ class PlayerConnection(
     }
 
     /** „Wiedergabeliste schließen“ */
-    fun stop() = withController { it.stop(); it.clearMediaItems() }
+    fun stop() = withController {
+        it.stop(); it.clearMediaItems()
+        originalOrder = emptyList(); shuffled = false; nextUpCount = 0
+    }
 
     fun removeFromQueue(index: Int) = withController { c ->
         if (index != c.currentMediaItemIndex && index in 0 until c.mediaItemCount) c.removeMediaItem(index)
     }
 
     fun moveInQueue(from: Int, to: Int) = withController { c ->
-        if (from in 0 until c.mediaItemCount && to in 0 until c.mediaItemCount) c.moveMediaItem(from, to)
+        if (from in 0 until c.mediaItemCount && to in 0 until c.mediaItemCount) {
+            c.moveMediaItem(from, to)
+            nextUpCount = 0
+            refresh()
+        }
     }
 
     /** Titel gelöscht oder Datei ersetzt → Wiedergabeliste anpassen */

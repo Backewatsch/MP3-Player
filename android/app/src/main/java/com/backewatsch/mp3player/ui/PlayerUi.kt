@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -188,20 +190,40 @@ fun QueueSheet(onDismiss: () -> Unit) {
     val state by app.player.state.collectAsState()
     val lib by app.library.state.collectAsState()
     val byId = lib.tracks.associateBy { it.id }
+    val current = state.currentIndex
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Text("Wiedergabeliste", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
-        LazyColumn(Modifier.fillMaxWidth()) {
+        Text("Wiedergabeliste", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, bottom = 4.dp))
+        Text(if (state.shuffle) "Zufallswiedergabe an" else "In dieser Reihenfolge", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
+        LazyColumn(Modifier.fillMaxWidth().testTag("queueList")) {
             itemsIndexed(state.queueIds) { index, id ->
                 val track = byId[id] ?: return@itemsIndexed
+                when (index) {
+                    current -> QueueHeader("Läuft gerade")
+                    current + 1 -> QueueHeader("Als Nächstes")
+                }
+                if (index < current) return@itemsIndexed // bereits gespielt → ausblenden
                 Row(
-                    Modifier.fillMaxWidth().clickable { app.player.playQueueIndex(index) }.padding(horizontal = 16.dp, vertical = 6.dp)
-                        .semantics { contentDescription = "Wiedergabeliste ${track.title}" },
+                    Modifier.fillMaxWidth().clickable { app.player.playQueueIndex(index) }.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                        .semantics { contentDescription = "Wiedergabeliste ${index - current}: ${track.title}" }
+                        .testTag("queue-${index - current}-${track.title}"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Artwork(track, 40.dp)
                     Spacer(Modifier.width(12.dp))
-                    Text(track.title, Modifier.weight(1f), color = if (index == state.currentIndex) Accent else Color.Unspecified, maxLines = 1)
-                    if (index != state.currentIndex) {
+                    Column(Modifier.weight(1f)) {
+                        Text(track.title, color = if (index == current) Accent else Color.Unspecified, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                        if (track.artist.isNotEmpty()) Text(track.artist, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    }
+                    if (index > current) {
+                        IconButton(onClick = { app.player.moveInQueue(index, index - 1) }, enabled = index > current + 1) {
+                            Icon(Icons.Default.KeyboardArrowUp, "Nach oben")
+                        }
+                        IconButton(onClick = { app.player.moveInQueue(index, index + 1) }, enabled = index < state.queueIds.lastIndex) {
+                            Icon(Icons.Default.KeyboardArrowDown, "Nach unten")
+                        }
                         IconButton(onClick = { app.player.removeFromQueue(index) }) { Icon(Icons.Default.Close, "Entfernen") }
                     }
                 }
@@ -209,4 +231,10 @@ fun QueueSheet(onDismiss: () -> Unit) {
         }
         Spacer(Modifier.height(24.dp))
     }
+}
+
+@Composable
+private fun QueueHeader(text: String) {
+    Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp))
 }
