@@ -1,0 +1,5 @@
+// Macht den LAME-MP3-Encoder in Swift als `import LAME` verfügbar.
+module LAME {
+    header "lame.h"
+    export *
+}

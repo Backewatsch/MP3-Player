@@ -81,7 +81,7 @@ struct SettingsView: View {
                         Button {
                             confirmConvertAll = true
                         } label: {
-                            Label("Alle MP3s in M4A umwandeln (\(library.convertibleTracks.count))",
+                            Label("Alle in MP3 umwandeln (\(library.convertibleTracks.count))",
                                   systemImage: "arrow.triangle.2.circlepath")
                         }
                         .disabled(library.convertibleTracks.isEmpty)
@@ -93,13 +93,13 @@ struct SettingsView: View {
                 } header: {
                     Text("Konverter")
                 } footer: {
-                    Text("Wandelt vorhandene Dateien (MP3, WAV, FLAC …) in M4A (AAC) um. Playlists, Kurzwahl und Cover bleiben erhalten. Hinweis: Der Klang wird dadurch nicht besser – die Datei wird neu kodiert und das Original gelöscht. Einzelne Titel: „…“ → „In M4A umwandeln“.")
+                    Text("Neue Titel werden beim Laden automatisch zu MP3 (192 kbit/s). Hier wandelst du vorhandene Dateien in anderen Formaten (z. B. per Finder kopierte M4A, WAV, FLAC) um. Playlists, Kurzwahl und Cover bleiben erhalten, das Original wird ersetzt. Einzelne Titel: „…“ → „In MP3 umwandeln“.")
                 }
-                .confirmationDialog("Alle \(library.convertibleTracks.count) Titel in M4A umwandeln?",
+                .confirmationDialog("Alle \(library.convertibleTracks.count) Titel in MP3 umwandeln?",
                                     isPresented: $confirmConvertAll, titleVisibility: .visible) {
                     Button("Umwandeln") {
                         Task {
-                            let result = await library.convertAllToM4A(skipping: player.current?.id)
+                            let result = await library.convertAllToMP3(skipping: player.current?.id)
                             conversionResult = "Fertig: \(result.converted) umgewandelt" + (result.failed > 0 ? ", \(result.failed) fehlgeschlagen" : "") + "."
                         }
                     }

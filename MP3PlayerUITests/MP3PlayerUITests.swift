@@ -136,7 +136,7 @@ final class MP3PlayerUITests: XCTestCase {
         screenshot("09-Titel")
         more.tap()
         for title in ["Als Nächstes abspielen", "Zu Playlist hinzufügen", "Mix starten", "In die Wiedergabeliste",
-                      "Mitwirkende an Song anzeigen", "An Kurzwahl anpinnen", "In M4A umwandeln"] {
+                      "Mitwirkende an Song anzeigen", "An Kurzwahl anpinnen"] {
             XCTAssertTrue(app.buttons["action-\(title)"].waitForExistence(timeout: 5), "Menüpunkt fehlt: \(title)")
         }
         screenshot("14-Optionen")

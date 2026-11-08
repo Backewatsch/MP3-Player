@@ -23,13 +23,13 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 - An Kurzwahl anpinnen (Leiste oben in der Bibliothek)
 - Infos bearbeiten · Aus Playlist entfernen · Wiedergabeliste schließen · Aus Mediathek entfernen
 
-**Konverter**
-- Videos (MP4, MOV, M4V) aus dem Internet oder aus der Dateien-App werden automatisch in Audio umgewandelt und landen in der Mediathek
-- Vorhandene MP3s umwandeln: einzeln über „…“ → „In M4A umwandeln“ oder alle unter *Info & Updates → Konverter* (Playlists, Kurzwahl und Cover bleiben erhalten; der Klang wird dadurch nicht besser)
+**Konverter – alles wird MP3**
+- Alles, was in die App kommt, wird zu einer **echten MP3-Datei** (192 kbit/s, 44,1 kHz Stereo): Videos (MP4, MOV, M4V) und andere Audioformate (M4A, AAC, WAV, AIFF, FLAC) – aus Downloads, dem internen Browser und der Dateien-App
+- Titel, Interpret, Album und Cover werden als ID3-Tags übernommen (Umlaute korrekt)
+- Vorhandene Nicht-MP3-Dateien (z. B. per Finder kopiert): einzeln über „…“ → „In MP3 umwandeln“ oder alle unter *Info & Updates → Konverter*. Playlists, Kurzwahl und Cover bleiben erhalten
 - Im Browser: Startet auf einer Seite ein Audio/Video, erscheint „Als Audio laden“. Seiten werden automatisch nach Dateien durchsucht (Zähler am Wellen-Symbol). Alles Geladene kommt zusätzlich in die **Wiedergabeliste**
-- Grenzen: Streams (blob:/MediaSource, z. B. YouTube) und Formate, die iOS nicht lesen kann (WebM, OGG), lassen sich nicht umwandeln
-- Ausgabeformat ist **M4A (AAC)**, nicht MP3: iOS bringt keinen MP3-Encoder mit. M4A spielt in dieser App und fast überall sonst und klingt bei gleicher Größe mindestens so gut
-- Streaming-Dienste (YouTube, Spotify …) werden nicht unterstützt (siehe unten)
+- MP3-Kodierung mit dem Open-Source-Encoder **LAME 3.100** (LGPL, siehe `ThirdParty/`)
+- Grenzen: Streams (blob:/MediaSource, z. B. YouTube, Spotify) und Formate, die iOS nicht lesen kann (WebM, OGG), lassen sich nicht umwandeln
 
 **Design**: durchgehend dunkles Design (Dark Mode)
 
@@ -115,6 +115,7 @@ MP3Player/
   Services/DownloadManager.swift  Downloads (Browser + Link) → Bibliothek
   Services/BrowserModel.swift     WKWebView, Download-Erkennung, Startseite
   Views/                     SwiftUI-Oberfläche
+ThirdParty/lame/             LAME-MP3-Encoder (LGPL)
 MP3PlayerTests/              Unit-Tests (+ Test-MP3s mit ID3-Tags)
 MP3PlayerUITests/            UI-Tests im Simulator
 ```

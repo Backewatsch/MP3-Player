@@ -46,7 +46,7 @@ enum Storage {
         audioExtensions.contains((name as NSString).pathExtension.lowercased())
     }
 
-    /// Videos, deren Tonspur der Konverter in M4A umwandelt.
+    /// Videos, deren Tonspur der Konverter in MP3 umwandelt.
     static let videoExtensions: Set<String> = ["mp4", "mov", "m4v", "3gp"]
 
     static func isVideoFile(_ name: String) -> Bool {
@@ -56,6 +56,11 @@ enum Storage {
     /// Audio direkt oder Video zum Umwandeln
     static func isImportable(_ name: String) -> Bool {
         isAudioFile(name) || isVideoFile(name)
+    }
+
+    /// Bereits im Zielformat MP3?
+    static func isMP3(_ name: String) -> Bool {
+        (name as NSString).pathExtension.lowercased() == "mp3"
     }
 }
 

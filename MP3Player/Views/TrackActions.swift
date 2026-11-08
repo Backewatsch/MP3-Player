@@ -159,15 +159,15 @@ struct TrackActionsSheet: View {
                     actions.close()
                 }
                 row("Infos bearbeiten", "pencil") { actions.show(.edit(current)) }
-                if current.fileURL.pathExtension.lowercased() != "m4a" {
-                    row("In M4A umwandeln", "arrow.triangle.2.circlepath") {
+                if !Storage.isMP3(current.fileName) {
+                    row("In MP3 umwandeln", "arrow.triangle.2.circlepath") {
                         let target = current
                         if player.current?.id == target.id { player.stop() }
                         actions.close()
                         Task {
-                            library.setConversionStatus("Wandle „\(target.title)“ in M4A um …")
+                            library.setConversionStatus("Wandle „\(target.title)“ in MP3 um …")
                             do {
-                                try await library.convertToM4A(target)
+                                try await library.convertToMP3(target)
                                 library.setConversionStatus(nil)
                             } catch {
                                 library.setConversionStatus("Umwandlung fehlgeschlagen: \(error.localizedDescription)")

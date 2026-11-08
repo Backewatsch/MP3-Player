@@ -177,7 +177,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
             update(id) {
                 $0.state = .importing
                 $0.progress = 1
-                $0.converting = Storage.isVideoFile(fileURL.lastPathComponent)
+                $0.converting = !Storage.isMP3(fileURL.lastPathComponent)
             }
             Task {
                 do {
@@ -226,7 +226,7 @@ final class DownloadManager: NSObject, ObservableObject, WKDownloadDelegate {
         "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/vnd.wave": "wav",
         "audio/aiff": "aiff", "audio/x-aiff": "aiff", "audio/flac": "flac", "audio/x-flac": "flac",
         "audio/x-caf": "caf",
-        // Videos werden nach dem Download in M4A umgewandelt
+        // Videos werden nach dem Download in MP3 umgewandelt
         "video/mp4": "mp4", "video/quicktime": "mov", "video/x-m4v": "m4v", "video/3gpp": "3gp"
     ]
 

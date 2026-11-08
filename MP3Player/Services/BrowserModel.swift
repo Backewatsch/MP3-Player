@@ -348,7 +348,7 @@ enum StartPage {
     </style></head>
     <body>
       <h1>🎵 Musik finden</h1>
-      <p>Tippe auf einen Link zu einer Audio- oder Videodatei – oder starte ein Audio/Video auf einer Seite und tippe auf <b>„Als Audio laden“</b>. Videos werden automatisch in Audio umgewandelt. Jeder Titel landet in der Playlist „Heruntergeladen“ und in deiner Wiedergabeliste.</p>
+      <p>Tippe auf einen Link zu einer Audio- oder Videodatei – oder starte ein Audio/Video auf einer Seite und tippe auf <b>„Als Audio laden“</b>. Alles wird automatisch in MP3 umgewandelt. Jeder Titel landet in der Playlist „Heruntergeladen“ und in deiner Wiedergabeliste.</p>
       <a class="card" href="https://archive.org/details/audio"><b>Internet Archive</b><span>Millionen freie Aufnahmen, Live-Konzerte, Hörbücher</span></a>
       <a class="card" href="https://freemusicarchive.org/"><b>Free Music Archive</b><span>Kostenlose, legal nutzbare Musik</span></a>
       <a class="card" href="https://www.jamendo.com/"><b>Jamendo</b><span>Unabhängige Künstler unter Creative Commons</span></a>

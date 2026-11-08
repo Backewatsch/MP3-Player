@@ -284,13 +284,28 @@ final class ConverterAndExtrasTests: XCTestCase {
         library = nil
     }
 
-    func testVideoIsConvertedToM4A() async throws {
+    /// Prüft, ob eine Datei eine echte MP3 ist (ID3v2-Kopf + MPEG-Audio-Frame).
+    private func assertRealMP3(_ url: URL, file: StaticString = #filePath, line: UInt = #line) throws {
+        let data = try Data(contentsOf: url)
+        XCTAssertGreaterThan(data.count, 1000, file: file, line: line)
+        XCTAssertEqual(String(data: data.prefix(3), encoding: .ascii), "ID3", "ID3v2-Tag fehlt", file: file, line: line)
+        // ID3-Größe (syncsafe) überspringen, danach muss ein MPEG-Frame (0xFFE…) beginnen
+        let size = (Int(data[6]) << 21) | (Int(data[7]) << 14) | (Int(data[8]) << 7) | Int(data[9])
+        let frameStart = 10 + size
+        XCTAssertGreaterThan(data.count, frameStart + 2, file: file, line: line)
+        XCTAssertEqual(data[frameStart], 0xFF, "kein MP3-Frame", file: file, line: line)
+        XCTAssertEqual(data[frameStart + 1] & 0xE0, 0xE0, "kein MP3-Frame", file: file, line: line)
+    }
+
+    func testVideoIsConvertedToMP3() async throws {
         let src = try Fixture.tempCopy("clip.mp4", as: "video-\(UUID().uuidString.prefix(6)).mp4")
         let track = try await library.importAudio(from: src, move: true, addToDownloads: true)
         created.append(track)
-        XCTAssertTrue(track.fileName.hasSuffix(".m4a"), "Ergebnis ist M4A: \(track.fileName)")
+        XCTAssertTrue(track.fileName.hasSuffix(".mp3"), "Ergebnis ist MP3: \(track.fileName)")
+        try assertRealMP3(track.fileURL)
         XCTAssertEqual(track.duration, 2.0, accuracy: 0.4)
-        XCTAssertEqual(track.title, "Videolied", "Metadaten werden übernommen")
+        XCTAssertEqual(track.title, "Videolied", "Titel wird als ID3-Tag übernommen")
+        XCTAssertEqual(track.artist, "Videoband")
         XCTAssertFalse(FileManager.default.fileExists(atPath: src.path), "Video wurde nach dem Umwandeln entfernt")
         let downloads = try XCTUnwrap(library.playlist(id: Library.downloadsPlaylistID))
         XCTAssertTrue(downloads.trackIDs.contains(track.id))
@@ -301,6 +316,18 @@ final class ConverterAndExtrasTests: XCTestCase {
         XCTAssertTrue(player.isPlaying)
         XCTAssertNil(player.errorMessage)
         player.stop()
+    }
+
+    func testM4AImportBecomesMP3WithUmlautTags() async throws {
+        let src = try Fixture.tempCopy("short.m4a", as: "umlaut-\(UUID().uuidString.prefix(6)).m4a")
+        let track = try await library.importAudio(from: src, move: false)
+        created.append(track)
+        XCTAssertTrue(track.fileName.hasSuffix(".mp3"))
+        try assertRealMP3(track.fileURL)
+        XCTAssertEqual(track.title, "Kurzes Stück")
+        XCTAssertEqual(track.artist, "Ärzte-Band")
+        XCTAssertEqual(track.album, "Übung")
+        XCTAssertEqual(track.duration, 2.0, accuracy: 0.4)
     }
 
     func testVideoWithoutSoundFails() async throws {
@@ -386,20 +413,30 @@ final class ConverterAndExtrasTests: XCTestCase {
         XCTAssertNotNil(file["Bitrate (ca.)"])
     }
 
-    func testConvertExistingMP3KeepsPlaylistsAndPin() async throws {
-        let track = try await library.importAudio(from: try Fixture.tempCopy("tagged.mp3", as: "conv-\(UUID().uuidString.prefix(6)).mp3"), move: true)
+    /// Legt eine M4A direkt im Musikordner ab (wie per Finder kopiert) und liefert den erkannten Titel.
+    private func m4aInLibrary(_ prefix: String) async throws -> Track {
+        let name = "\(prefix)-\(UUID().uuidString.prefix(6)).m4a"
+        try FileManager.default.copyItem(at: Fixture.url("short.m4a"), to: Storage.documents.appendingPathComponent(name))
+        await library.rescan()
+        let track = try XCTUnwrap(library.tracks.first { $0.fileName == name })
         created.append(track)
+        return track
+    }
+
+    func testConvertExistingFileKeepsPlaylistsAndPin() async throws {
+        let track = try await m4aInLibrary("conv")
+        XCTAssertTrue(library.convertibleTracks.contains { $0.id == track.id })
         let playlist = library.createPlaylist(named: "Konvertiert")
         library.add(track, to: playlist)
         library.togglePin(track)
         let oldURL = track.fileURL
 
-        let converted = try await library.convertToM4A(track)
+        let converted = try await library.convertToMP3(track)
         XCTAssertEqual(converted.id, track.id, "gleiche ID")
-        XCTAssertTrue(converted.fileName.hasSuffix(".m4a"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path), "MP3 wurde ersetzt")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: converted.fileURL.path))
-        XCTAssertEqual(converted.duration, 3.0, accuracy: 0.4)
+        XCTAssertTrue(converted.fileName.hasSuffix(".mp3"))
+        try assertRealMP3(converted.fileURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldURL.path), "Original wurde ersetzt")
+        XCTAssertEqual(converted.duration, 2.0, accuracy: 0.4)
         XCTAssertEqual(library.playlist(id: playlist.id)?.trackIDs, [track.id], "bleibt in der Playlist")
         XCTAssertTrue(library.isPinned(converted), "bleibt in der Kurzwahl")
         XCTAssertFalse(library.convertibleTracks.contains { $0.id == track.id })
@@ -415,14 +452,13 @@ final class ConverterAndExtrasTests: XCTestCase {
     }
 
     func testConvertAll() async throws {
-        let a = try await library.importAudio(from: try Fixture.tempCopy("untagged.mp3", as: "all-a-\(UUID().uuidString.prefix(6)).mp3"), move: true)
-        let b = try await library.importAudio(from: try Fixture.tempCopy("untagged.mp3", as: "all-b-\(UUID().uuidString.prefix(6)).mp3"), move: true)
-        created += [a, b]
-        let result = await library.convertAllToM4A(skipping: b.id)
+        let a = try await m4aInLibrary("all-a")
+        let b = try await m4aInLibrary("all-b")
+        let result = await library.convertAllToMP3(skipping: b.id)
         XCTAssertGreaterThanOrEqual(result.converted, 1)
         XCTAssertEqual(result.failed, 0)
-        XCTAssertTrue(library.track(id: a.id)?.fileName.hasSuffix(".m4a") == true)
-        XCTAssertTrue(library.track(id: b.id)?.fileName.hasSuffix(".mp3") == true, "übersprungener Titel bleibt")
+        XCTAssertTrue(library.track(id: a.id)?.fileName.hasSuffix(".mp3") == true)
+        XCTAssertTrue(library.track(id: b.id)?.fileName.hasSuffix(".m4a") == true, "übersprungener Titel bleibt")
         XCTAssertNil(library.conversionStatus)
     }
 

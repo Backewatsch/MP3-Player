@@ -25,7 +25,7 @@ struct DownloadsView: View {
                             .accessibilityIdentifier("downloadStartButton")
                     }
                 } footer: {
-                    Text("Audiodateien werden direkt übernommen, Videos (MP4, MOV, M4V) automatisch in Audio (M4A) umgewandelt. Fertige Titel landen in der Mediathek, in der Playlist „Heruntergeladen“ und in der Wiedergabeliste.")
+                    Text("Alles wird zu MP3: Videos (MP4, MOV, M4V) und andere Audioformate (M4A, WAV, FLAC …) werden automatisch umgewandelt. Fertige Titel landen in der Mediathek, in der Playlist „Heruntergeladen“ und in der Wiedergabeliste.")
                 }
 
                 if downloads.items.isEmpty {
@@ -86,7 +86,7 @@ private struct DownloadRow: View {
                     ProgressView(value: item.progress)
                     Text("\(Int(item.progress * 100)) %").font(.caption).foregroundStyle(.secondary)
                 case .importing:
-                    Text(item.converting ? "Wird in Audio umgewandelt …" : "Wird importiert …")
+                    Text(item.converting ? "Wird in MP3 umgewandelt …" : "Wird importiert …")
                         .font(.caption).foregroundStyle(.secondary)
                 case .finished:
                     Text("In der Playlist „Heruntergeladen“").font(.caption).foregroundStyle(.secondary)

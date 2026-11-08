@@ -82,12 +82,12 @@ final class Library: ObservableObject {
         let name = Self.sanitize(preferredName ?? source.lastPathComponent)
         guard Storage.isImportable(name) else { throw LibraryError.unsupportedFormat(name) }
 
-        // Video → Tonspur als M4A umwandeln, dann wie eine normale Audiodatei übernehmen
-        if Storage.isVideoFile(name) {
+        // Alles, was nicht MP3 ist (Videos, M4A, WAV, FLAC …), wird in MP3 umgewandelt
+        if !Storage.isMP3(name) {
             let accessing = source.startAccessingSecurityScopedResource()
             defer { if accessing { source.stopAccessingSecurityScopedResource() } }
             let baseName = (name as NSString).deletingPathExtension
-            let converted = try await AudioConverter.convertToM4A(source, baseName: baseName)
+            let converted = try await AudioConverter.convertToMP3(source, baseName: baseName)
             defer { try? FileManager.default.removeItem(at: converted.deletingLastPathComponent()) }
             if move { try? FileManager.default.removeItem(at: source) }
             return try await importAudio(from: converted, move: true, addToDownloads: addToDownloads,
@@ -141,24 +141,24 @@ final class Library: ObservableObject {
         return track
     }
 
-    // MARK: Umwandeln in M4A
+    // MARK: Umwandeln in MP3
 
-    /// Titel, die noch nicht im M4A-Format vorliegen
+    /// Titel, die noch nicht im MP3-Format vorliegen (z. B. per Finder kopierte M4A/WAV)
     var convertibleTracks: [Track] {
-        tracks.filter { $0.fileURL.pathExtension.lowercased() != "m4a" }
+        tracks.filter { !Storage.isMP3($0.fileName) }
     }
 
-    /// Wandelt die Datei eines Titels in M4A um. Der Titel behält ID, Playlists, Kurzwahl und Cover.
+    /// Wandelt die Datei eines Titels in MP3 um. Der Titel behält ID, Playlists, Kurzwahl und Cover.
     @discardableResult
-    func convertToM4A(_ track: Track) async throws -> Track {
+    func convertToMP3(_ track: Track) async throws -> Track {
         guard let current = self.track(id: track.id) else { return track }
-        guard current.fileURL.pathExtension.lowercased() != "m4a" else { return current }
+        guard !Storage.isMP3(current.fileName) else { return current }
         let oldURL = current.fileURL
         let baseName = (current.fileName as NSString).deletingPathExtension
-        let converted = try await AudioConverter.convertToM4A(oldURL, baseName: baseName)
+        let converted = try await AudioConverter.convertToMP3(oldURL, baseName: baseName)
         defer { try? FileManager.default.removeItem(at: converted.deletingLastPathComponent()) }
 
-        let destination = Self.uniqueDestination(for: "\(baseName).m4a")
+        let destination = Self.uniqueDestination(for: "\(baseName).mp3")
         importing.insert(destination.lastPathComponent)
         defer { importing.remove(destination.lastPathComponent) }
         try FileManager.default.moveItem(at: converted, to: destination)
@@ -178,15 +178,15 @@ final class Library: ObservableObject {
         return self.track(id: current.id) ?? current
     }
 
-    /// Wandelt alle Titel, die nicht M4A sind, nacheinander um.
+    /// Wandelt alle Titel, die nicht MP3 sind, nacheinander um.
     /// - Parameter skipping: z. B. der gerade laufende Titel
-    func convertAllToM4A(skipping skipID: UUID? = nil) async -> (converted: Int, failed: Int) {
+    func convertAllToMP3(skipping skipID: UUID? = nil) async -> (converted: Int, failed: Int) {
         let todo = convertibleTracks.filter { $0.id != skipID }
         var converted = 0, failed = 0
         for (n, track) in todo.enumerated() {
             conversionStatus = "Wandle um: \(n + 1) von \(todo.count) – „\(track.title)“"
             do {
-                try await convertToM4A(track)
+                try await convertToMP3(track)
                 converted += 1
             } catch {
                 failed += 1
