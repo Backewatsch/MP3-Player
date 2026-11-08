@@ -228,10 +228,14 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
               if (l === null) l = lum(document.documentElement);
               if (l === null) l = 1; // kein Hintergrund gesetzt → Browser-Standard Weiß
               if (l < 0.5) return;   // Seite ist schon dunkel
+              // Hintergrund hinter der Seite fest dunkel; umgefärbt wird nur der Seiteninhalt (body).
+              // (Der Android-Browser filtert den äußersten Seitenhintergrund nicht mit.)
+              var bodyBg = lum(document.body) === null ? 'background-color:#fff !important;' : '';
               var s = document.createElement('style');
               s.id = '__mp3DarkStyle';
               s.textContent =
-                'html{filter:invert(1) hue-rotate(180deg) !important;background:#fff !important}' +
+                'html{background:#0b0a10 !important;color-scheme:light !important}' +
+                'body{filter:invert(1) hue-rotate(180deg) !important;min-height:100vh;' + bodyBg + '}' +
                 'img,video,picture,canvas,svg image,iframe,[style*="background-image"]{filter:invert(1) hue-rotate(180deg) !important}';
               (document.head || document.documentElement).appendChild(s);
             })();
