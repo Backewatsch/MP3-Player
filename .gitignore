@@ -1,0 +1,9 @@
+# Wird von XcodeGen erzeugt
+MP3Player.xcodeproj/
+MP3Player/Info.plist
+build/
+DerivedData/
+*.ipa
+Payload/
+xcuserdata/
+.DS_Store

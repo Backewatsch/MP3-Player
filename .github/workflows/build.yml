@@ -1,0 +1,50 @@
+name: iOS Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen installieren
+        run: brew install xcodegen
+
+      - name: Xcode-Projekt erzeugen
+        run: xcodegen generate
+
+      - name: Bauen (ohne Signatur)
+        run: |
+          set -o pipefail
+          xcodebuild -version
+          xcodebuild \
+            -project MP3Player.xcodeproj \
+            -scheme MP3Player \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log
+
+      - name: Warnungen prüfen (nicht aufgerufene Delegate-Methoden)
+        run: |
+          grep -E "warning:" build.log | sort -u || true
+          if grep -q "nearly matches" build.log; then
+            echo "::error::Delegate-Methode passt nicht exakt zur Protokoll-Signatur"
+            exit 1
+          fi
+
+      - name: Unsignierte IPA packen
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/MP3Player.app Payload/
+          zip -qry MP3Player-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MP3Player-unsigned-ipa
+          path: MP3Player-unsigned.ipa
