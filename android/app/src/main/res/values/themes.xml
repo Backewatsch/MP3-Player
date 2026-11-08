@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#FF000000</color>
-    <color name="accent">#FFFA2E66</color>
+    <color name="background">#FF07060B</color>
+    <color name="accent">#FFC2509F</color>
     <style name="Theme.MP3Player" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:colorAccent">@color/accent</item>
+        <item name="android:isLightTheme">false</item>
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 </resources>

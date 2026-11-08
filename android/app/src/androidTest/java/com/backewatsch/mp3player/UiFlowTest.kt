@@ -38,6 +38,24 @@ class UiFlowTest {
         rule.waitForIdle()
     }
 
+    /** Die Browser-Startseite muss dunkel sein (Rand neben dem Inhalt prüfen) */
+    private fun assertBrowserIsDark() {
+        val shot = instrumentation.uiAutomation.takeScreenshot() ?: return
+        var sum = 0L
+        var n = 0
+        val x0 = (shot.width * 0.005).toInt()
+        val x1 = (shot.width * 0.03).toInt()
+        for (y in (shot.height * 0.45).toInt() until (shot.height * 0.65).toInt() step 4) {
+            for (x in x0 until x1) {
+                val c = shot.getPixel(x, y)
+                sum += (android.graphics.Color.red(c) + android.graphics.Color.green(c) + android.graphics.Color.blue(c)) / 3
+                n++
+            }
+        }
+        val brightness = sum / maxOf(n, 1)
+        org.junit.Assert.assertTrue("Browser-Startseite ist zu hell (Helligkeit $brightness)", brightness < 60)
+    }
+
     /** Das echte App-Symbol (wie auf dem Homescreen) als Bild speichern */
     private fun saveAppIcon() {
         val ctx = instrumentation.targetContext
@@ -111,6 +129,7 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("addressField"), 5_000)
         Thread.sleep(2000)
         screenshot("a03-Browser-Startseite")
+        assertBrowserIsDark()
         rule.onNodeWithTag("downloadsButton").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("downloadLinkField"), 5_000)
         screenshot("a04-Downloads-leer")

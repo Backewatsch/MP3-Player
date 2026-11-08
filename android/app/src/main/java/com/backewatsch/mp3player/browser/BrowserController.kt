@@ -14,6 +14,8 @@ import com.backewatsch.mp3player.download.DownloadRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 
 /** Interner Browser: erkennt Audio/Video, durchsucht Seiten und leitet Downloads weiter. */
@@ -50,6 +52,12 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
         settings.setSupportMultipleWindows(false)
+        // Dunkler Hintergrund (kein weißes Aufblitzen beim Laden)
+        setBackgroundColor(android.graphics.Color.rgb(7, 6, 11))
+        // Webseiten dunkel darstellen: Seiten mit eigenem Dark Mode nutzen ihn, andere werden automatisch abgedunkelt
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
+        }
         downloads.userAgent = settings.userAgentString
         addJavascriptInterface(Bridge(), "MP3PlayerBridge")
         webViewClient = Client()
@@ -211,7 +219,8 @@ class BrowserController(context: Context, private val downloads: DownloadReposit
 object StartPage {
     const val OFFLINE = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{font-family:monospace;margin:0;padding:48px 24px;background:#07060b;color:#cfc9de;text-align:center}
+<meta name="color-scheme" content="dark">
+<style>html{background-color:#07060b} body{font-family:monospace;margin:0;padding:48px 24px;background-color:#07060b;color:#cfc9de;text-align:center;min-height:100vh}
 h1{font-size:22px;letter-spacing:2px;text-transform:uppercase;text-shadow:-1px 0 rgba(79,175,187,.5),1px 0 rgba(194,80,159,.5)}
 p{color:#7e7898;line-height:1.5} .err{color:#d9566b;letter-spacing:2px}
 .ok{margin-top:28px;padding:14px;background:#0e0c15;border:1px solid rgba(79,175,187,.28);color:#4fafbb}</style>
@@ -221,15 +230,19 @@ p{color:#7e7898;line-height:1.5} .err{color:#d9566b;letter-spacing:2px}
 
     fun error(message: String) = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{font-family:sans-serif;margin:0;padding:48px 24px;background:#000;color:#fff;text-align:center} p{color:#aaa}</style>
+<meta name="color-scheme" content="dark">
+<style>html{background-color:#07060b} body{font-family:monospace;margin:0;padding:48px 24px;background-color:#07060b;color:#cfc9de;text-align:center;min-height:100vh} p{color:#7e7898}</style>
 </head><body><h1>Seite nicht erreichbar</h1><p>${android.text.TextUtils.htmlEncode(message)}</p></body></html>"""
 
     const val HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <style>
- body{font-family:monospace;margin:0;padding:22px 16px 40px;color:#cfc9de;
-   background:#07060b linear-gradient(rgba(79,175,187,.03) 1px,transparent 1px) 0 0/40px 40px,
-   linear-gradient(90deg,rgba(79,175,187,.03) 1px,transparent 1px) 0 0/40px 40px}
+ html{background-color:#07060b}
+ body{font-family:monospace;margin:0;padding:22px 16px 40px;color:#cfc9de;min-height:100vh;
+   background-color:#07060b;
+   background-image:linear-gradient(rgba(79,175,187,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,175,187,.03) 1px,transparent 1px);
+   background-size:40px 40px}
  .sys{color:#c8b85a;font-size:13px;letter-spacing:1px}
  h1{font-size:28px;margin:6px 0 4px;letter-spacing:3px;text-transform:uppercase;color:#dcd6ea;
    text-shadow:-1px 0 rgba(79,175,187,.5),1px 0 rgba(194,80,159,.5)}
