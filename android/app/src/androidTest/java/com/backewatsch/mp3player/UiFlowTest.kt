@@ -41,14 +41,26 @@ class UiFlowTest {
     private fun back() {
         instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         rule.waitForIdle()
+        Thread.sleep(700) // Blatt-/Tastatur-Animation abwarten
+    }
+
+    /** Zurück drücken, bis ein Element mit [tag] sichtbar ist (Tastatur/Blätter schließen zuerst) */
+    private fun backUntil(tag: String) {
+        repeat(4) {
+            if (rule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()) return
+            back()
+        }
+        rule.waitUntilAtLeastOneExists(hasTestTag(tag), 5_000)
     }
 
     private fun screenshot(name: String) {
         rule.waitForIdle()
         Thread.sleep(400)
-        val bitmap = instrumentation.uiAutomation.takeScreenshot() ?: return
+        val full = instrumentation.uiAutomation.takeScreenshot() ?: return
+        // Verkleinert als JPEG speichern (wird im Workflow-Log als Vorschau ausgegeben)
+        val bitmap = Bitmap.createScaledBitmap(full, 360, full.height * 360 / full.width, true)
         val dir = File(instrumentation.targetContext.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
-        File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        File(dir, "$name.jpg").outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 60, it) }
     }
 
     @Test fun t1_tabsPlaylistAndSettings() {
@@ -62,7 +74,7 @@ class UiFlowTest {
         rule.onNodeWithTag("dialogConfirm").performClick()
         rule.waitUntilAtLeastOneExists(hasText("Sommerhits"), 5_000)
         screenshot("a02-Neue-Playlist")
-        back()
+        backUntil("settingsButton")
         rule.waitUntilAtLeastOneExists(hasText("Sommerhits"), 5_000)
 
         // Info & Updates
@@ -71,7 +83,7 @@ class UiFlowTest {
         rule.onNodeWithTag("convertAllButton").assertExists()
         Thread.sleep(3000)
         screenshot("a13-Info-Updates")
-        back()
+        backUntil("tab-downloader")
 
         // Browser-Tab
         rule.onNodeWithTag("tab-downloader").performClick()
@@ -112,8 +124,7 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("bigPlayPause"), 5_000)
         Thread.sleep(800)
         screenshot("a08-Player")
-        back()
-        Thread.sleep(800)
+        backUntil("trackMore")
 
         // Optionsmenü
         rule.onAllNodesWithTag("trackMore").onFirst().performClick()
