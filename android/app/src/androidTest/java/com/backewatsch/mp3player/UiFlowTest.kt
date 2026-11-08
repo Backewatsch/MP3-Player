@@ -38,6 +38,19 @@ class UiFlowTest {
         rule.waitForIdle()
     }
 
+    /** Das echte App-Symbol (wie auf dem Homescreen) als Bild speichern */
+    private fun saveAppIcon() {
+        val ctx = instrumentation.targetContext
+        val icon = ctx.packageManager.getApplicationIcon(ctx.packageName)
+        val bitmap = Bitmap.createBitmap(360, 360, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(android.graphics.Color.rgb(30, 30, 34))
+        icon.setBounds(0, 0, 360, 360)
+        icon.draw(canvas)
+        val dir = File(ctx.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
+        File(dir, "a00-App-Symbol.jpg").outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+    }
+
     /** Zurück-Taste (schließt auch offene Blätter/Dialoge) */
     private fun back() {
         instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
@@ -68,6 +81,7 @@ class UiFlowTest {
         // Start-Tab ist die erste Seite
         rule.waitUntilAtLeastOneExists(hasTestTag("startScreen"), 10_000)
         screenshot("a00-Start-leer")
+        saveAppIcon()
         rule.onNodeWithTag("tab-library").performClick()
         rule.waitUntilAtLeastOneExists(hasText("Noch keine Musik"), 10_000)
         rule.onNodeWithText("Heruntergeladen").assertExists()
