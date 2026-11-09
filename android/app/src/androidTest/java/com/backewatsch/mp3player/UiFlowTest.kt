@@ -398,6 +398,10 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("lyricsButton"), 5_000)
         Thread.sleep(800)
         screenshot("a29-Player-Design")
+        // Pausieren: sonst endet das kurze Testlied und der Songtext springt zum nächsten Lied
+        instrumentation.runOnMainSync { if (app.player.state.value.isPlaying) app.player.togglePlayPause() }
+        rule.waitUntil(5_000) { !app.player.state.value.isPlaying }
+        val current = app.player.state.value.currentId!!
         rule.onNodeWithTag("lyricsButton").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("lyricsEmpty"), 5_000)
         rule.onNodeWithTag("lyricsEdit").performClick()
@@ -407,7 +411,6 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("lyricsText"), 5_000)
         Thread.sleep(500)
         screenshot("a30-Songtext")
-        val current = app.player.state.value.currentId!!
         org.junit.Assert.assertEquals("Wir fahren durch die Nacht\nund singen laut", app.library.state.value.lyrics[current])
         backUntil("tab-library")
 
