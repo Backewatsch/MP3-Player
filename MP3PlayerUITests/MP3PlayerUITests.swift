@@ -157,12 +157,15 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(big.waitForExistence(timeout: 5))
         screenshot("08-Player")
         // Umschalten muss funktionieren (das kurze Testlied kann schon zu Ende sein)
-        let before = big.label
-        big.tap()
-        let changed = NSPredicate(format: "label != %@", before)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: changed, evaluatedWith: big)], timeout: 3), .completed,
-                       "Play/Pause funktioniert nicht")
-        big.tap()
+        // Das Testlied ist nur 2 s lang: endet es genau beim Tippen, springt die Anzeige zurück → bis zu 3 Versuche
+        var toggled = false
+        for _ in 0..<3 where !toggled {
+            let before = big.label
+            big.tap()
+            let changed = NSPredicate(format: "label != %@", before)
+            toggled = XCTWaiter.wait(for: [expectation(for: changed, evaluatedWith: big)], timeout: 2) == .completed
+        }
+        XCTAssertTrue(toggled, "Play/Pause funktioniert nicht")
         app.buttons["Schließen"].tap()
 
         // Mediathek → Titel → Optionsmenü
