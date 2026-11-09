@@ -166,7 +166,7 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
 
     fun save(asCopy: Boolean) {
         busy = true
-        scope.launch {
+        scope.launch(kotlinx.coroutines.Dispatchers.Main) {
             try {
                 val result = app.library.trim(track, start, end, asCopy)
                 Toast.makeText(context,

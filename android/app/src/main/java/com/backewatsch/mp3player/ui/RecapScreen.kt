@@ -430,12 +430,14 @@ private fun SummaryActions(r: Recap.Result, layer: GraphicsLayer, onReplay: () -
         }
         Button(
             onClick = {
-                scope.launch {
+                scope.launch(kotlinx.coroutines.Dispatchers.Main) {
                     runCatching {
                         val image = layer.toImageBitmap().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)
                         val dir = File(context.cacheDir, "recap").apply { mkdirs() }
                         val file = File(dir, "Mein-Jahr-${r.year}.png")
-                        file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            file.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        }
                         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
                         val send = Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri)
                             .putExtra(Intent.EXTRA_TEXT, "Mein Jahr ${r.year} in Musik 🎧")
