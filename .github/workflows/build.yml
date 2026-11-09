@@ -276,11 +276,11 @@ jobs:
   release:
     name: Release veröffentlichen (für Updates)
     needs: [build, test, android]
-    # Release, sobald Android grün ist (die iPhone-Tests blockieren nicht)
+    # Release, sobald Android grün ist (iPhone ist pausiert: IPA nur dabei, wenn sie gebaut wurde)
     if: >-
       always() && github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc' || startsWith(github.ref, 'refs/tags/v')) &&
-      needs.android.result == 'success' && needs.build.result == 'success'
+      needs.android.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -295,6 +295,7 @@ jobs:
           echo "APP_BUILD=${V##*.}" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@v4
+        if: needs.build.result == 'success'
         with:
           name: MP3Player-unsigned-ipa
 
@@ -303,6 +304,7 @@ jobs:
           name: MP3Player-apk
 
       - name: AltStore-/SideStore-Quelle erzeugen
+        if: needs.build.result == 'success'
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
@@ -318,19 +320,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
+          # Dateien fürs Release: APK immer, IPA nur wenn der iPhone-Build lief
+          FILES="MP3Player.apk"
+          [ -f MP3Player.ipa ] && FILES="MP3Player.ipa $FILES"
+          [ -f altstore-source.json ] && FILES="$FILES altstore-source.json"
           # Commit-Text ohne Signaturzeilen als Änderungsnotiz
           printf '%s\n' "$COMMIT_MESSAGE" | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md
           [ -s notes.md ] || echo "Neue Version $APP_VERSION" > notes.md
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Tag existiert schon (von Hand gesetzt)
-            gh release create "$GITHUB_REF_NAME" MP3Player.ipa MP3Player.apk altstore-source.json \
+            gh release create "$GITHUB_REF_NAME" $FILES \
               --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" --notes-file notes.md --latest
             exit 0
           fi
           # GitHub lehnt das Anlegen gelegentlich mit HTTP 403 ab – daher mehrere Versuche
           for attempt in 1 2 3 4 5 6; do
-            if gh release create "v$APP_VERSION" MP3Player.ipa MP3Player.apk altstore-source.json \
+            if gh release create "v$APP_VERSION" $FILES \
                  --repo "$GITHUB_REPOSITORY" \
                  --target "$GITHUB_SHA" \
                  --title "ILLEGAL FREEDOM MUSIC $APP_VERSION" \
