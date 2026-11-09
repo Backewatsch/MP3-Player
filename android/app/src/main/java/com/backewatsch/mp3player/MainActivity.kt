@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity() {
             // Zurück aus „Apps installieren erlauben“ → Update automatisch fortsetzen
             app.updates.resumeAfterPermission()
             app.library.rescan()
+            // Downloads, die geladen wurden, während die App zu war
+            app.downloadWatcher.start()
             app.updates.checkIfDue()
         }
     }

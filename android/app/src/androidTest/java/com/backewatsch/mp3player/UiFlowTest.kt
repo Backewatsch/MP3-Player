@@ -35,7 +35,7 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class UiFlowTest {
     /** Benachrichtigungs-Erlaubnis vorab erteilen, sonst verdeckt der Systemdialog die App */
-    @get:Rule(order = 0) val permission: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+    @get:Rule(order = 0) val permission: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_MEDIA_AUDIO)
     @get:Rule(order = 1) val rule = createAndroidComposeRule<MainActivity>()
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()

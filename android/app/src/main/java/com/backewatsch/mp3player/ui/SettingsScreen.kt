@@ -208,6 +208,8 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                     androidx.compose.material3.Switch(checked = btAuto, onCheckedChange = { app.setAutoplayBluetooth(it) })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                DownloadWatcherRow()
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 val dupCount = remember(lib) { app.library.duplicateGroups().size }
                 ActionLine(if (dupCount > 0) "Doppelte Lieder aufräumen ($dupCount)" else "Doppelte Lieder suchen",
                     Icons.Default.CleaningServices, "openDuplicates") {
@@ -302,5 +304,38 @@ private fun ActionLine(text: String, icon: ImageVector, tag: String = text, enab
         Icon(icon, null, tint = if (enabled) Accent else MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(12.dp))
         Text(text, color = if (enabled) Accent else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+
+/** Schalter „Neue Downloads automatisch übernehmen“ – fragt bei Bedarf nach der Erlaubnis für Musikdateien */
+@Composable
+internal fun DownloadWatcherRow() {
+    val app = LocalApp.current
+    val watcher = app.downloadWatcher
+    val enabled by watcher.enabled.collectAsState()
+    var allowed by remember { mutableStateOf(watcher.hasPermission()) }
+    val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        allowed = granted
+        if (granted) watcher.setEnabled(true)
+    }
+    val toggle: (Boolean) -> Unit = { on ->
+        if (on && !watcher.hasPermission()) askPermission.launch(DownloadWatcher.permission)
+        else watcher.setEnabled(on)
+    }
+    val active = enabled && allowed
+    Row(
+        Modifier.fillMaxWidth().clickable { toggle(!active) }.padding(16.dp).testTag("downloadWatcherSwitch"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Neue Downloads automatisch übernehmen")
+            Text(
+                if (enabled && !allowed) "Tippen, um den Zugriff auf Musikdateien zu erlauben"
+                else "MP3s, die du z. B. mit Chrome herunterlädst, erscheinen sofort in der Mediathek",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        androidx.compose.material3.Switch(checked = active, onCheckedChange = toggle)
     }
 }

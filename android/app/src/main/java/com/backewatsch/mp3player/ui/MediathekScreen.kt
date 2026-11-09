@@ -170,6 +170,7 @@ fun MediathekRoot() {
                     }
                 }
             }
+            if (search.isBlank()) item { DownloadPermissionHint() }
             conversion?.let { status ->
                 item {
                     Column(Modifier.padding(16.dp, 6.dp)) {
@@ -397,3 +398,34 @@ internal fun ResultRow(title: String, subtitle: String, icon: androidx.compose.u
 }
 
 /** Alle Genres als farbige Kacheln */
+
+
+/** Einmaliger Hinweis: Zugriff erlauben, damit neue Downloads automatisch in der Mediathek landen */
+@Composable
+private fun DownloadPermissionHint() {
+    val watcher = LocalApp.current.downloadWatcher
+    val enabled by watcher.enabled.collectAsState()
+    val dismissed by watcher.hintDismissed.collectAsState()
+    var allowed by remember { mutableStateOf(watcher.hasPermission()) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        allowed = granted
+        if (granted) watcher.start() else watcher.dismissHint()
+    }
+    if (!enabled || allowed || dismissed) return
+    Row(
+        Modifier.padding(16.dp, 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable { ask.launch(com.backewatsch.mp3player.data.DownloadWatcher.permission) }
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp).testTag("downloadHint"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Default.Download, null, tint = Accent)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Downloads automatisch anzeigen", fontWeight = FontWeight.SemiBold)
+            Text("Tippen und erlauben – neue MP3s aus Chrome & Co. landen dann sofort hier.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick = { watcher.dismissHint() }) { Icon(Icons.Default.Close, "Hinweis schließen") }
+    }
+}

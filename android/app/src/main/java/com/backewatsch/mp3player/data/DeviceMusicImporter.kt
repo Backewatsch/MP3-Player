@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import com.backewatsch.mp3player.model.Track
 import java.io.File
 
 /**
@@ -113,7 +114,13 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
         return SongResult(imported, skipped, errors.size, errors)
     }
 
-    private suspend fun importSong(song: DeviceSong) {
+    /** Lied aus dem Download-Ordner übernehmen (landet zusätzlich in „Heruntergeladen“); null = war schon da */
+    suspend fun importDownloaded(song: DeviceSong): Track? {
+        if (library.trackFromSource(song.sourceKey) != null) return null
+        return importSong(song, addToDownloads = true)
+    }
+
+    private suspend fun importSong(song: DeviceSong, addToDownloads: Boolean = false): Track {
         val dir = library.storage.newIncomingDir()
         try {
             val file = File(dir, FileNames.sanitize(song.displayName))
@@ -121,7 +128,7 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
                 context.contentResolver.openInputStream(song.uri)?.use { input -> file.outputStream().use { input.copyTo(it) } }
                     ?: throw IllegalStateException("Datei nicht lesbar.")
             }
-            library.import(file, move = true, sourceKey = song.sourceKey)
+            return library.import(file, move = true, addToDownloads = addToDownloads, sourceKey = song.sourceKey)
         } finally {
             dir.deleteRecursively()
         }

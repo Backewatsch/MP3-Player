@@ -32,6 +32,7 @@ class App : Application() {
     lateinit var deviceImporter: com.backewatsch.mp3player.data.DeviceMusicImporter
     lateinit var sound: com.backewatsch.mp3player.player.AudioEffects
     lateinit var backup: com.backewatsch.mp3player.data.Backup
+    lateinit var downloadWatcher: com.backewatsch.mp3player.data.DownloadWatcher
     val browser: BrowserController by lazy { BrowserController(this, downloads) }
 
     /** Eigene Cover der Lieder statt des App-Logos anzeigen (Standard: aus → immer das Logo) */
@@ -120,6 +121,7 @@ class App : Application() {
         updates = UpdateChecker(this, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         deviceImporter = com.backewatsch.mp3player.data.DeviceMusicImporter(this, library)
         backup = com.backewatsch.mp3player.data.Backup(library)
+        downloadWatcher = com.backewatsch.mp3player.data.DownloadWatcher(this, deviceImporter, scope)
 
         // Heruntergeladene Titel kommen in die Wiedergabeliste (pausiert, wenn gerade nichts läuft)
         library.onTrackAdded = { track, playlistId ->
@@ -133,6 +135,15 @@ class App : Application() {
             analyzeLoudness()
         }
         watchBluetooth()
+        // Neue MP3s im Download-Ordner (z. B. aus Chrome) direkt in die Mediathek übernehmen
+        downloadWatcher.start()
+        scope.launch {
+            downloadWatcher.imported.collect { track ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(this@App, "„${track.title}“ zur Mediathek hinzugefügt", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
         // Widget auf dem Startbildschirm aktuell halten
         scope.launch {
             kotlinx.coroutines.flow.combine(player.state, library.state) { p, l ->
