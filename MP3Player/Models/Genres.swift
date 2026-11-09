@@ -67,21 +67,38 @@ enum LibrarySearch {
         guard !q.isEmpty else { return Results() }
         func distinctNames(_ names: [String]) -> [String] {
             var seen = Set<String>()
-            return names.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
-                .map { ($0, score($0, q)) }.filter { $0.1 > 0 }
-                .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending }
-                .map(\.0)
+            var hits: [(name: String, score: Int)] = []
+            for name in names where !name.isEmpty && seen.insert(name.lowercased()).inserted {
+                let sc = score(name, q)
+                if sc > 0 { hits.append((name, sc)) }
+            }
+            hits.sort { a, b in
+                if a.score != b.score { return a.score > b.score }
+                return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+            }
+            return hits.map { $0.name }
         }
-        let scored = tracks.map { t in (t, max(score(t.title, q) * 3, score(t.artist, q) * 2, score(t.album, q), score(t.genre, q))) }
-            .filter { $0.1 > 0 }
-            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.title.localizedCaseInsensitiveCompare($1.0.title) == .orderedAscending }
-        return Results(
-            tracks: scored.map(\.0),
-            artists: Array(distinctNames(tracks.map(\.artist)).prefix(10)),
-            albums: Array(distinctNames(tracks.map(\.album)).prefix(10)),
-            genres: Array(distinctNames(tracks.map(\.genre)).prefix(10)),
-            playlists: playlists.filter { score($0.name, q) > 0 }.sorted { score($0.name, q) > score($1.name, q) }
-        )
+        var scored: [(track: Track, score: Int)] = []
+        for t in tracks {
+            let best: Int = max(max(score(t.title, q) * 3, score(t.artist, q) * 2), max(score(t.album, q), score(t.genre, q)))
+            if best > 0 { scored.append((t, best)) }
+        }
+        scored.sort { a, b in
+            if a.score != b.score { return a.score > b.score }
+            return a.track.title.localizedCaseInsensitiveCompare(b.track.title) == .orderedAscending
+        }
+        let artists: [String] = tracks.map { $0.artist }
+        let albums: [String] = tracks.map { $0.album }
+        let genres: [String] = tracks.map { $0.genre }
+        let matchingPlaylists: [Playlist] = playlists.filter { score($0.name, q) > 0 }
+            .sorted { score($0.name, q) > score($1.name, q) }
+        var r = Results()
+        r.tracks = scored.map { $0.track }
+        r.artists = Array(distinctNames(artists).prefix(10))
+        r.albums = Array(distinctNames(albums).prefix(10))
+        r.genres = Array(distinctNames(genres).prefix(10))
+        r.playlists = matchingPlaylists
+        return r
     }
 
     /// Letzte Suchen: neueste zuerst, ohne Doppelte, höchstens `max`
