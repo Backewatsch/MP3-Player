@@ -198,7 +198,7 @@ fun MediathekRoot() {
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = search, onValueChange = { search = it }, singleLine = true,
-                        placeholder = { Text("Lieder, Interpreten, Alben, Genres") },
+                        placeholder = { Text("Was willst du hören?", maxLines = 1) },
                         leadingIcon = { Icon(Icons.Default.Search, null) },
                         trailingIcon = {
                             if (search.isNotEmpty()) IconButton(onClick = { search = "" }, modifier = Modifier.testTag("searchClear")) {

@@ -60,7 +60,7 @@ class QueueTest {
     private fun name(id: String) = listOf(a, b, c, d, x, y).firstOrNull { it.id == id }?.fileName?.substringBefore('.') ?: id
 
     @Test fun playNextComesRightAfterCurrentInChosenOrder() {
-        main { app.player.play(listOf(a, b, c), 0) }
+        main { app.player.play(listOf(a, b, c), 0); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
         waitFor("Wiedergabe startet") { queue().size == 3 && currentId() == a.id }
 
         main { app.player.playNext(x); app.player.playNext(y) }
@@ -82,7 +82,7 @@ class QueueTest {
     }
 
     @Test fun playNextAlsoWorksWithShuffle() {
-        main { app.player.play(listOf(a, b, c, d), 0, shuffle = true) }
+        main { app.player.play(listOf(a, b, c, d), 0, shuffle = true); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
         waitFor("Zufallswiedergabe startet mit A") { queue().size == 4 && currentId() == a.id && app.player.state.value.shuffle }
 
         main { app.player.playNext(x) }
@@ -91,7 +91,7 @@ class QueueTest {
     }
 
     @Test fun shuffleOffRestoresOrderAndKeepsPlaying() {
-        main { app.player.play(listOf(a, b, c, d), 0) }
+        main { app.player.play(listOf(a, b, c, d), 0); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
         waitFor("Start") { queue() == listOf(a.id, b.id, c.id, d.id) }
         main { app.player.toggleShuffle() }
         waitFor("Zufall an, A läuft weiter") { app.player.state.value.shuffle && currentId() == a.id && queue().first() == a.id }
@@ -101,7 +101,7 @@ class QueueTest {
     }
 
     @Test fun addToQueueGoesToTheEnd() {
-        main { app.player.play(listOf(a, b), 0) }
+        main { app.player.play(listOf(a, b), 0); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
         waitFor("Start") { queue().size == 2 }
         main { app.player.addToQueue(x); app.player.playNext(y) }
         waitFor("Y als Nächstes, X ans Ende") { queue() == listOf(a.id, y.id, b.id, x.id) }

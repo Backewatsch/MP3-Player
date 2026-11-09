@@ -311,14 +311,16 @@ class UiFlowTest {
 
         // Lieblingssongs
         rule.onNodeWithContentDescription("Zurück").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("category-Lieblingssongs"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasTestTag("libraryList"), 5_000)
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasTestTag("category-Lieblingssongs"))
         rule.onNodeWithTag("category-Lieblingssongs").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("track-Charlie"), 5_000)
         screenshot("a22-Lieblingssongs")
         rule.onNodeWithContentDescription("Zurück").performClick()
 
         // Statistik
-        rule.waitUntilAtLeastOneExists(hasTestTag("category-Statistik"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasTestTag("libraryList"), 5_000)
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasTestTag("category-Statistik"))
         rule.onNodeWithTag("category-Statistik").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("stat-month"), 5_000)
         org.junit.Assert.assertTrue(rule.onAllNodesWithText("47 Min.", substring = true).fetchSemanticsNodes().isNotEmpty())
