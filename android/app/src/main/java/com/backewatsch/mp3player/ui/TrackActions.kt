@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PlaylistRemove
@@ -200,6 +201,7 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
                 app.library.togglePin(current); close()
             }
             ActionRow("Infos bearbeiten", Icons.Default.Edit) { close(); state.edit = current }
+            ActionRow("Zuschneiden", Icons.Default.ContentCut) { close(); nav.openEditor(current) }
             ActionRow("Cover ändern", Icons.Default.Image) { close(); state.pickCoverFor = current }
             if (app.library.hasCustomCover(current)) {
                 ActionRow("Eigenes Cover entfernen", Icons.Default.HideImage) {

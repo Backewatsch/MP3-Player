@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material3.Badge
@@ -47,7 +47,7 @@ val LocalFavorites = androidx.compose.runtime.compositionLocalOf<Set<String>> { 
 /** Tabs und Navigation innerhalb der Mediathek */
 const val TAB_START = 0
 const val TAB_LIBRARY = 1
-const val TAB_DOWNLOADER = 2
+const val TAB_EDITOR = 2
 
 class AppNavigation {
     var tab by mutableStateOf(0)
@@ -57,6 +57,14 @@ class AppNavigation {
     var showDownloads by mutableStateOf(false)
     var showTransfer by mutableStateOf(false)
     var showSound by mutableStateOf(false)
+    /** Lied, das im Tab „Bearbeiten“ geöffnet ist */
+    var editTrackId by mutableStateOf<String?>(null)
+
+    fun openEditor(track: com.backewatsch.mp3player.model.Track) {
+        showNowPlaying = false
+        editTrackId = track.id
+        tab = TAB_EDITOR
+    }
     val actions = TrackActionsState()
 
     fun push(route: LibRoute) {
@@ -80,13 +88,7 @@ fun MainScreen() {
         androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { lib.value.favorites.toSet() } }
     }
     CompositionLocalProvider(LocalApp provides app, LocalNav provides nav, LocalFavorites provides favoriteIds) {
-        val downloads by app.downloads.items.collectAsState()
-        val unseen by app.downloads.unseen.collectAsState()
-        val active = downloads.count { it.state is com.backewatsch.mp3player.download.DownloadRepository.State.Running ||
-            it.state is com.backewatsch.mp3player.download.DownloadRepository.State.Converting }
-
         BackHandler(enabled = nav.tab == TAB_LIBRARY && nav.libraryStack.size > 1) { nav.pop() }
-        BackHandler(enabled = nav.tab == TAB_DOWNLOADER) { app.browser.back() }
 
         Scaffold(
             modifier = Modifier.cyberBackground(),
@@ -113,14 +115,9 @@ fun MainScreen() {
                             colors = colors, modifier = Modifier.testTag("tab-library"),
                         )
                         NavigationBarItem(
-                            selected = nav.tab == TAB_DOWNLOADER, onClick = { nav.tab = TAB_DOWNLOADER },
-                            icon = {
-                                BadgedBox(badge = { if (active + unseen > 0) Badge { Text("${active + unseen}") } }) {
-                                    Icon(Icons.Default.Download, null)
-                                }
-                            },
-                            label = { Text("Lieder downloaden") },
-                            colors = colors, modifier = Modifier.testTag("tab-downloader"),
+                            selected = nav.tab == TAB_EDITOR, onClick = { if (nav.tab == TAB_EDITOR) nav.editTrackId = null; nav.tab = TAB_EDITOR },
+                            icon = { Icon(Icons.Default.ContentCut, null) }, label = { Text("Bearbeiten") },
+                            colors = colors, modifier = Modifier.testTag("tab-editor"),
                         )
                     }
                 }
@@ -130,7 +127,7 @@ fun MainScreen() {
                 when (nav.tab) {
                     TAB_START -> StartScreen()
                     TAB_LIBRARY -> LibraryHost()
-                    else -> BrowserScreen()
+                    else -> EditorScreen()
                 }
             }
         }

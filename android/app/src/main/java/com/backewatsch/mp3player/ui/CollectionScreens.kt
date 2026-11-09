@@ -317,7 +317,7 @@ fun PlaylistScreen(id: String) {
                 Column(Modifier.padding(16.dp)) {
                     Text(
                         if (tracks.isEmpty()) {
-                            if (isDownloads) "Titel, die du im Tab „Lieder downloaden“ lädst, erscheinen automatisch hier." else "Noch leer – füge Titel hinzu."
+                            if (isDownloads) "Lieder, die du herunterlädst (z. B. mit Chrome), erscheinen automatisch hier." else "Noch leer – füge Titel hinzu."
                         } else "${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

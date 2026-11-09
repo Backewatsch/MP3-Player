@@ -6,7 +6,6 @@ import android.app.Application
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import com.backewatsch.mp3player.browser.BrowserController
 import com.backewatsch.mp3player.data.FileNames
 import com.backewatsch.mp3player.data.Library
 import com.backewatsch.mp3player.data.Storage
@@ -21,7 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Hält die Dienste der App (Bibliothek, Player, Downloads, Browser, Updates). */
+/** Hält die Dienste der App (Bibliothek, Player, Downloads, Updates). */
 class App : Application() {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     lateinit var storage: Storage
@@ -33,7 +32,6 @@ class App : Application() {
     lateinit var sound: com.backewatsch.mp3player.player.AudioEffects
     lateinit var backup: com.backewatsch.mp3player.data.Backup
     lateinit var downloadWatcher: com.backewatsch.mp3player.data.DownloadWatcher
-    val browser: BrowserController by lazy { BrowserController(this, downloads) }
 
     /** Eigene Cover der Lieder statt des App-Logos anzeigen (Standard: aus → immer das Logo) */
     private val settings by lazy { getSharedPreferences("settings", MODE_PRIVATE) }

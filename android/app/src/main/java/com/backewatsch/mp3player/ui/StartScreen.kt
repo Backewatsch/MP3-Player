@@ -103,7 +103,7 @@ fun StartScreen() {
 
         if (lib.tracks.isEmpty()) {
             item {
-                EmptyHint("Willkommen!", "Übertrage deine Musik aus Samsung Music oder lade Lieder im Tab „Lieder downloaden“. Hier erscheinen dann deine meistgehörten Lieder und dein Verlauf.")
+                EmptyHint("Willkommen!", "Übertrage deine Musik aus Samsung Music oder lade MP3s z. B. mit Chrome herunter. Hier erscheinen dann deine meistgehörten Lieder und dein Verlauf.")
                 FilledTonalButton(onClick = { nav.showTransfer = true },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("startTransferButton")) {
                     Icon(Icons.Default.PhoneAndroid, null, tint = Accent); Spacer(Modifier.width(8.dp))

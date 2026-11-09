@@ -107,7 +107,6 @@ fun MediathekRoot() {
     val recentSearches by app.recentSearches.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
     var showNewPlaylist by remember { mutableStateOf(false) }
-    var showLink by remember { mutableStateOf(false) }
 
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) scope.launch {
@@ -127,7 +126,7 @@ fun MediathekRoot() {
                     DropdownMenuItem(text = { Text("Aus Dateien importieren / Video umwandeln") }, leadingIcon = { Icon(Icons.Default.Folder, null) },
                         onClick = { showMenu = false; importer.launch(arrayOf("audio/*", "video/*")) })
                     DropdownMenuItem(text = { Text("Von Link herunterladen") }, leadingIcon = { Icon(Icons.Default.Link, null) },
-                        onClick = { showMenu = false; showLink = true })
+                        onClick = { showMenu = false; nav.showDownloads = true }, modifier = Modifier.testTag("menuLink"))
                     DropdownMenuItem(text = { Text("Von Samsung Music übertragen") }, leadingIcon = { Icon(Icons.Default.PhoneAndroid, null) },
                         onClick = { showMenu = false; nav.showTransfer = true }, modifier = Modifier.testTag("menuTransfer"))
                 }
@@ -249,7 +248,7 @@ fun MediathekRoot() {
             if (lib.tracks.isEmpty()) {
                 item {
                     EmptyHint("Noch keine Musik",
-                        "Lade im Tab „Lieder downloaden“ Musik aus dem Internet, importiere Dateien über ＋ oder übertrage deine Musik aus Samsung Music.")
+                        "Lade MP3s z. B. mit Chrome herunter – sie erscheinen automatisch hier. Oder importiere Dateien über ＋ bzw. übertrage deine Musik aus Samsung Music.")
                 }
                 item {
                     FilledTonalButton(onClick = { nav.showTransfer = true },
@@ -335,14 +334,6 @@ fun MediathekRoot() {
         TextInputDialog("Neue Playlist", "Name", "", "Erstellen", onDismiss = { showNewPlaylist = false }) { name ->
             val playlist = app.library.createPlaylist(name)
             nav.push(LibRoute.PlaylistDetail(playlist.id))
-        }
-    }
-    if (showLink) {
-        TextInputDialog("Von Link herunterladen", "https://…/lied.mp3", "", "Laden", onDismiss = { showLink = false }) { url ->
-            if (url.startsWith("http")) {
-                app.downloads.download(url.trim())
-                Toast.makeText(context, "Download gestartet", Toast.LENGTH_SHORT).show()
-            } else Toast.makeText(context, "Ungültiger Link.", Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -132,34 +132,33 @@ class UiFlowTest {
         Thread.sleep(3000)
         screenshot("a13-Info-Updates")
         back() // Info-Blatt schließen
-        backUntil("tab-downloader")
+        backUntil("tab-editor")
 
-        // Browser-Tab
-        rule.onNodeWithTag("tab-downloader").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("addressField"), 5_000)
-        // Startseite gezielt laden (der Browser behält Seiten aus anderen Tests)
-        instrumentation.runOnMainSync { instrumentation.targetContext.app.browser.loadStartPage() }
-        Thread.sleep(2500)
-        screenshot("a03-Browser-Startseite")
-        assertDark("Browser-Startseite", 0.005, 0.03)
+        // Tab „Bearbeiten“ (noch keine Lieder)
+        rule.onNodeWithTag("tab-editor").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("editorScreen"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasText("Noch keine Musik"), 5_000)
+        screenshot("a03-Bearbeiten-leer")
 
-        // Fremde, helle Webseite muss ebenfalls dunkel dargestellt werden
-        instrumentation.runOnMainSync { instrumentation.targetContext.app.browser.submit("https://example.org/") }
-        Thread.sleep(6000)
-        screenshot("a03b-Fremde-Seite-dunkel")
-        assertDark("Fremde Webseite", 0.3, 0.7)
-        instrumentation.runOnMainSync { instrumentation.targetContext.app.browser.loadStartPage() }
-        rule.onNodeWithTag("downloadsButton").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("downloadLinkField"), 5_000)
+        // Download per Link: im Mediathek-Menü
+        rule.onNodeWithTag("tab-library").performClick()
+        openLinkDownloads()
         screenshot("a04-Downloads-leer")
         rule.onNodeWithTag("closeDownloads").performClick()
     }
 
-    @Test fun t2_downloadByLinkPlayAndMenu() {
-        rule.onNodeWithTag("tab-downloader").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("downloadsButton"), 5_000)
-        rule.onNodeWithTag("downloadsButton").performClick()
+    /** ＋-Menü der Mediathek → „Von Link herunterladen“ */
+    private fun openLinkDownloads() {
+        rule.waitUntilAtLeastOneExists(hasTestTag("addMenu"), 5_000)
+        rule.onNodeWithTag("addMenu").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("menuLink"), 5_000)
+        rule.onNodeWithTag("menuLink").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("downloadLinkField"), 5_000)
+    }
+
+    @Test fun t2_downloadByLinkPlayAndMenu() {
+        rule.onNodeWithTag("tab-library").performClick()
+        openLinkDownloads()
         // Lokaler Testserver des Workflows (der Emulator erreicht den Rechner über 10.0.2.2)
         rule.onNodeWithTag("downloadLinkField").performTextInput("http://10.0.2.2:8765/tagged.mp3")
         rule.onNodeWithTag("downloadStartButton").performClick()
@@ -228,7 +227,7 @@ class UiFlowTest {
         screenshot("a15-Mitwirkende")
     }
 
-    /** Ohne Internet: Musik spielt, Browser zeigt die Offline-Seite */
+    /** Ohne Internet: Musik spielt */
     @Test fun t4_worksOffline() {
         val app = instrumentation.targetContext.app
         // Einen Titel in die Bibliothek legen (wie ein früherer Download)
@@ -253,25 +252,45 @@ class UiFlowTest {
             rule.waitUntilAtLeastOneExists(hasContentDescription("Pause"), 10_000)
             screenshot("a16-Offline-spielt")
 
-            rule.onNodeWithTag("tab-downloader").performClick()
-            rule.waitUntilAtLeastOneExists(hasTestTag("addressField"), 5_000)
-            // Adresse, die sicher nicht im Zwischenspeicher liegt
-            instrumentation.runOnMainSync { app.browser.submit("https://offline-test-${System.currentTimeMillis()}.example.org/") }
-            rule.waitUntilAtLeastOneExists(hasTestTag("offlineHint"), 30_000)
-            Thread.sleep(1000)
-            screenshot("a17-Offline-Browser")
         } finally {
             run("cmd connectivity airplane-mode disable"); run("svc wifi enable"); run("svc data enable")
             Thread.sleep(3000)
         }
     }
 
-    @Test fun t3_youTubeHint() {
-        rule.onNodeWithTag("tab-downloader").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("addressField"), 5_000)
-        instrumentation.runOnMainSync { instrumentation.targetContext.app.browser.submit("https://m.youtube.com") }
-        rule.waitUntilAtLeastOneExists(hasTestTag("youtubeHint"), 30_000)
-        screenshot("a12-YouTube-Hinweis")
+    /** Tab „Bearbeiten“: Lied auswählen, Ende wegschneiden, als neues Lied speichern */
+    @Test fun t3_trimSong() {
+        val app = instrumentation.targetContext.app
+        val dir = File(instrumentation.targetContext.cacheDir, "trim-ui").apply { mkdirs() }
+        val f = File(dir, "Zuschneiden.mp3")
+        instrumentation.context.assets.open("tagged.mp3").use { i -> f.outputStream().use { i.copyTo(it) } }
+        val track = kotlinx.coroutines.runBlocking { app.library.import(f, move = true) }
+        val before = kotlinx.coroutines.runBlocking { app.library.exactDurationMs(track) }
+
+        rule.onNodeWithTag("tab-editor").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("track-${track.title}"), 5_000)
+        screenshot("a10-Bearbeiten-Auswahl")
+        rule.onNodeWithTag("track-${track.title}").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("trimSummary"), 10_000)
+        rule.onNodeWithTag("trimEnd-minus").performClick()
+        rule.waitForIdle()
+        screenshot("a11-Zuschneiden")
+        rule.onNodeWithTag("trimSaveCopy").performScrollTo().performClick()
+        rule.waitUntil(15_000) { app.library.tracks.size == 2 }
+        val copy = app.library.tracks.first { it.id != track.id }
+        check(copy.title == track.title + " (gekürzt)") { "Titel der Kopie: ${copy.title}" }
+        check(kotlin.math.abs(copy.durationMs - (before - 1_000)) < 150) { "Länge der Kopie: ${copy.durationMs}, vorher $before" }
+        rule.waitUntilAtLeastOneExists(hasTestTag("editorList"), 5_000)
+
+        // Auch über das Optionsmenü eines Lieds erreichbar
+        rule.onNodeWithTag("tab-library").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("category-Titel"), 5_000)
+        rule.onNodeWithTag("category-Titel").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("trackMore"), 5_000)
+        rule.onAllNodesWithTag("trackMore").onFirst().performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("action-Zuschneiden"), 5_000)
+        rule.onNodeWithTag("action-Zuschneiden").performScrollTo().performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("trimEditor"), 5_000)
     }
 
     /** Sortieren, Mehrfachauswahl, Lieblingssongs, Statistik, Klang */
