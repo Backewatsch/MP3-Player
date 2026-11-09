@@ -227,3 +227,122 @@ class UpdateDownloadTest {
         assertEquals("Installation abgebrochen.", aborted)
     }
 }
+
+/** Doppelte, Songtexte, eigenes Cover, Weiterhören, Lautheit und die Mediathek für Android Auto */
+@RunWith(AndroidJUnit4::class)
+class MoreFeaturesTest {
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val context get() = instrumentation.targetContext
+    private val app get() = context.app
+
+    @Before fun setUp() {
+        instrumentation.runOnMainSync { app.player.stop(); app.library.resetForTests() }
+    }
+
+    @After fun tearDown() {
+        instrumentation.runOnMainSync { app.player.stop() }
+    }
+
+    private fun add(name: String, asset: String = "untagged.mp3"): Track {
+        val dir = File(context.cacheDir, "more-test").apply { mkdirs() }
+        val file = File(dir, "$name.mp3")
+        instrumentation.context.assets.open(asset).use { input -> file.outputStream().use { input.copyTo(it) } }
+        return runBlocking { app.library.import(file, move = true) }
+    }
+
+    private fun waitFor(message: String, timeoutMs: Long = 10_000, condition: () -> Boolean) {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            var ok = false
+            instrumentation.runOnMainSync { ok = condition() }
+            if (ok) return
+            Thread.sleep(100)
+        }
+        var ok = false
+        instrumentation.runOnMainSync { ok = condition() }
+        assertTrue(message, ok)
+    }
+
+    @Test fun mergesDuplicatesKeepingPlaylistsAndHearts() {
+        val a = add("Lied")
+        val b = add("Lied (2)") // gleiche Datei, gleicher Titel aus dem Dateinamen? → Titel angleichen
+        app.library.rename(b, a.title, a.artist)
+        val playlist = app.library.createPlaylist("Mix")
+        app.library.addAll(listOf(b), playlist)
+        app.library.toggleFavorite(b)
+        app.library.recordPlay(b.id)
+        val groups = app.library.duplicateGroups()
+        assertEquals(1, groups.size)
+        val keep = app.library.mergeDuplicates(groups[0])
+        assertEquals(1, app.library.tracks.size)
+        assertEquals(listOf(keep.id), app.library.playlist(playlist.id)!!.trackIds)
+        assertTrue(app.library.isFavorite(keep))
+        assertEquals(1, app.library.playCount(keep))
+        assertTrue(app.library.duplicateGroups().isEmpty())
+    }
+
+    @Test fun lyricsAndCustomCover() {
+        val a = add("Text")
+        assertEquals(null, app.library.lyricsOf(a))
+        app.library.setLyrics(a, "  Erste Zeile\nZweite Zeile  ")
+        assertEquals("Erste Zeile\nZweite Zeile", app.library.lyricsOf(a))
+        app.library.setLyrics(a, "")
+        assertEquals(null, app.library.lyricsOf(a))
+
+        val jpeg = java.io.ByteArrayOutputStream().also {
+            android.graphics.Bitmap.createBitmap(50, 50, android.graphics.Bitmap.Config.ARGB_8888).compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it)
+        }.toByteArray()
+        app.library.setCustomCover(a, jpeg)
+        assertTrue(app.library.hasCustomCover(a))
+        assertTrue(app.library.artworkOf(a) != null)
+        assertTrue(com.backewatsch.mp3player.ui.ArtworkLoader.bitmap(context, a) != null)
+        app.library.removeCustomCover(a)
+        assertFalse(app.library.hasCustomCover(a))
+    }
+
+    @Test fun remembersQueueForRestart() {
+        val a = add("Eins"); val b = add("Zwei")
+        instrumentation.runOnMainSync { app.player.play(listOf(a, b), 1) }
+        waitFor("Wiedergabe startet") { app.player.state.value.currentId == b.id }
+        val prefs = context.getSharedPreferences("playback", android.content.Context.MODE_PRIVATE)
+        waitFor("Wiedergabeliste gespeichert") { prefs.getString("queue", null) == "${a.id},${b.id}" && prefs.getInt("index", -1) == 1 }
+        instrumentation.runOnMainSync { app.player.stop() }
+        waitFor("nach Schließen gelöscht") { prefs.getString("queue", null) == null }
+    }
+
+    @Test fun measuresLoudnessOfTracks() {
+        val a = add("Laut", "tagged.mp3")
+        val gain = com.backewatsch.mp3player.convert.LoudnessAnalyzer.gainDb(app.library.fileOf(a))
+        assertTrue("Lautheit messbar", gain != null && gain in -12f..6f)
+    }
+
+    @Test fun androidAutoCanBrowseLibrary() {
+        val a = add("Auto1"); add("Auto2")
+        app.library.toggleFavorite(a)
+        val token = androidx.media3.session.SessionToken(context, android.content.ComponentName(context, com.backewatsch.mp3player.player.PlaybackService::class.java))
+        // Media3 verlangt Aufrufe auf dem Haupt-Thread – Ergebnisse hier abwarten
+        fun <T> onMain(block: () -> com.google.common.util.concurrent.ListenableFuture<T>): T {
+            var f: com.google.common.util.concurrent.ListenableFuture<T>? = null
+            instrumentation.runOnMainSync { f = block() }
+            return f!!.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        val browser = onMain { androidx.media3.session.MediaBrowser.Builder(context, token).buildAsync() }
+        try {
+            val root = onMain { browser.getLibraryRoot(null) }.value!!
+            val folders = onMain { browser.getChildren(root.mediaId, 0, 50, null) }.value!!
+            assertTrue(folders.map { it.mediaMetadata.title.toString() }.containsAll(listOf("Lieblingssongs", "Playlists", "Alle Titel")))
+            val favs = onMain { browser.getChildren("favorites", 0, 50, null) }.value!!
+            assertEquals(listOf(a.id), favs.map { it.mediaId })
+            val all = onMain { browser.getChildren("all", 0, 50, null) }.value!!
+            assertEquals(2, all.size)
+            // Auswahl im Auto: Eintrag nur mit ID → Dienst findet die Datei selbst
+            instrumentation.runOnMainSync {
+                browser.setMediaItem(androidx.media3.common.MediaItem.Builder().setMediaId(a.id).build())
+                browser.prepare(); browser.play()
+            }
+            waitFor("Auto-Auswahl spielt") { browser.isPlaying && browser.currentMediaItem?.mediaId == a.id }
+        } finally {
+            instrumentation.runOnMainSync { browser.stop(); browser.release() }
+        }
+    }
+}

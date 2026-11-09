@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.CleaningServices
 
 import android.content.Intent
 import android.net.Uri
@@ -189,6 +190,31 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                     Icons.Default.Equalizer, "openSound",
                 ) { nav.showSound = true }
             }
+
+            SectionHeader("Wiedergabe")
+            Card {
+                val btAuto by app.autoplayBluetooth.collectAsState()
+                Row(
+                    Modifier.fillMaxWidth().clickable { app.setAutoplayBluetooth(!btAuto) }.padding(16.dp).testTag("btAutoplaySwitch"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Bei Bluetooth automatisch abspielen")
+                        Text("Kopfhörer oder Auto verbinden → Musik läuft weiter", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.Switch(checked = btAuto, onCheckedChange = { app.setAutoplayBluetooth(it) })
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val dupCount = remember(lib) { app.library.duplicateGroups().size }
+                ActionLine(if (dupCount > 0) "Doppelte Lieder aufräumen ($dupCount)" else "Doppelte Lieder suchen",
+                    Icons.Default.CleaningServices, "openDuplicates") {
+                    onDismiss(); nav.push(LibRoute.Duplicates)
+                }
+            }
+            Text("Android Auto: Die App erscheint als Musik-App. Weil sie nicht aus dem Play Store kommt, in Android Auto unter Einstellungen › Entwicklereinstellungen „Unbekannte Quellen“ einschalten.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
 
             SectionHeader("Sicherung")
             Card {

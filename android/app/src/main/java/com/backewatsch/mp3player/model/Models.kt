@@ -44,9 +44,15 @@ data class LibraryState(
     val plays: List<PlayEvent> = emptyList(),
     /** Hörzeit in ms je Monat („2026-11“) – für die Statistik */
     val listenedByMonth: Map<String, Long> = emptyMap(),
+    /** Gemessene Verstärkung je Titel in dB („Lautstärke angleichen“) */
+    val gains: Map<String, Float> = emptyMap(),
+    /** Selbst eingetragene oder aus der Datei gelesene Songtexte */
+    val lyrics: Map<String, String> = emptyMap(),
+    /** Titel mit selbst gewähltem Cover (wird immer angezeigt) */
+    val customCovers: List<String> = emptyList(),
 ) {
     companion object {
-        const val CURRENT_VERSION = 3
+        const val CURRENT_VERSION = 4
         /** Feste ID der Playlist „Heruntergeladen“ */
         const val DOWNLOADS_PLAYLIST_ID = "00000000-0000-0000-0000-00000000d001"
     }

@@ -41,6 +41,48 @@ class App : Application() {
         player.refreshArtwork()
     }
 
+    /** Musik automatisch starten, wenn Bluetooth-Kopfhörer oder das Auto verbunden werden */
+    val autoplayBluetooth by lazy { kotlinx.coroutines.flow.MutableStateFlow(settings.getBoolean("autoplayBluetooth", false)) }
+    fun setAutoplayBluetooth(value: Boolean) {
+        settings.edit().putBoolean("autoplayBluetooth", value).apply()
+        autoplayBluetooth.value = value
+    }
+
+    /** Lautheit aller noch nicht gemessenen Lieder im Hintergrund messen (eins nach dem anderen) */
+    private var analyzing: kotlinx.coroutines.Job? = null
+    fun analyzeLoudness() {
+        if (analyzing?.isActive == true) return
+        analyzing = scope.launch {
+            while (true) {
+                val next = library.tracksWithoutGain().firstOrNull() ?: break
+                val gain = withContext(Dispatchers.Default) {
+                    runCatching { com.backewatsch.mp3player.convert.LoudnessAnalyzer.gainDb(library.fileOf(next)) }.getOrNull()
+                }
+                // Nicht lesbare Dateien mit 0 dB markieren, damit sie nicht immer wieder versucht werden
+                library.setGain(next.id, gain ?: 0f)
+                if (player.state.value.currentId == next.id) sound.setTrackGain(gain ?: 0f)
+            }
+        }
+    }
+
+    private fun watchBluetooth() {
+        val audio = getSystemService(android.media.AudioManager::class.java) ?: return
+        val registeredAt = android.os.SystemClock.elapsedRealtime()
+        audio.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) {
+                // Beim Anmelden meldet Android die schon verbundenen Geräte – die zählen nicht
+                if (android.os.SystemClock.elapsedRealtime() - registeredAt < 3_000) return
+                if (!autoplayBluetooth.value) return
+                val bluetooth = added.any {
+                    it.isSink && (it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                        (android.os.Build.VERSION.SDK_INT >= 31 && (it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                            it.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER)))
+                }
+                if (bluetooth && !player.state.value.isPlaying) player.resumeOrStart()
+            }
+        }, android.os.Handler(mainLooper))
+    }
+
     /** Sortierung der Titelliste (bleibt gespeichert) */
     val trackSort by lazy {
         kotlinx.coroutines.flow.MutableStateFlow(com.backewatsch.mp3player.data.TrackSort.fromName(settings.getString("trackSort", null)))
@@ -62,9 +104,16 @@ class App : Application() {
         backup = com.backewatsch.mp3player.data.Backup(library)
 
         // Heruntergeladene Titel kommen in die Wiedergabeliste (pausiert, wenn gerade nichts läuft)
-        library.onTrackAdded = { track, playlistId -> if (playlistId != null) player.enqueue(track) }
+        library.onTrackAdded = { track, playlistId ->
+            if (playlistId != null) player.enqueue(track)
+            analyzeLoudness()
+        }
         scope.launch { library.state.collect { player.libraryChanged(it.tracks) } }
-        scope.launch { library.rescan() }
+        scope.launch {
+            library.rescan()
+            analyzeLoudness()
+        }
+        watchBluetooth()
         // Widget auf dem Startbildschirm aktuell halten
         scope.launch {
             kotlinx.coroutines.flow.combine(player.state, library.state) { p, l ->

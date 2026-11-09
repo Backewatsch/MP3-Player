@@ -34,6 +34,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,13 +73,13 @@ fun StartScreen() {
 
     LazyColumn(Modifier.fillMaxSize().testTag("startScreen")) {
         item {
-            Column(Modifier.padding(start = 20.dp, top = 28.dp, end = 20.dp, bottom = 8.dp)) {
-                Text("> SYSTEM ONLINE_", style = MaterialTheme.typography.labelLarge, color = NeonYellow)
-                Spacer(Modifier.height(6.dp))
-                GlitchText("ILLEGAL", style = MaterialTheme.typography.headlineLarge)
-                GlitchText("FREEDOM MUSIC", style = MaterialTheme.typography.headlineMedium, color = Accent)
-                Spacer(Modifier.height(6.dp))
-                Text("// " + greeting().uppercase() + ", RUNNER", style = MaterialTheme.typography.labelLarge, color = NeonCyan)
+            Row(Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(greeting(), style = MaterialTheme.typography.headlineMedium)
+                    Text("ILLEGAL FREEDOM MUSIC", style = MaterialTheme.typography.labelMedium, color = Accent,
+                        fontFamily = CyberMono, letterSpacing = 2.sp)
+                }
+                Box(Modifier.clickable { nav.showSettings = true }.testTag("startSettings")) { Artwork(null, 40.dp, 20.dp) }
             }
         }
         (update as? UpdateChecker.State.Available)?.let { available ->
@@ -104,6 +110,29 @@ fun StartScreen() {
             }
             return@LazyColumn
         }
+
+        // Schnellzugriff: 2 Spalten mit Lieblingssongs, zuletzt gehörten Liedern und Playlists
+        item {
+            val tiles = buildList<QuickTile> {
+                if (favorites.isNotEmpty()) add(QuickTile.Favorites(favorites.size))
+                recent.take(3).forEach { add(QuickTile.Song(it)) }
+                lib.playlists.filter { it.trackIds.isNotEmpty() }.take(6 - size).forEach { add(QuickTile.PlaylistTile(it)) }
+            }.take(6)
+            if (tiles.isNotEmpty()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tiles.chunked(2).forEach { pair ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            pair.forEach { tile -> QuickTileView(tile, Modifier.weight(1f)) }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Automatische Playlists
+        item { SectionHeader("Deine Mixe") }
+        item { SmartRow() }
 
         // Weiterhören
         if (current != null) {
@@ -286,4 +315,54 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
     in 11..17 -> "Hallo"
     in 18..22 -> "Guten Abend"
     else -> "Gute Nacht"
+}
+
+
+/** Eintrag im Schnellzugriff */
+sealed interface QuickTile {
+    data class Favorites(val count: Int) : QuickTile
+    data class Song(val track: com.backewatsch.mp3player.model.Track) : QuickTile
+    data class PlaylistTile(val playlist: com.backewatsch.mp3player.model.Playlist) : QuickTile
+}
+
+@Composable
+private fun QuickTileView(tile: QuickTile, modifier: Modifier) {
+    val app = LocalApp.current
+    val nav = LocalNav.current
+    val player by app.player.state.collectAsState()
+    Row(
+        modifier.height(56.dp).clip(RoundedCornerShape(8.dp)).background(CyberPanelHigh)
+            .clickable {
+                when (tile) {
+                    is QuickTile.Favorites -> nav.push(LibRoute.Favorites)
+                    is QuickTile.Song -> app.player.play(listOf(tile.track), 0)
+                    is QuickTile.PlaylistTile -> nav.push(LibRoute.PlaylistDetail(tile.playlist.id))
+                }
+            }
+            .testTag("quick-" + when (tile) {
+                is QuickTile.Favorites -> "favorites"
+                is QuickTile.Song -> tile.track.title
+                is QuickTile.PlaylistTile -> tile.playlist.name
+            }),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when (tile) {
+            is QuickTile.Favorites -> Box(
+                Modifier.size(56.dp).background(Brush.linearGradient(listOf(Color(0xFF3A2F7A), Accent))),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.Favorite, null, tint = Color.White) }
+            is QuickTile.Song -> Artwork(tile.track, 56.dp, 0.dp)
+            is QuickTile.PlaylistTile -> PlaylistArtwork(tile.playlist, app.library.tracksIn(tile.playlist).firstOrNull(), 56.dp, 0.dp)
+        }
+        Text(
+            when (tile) {
+                is QuickTile.Favorites -> "Lieblingssongs"
+                is QuickTile.Song -> tile.track.title
+                is QuickTile.PlaylistTile -> tile.playlist.name
+            },
+            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 2,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 10.dp).weight(1f),
+        )
+        if (tile is QuickTile.Song && player.currentId == tile.track.id) PlayingBars(player.isPlaying, Accent, Modifier.padding(end = 10.dp))
+    }
 }

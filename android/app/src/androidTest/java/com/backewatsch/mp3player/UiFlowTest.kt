@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performTouchInput
@@ -337,5 +338,61 @@ class UiFlowTest {
         Thread.sleep(800)
         screenshot("a25-Klang")
         backUntil("tab-start")
+    }
+
+    /** Neues Design: Startseite mit Mixen, Player mit Songtext, Mix-Ansicht und Doppelte */
+    @Test fun t6_streamingDesignAndLyrics() {
+        val app = instrumentation.targetContext.app
+        val dir = File(instrumentation.targetContext.cacheDir, "ui-design").apply { mkdirs() }
+        val tracks = listOf("Sonnenaufgang", "Nachtfahrt", "Nachtfahrt (2)").map { name ->
+            val f = File(dir, "$name.mp3")
+            instrumentation.context.assets.open("untagged.mp3").use { i -> f.outputStream().use { i.copyTo(it) } }
+            kotlinx.coroutines.runBlocking { app.library.import(f, move = true) }
+        }
+        // Doppelte erzeugen: gleicher Titel
+        app.library.rename(tracks[2], "Nachtfahrt", "")
+        app.library.toggleFavorite(tracks[0])
+        app.library.recordStart(tracks[0].id)
+
+        rule.onNodeWithTag("tab-start").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("mix-RECENTLY_ADDED"), 10_000)
+        screenshot("a26-Start-Design")
+        rule.onNodeWithTag("mix-RECENTLY_ADDED").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("playAllButton"), 5_000)
+        screenshot("a27-Mix")
+        rule.onNodeWithTag("playAllButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("miniPlayer"), 10_000)
+        Thread.sleep(800)
+        screenshot("a28-Mini-Player")
+
+        // Player + Songtext eintragen
+        rule.onNodeWithTag("miniPlayer").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("lyricsButton"), 5_000)
+        Thread.sleep(800)
+        screenshot("a29-Player-Design")
+        rule.onNodeWithTag("lyricsButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("lyricsEmpty"), 5_000)
+        rule.onNodeWithTag("lyricsEdit").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("lyricsField"), 5_000)
+        rule.onNodeWithTag("lyricsField").performTextInput("Wir fahren durch die Nacht\nund singen laut")
+        rule.onNodeWithTag("lyricsSave").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("lyricsText"), 5_000)
+        Thread.sleep(500)
+        screenshot("a30-Songtext")
+        val current = app.player.state.value.currentId!!
+        org.junit.Assert.assertEquals("Wir fahren durch die Nacht\nund singen laut", app.library.state.value.lyrics[current])
+        backUntil("tab-library")
+
+        // Doppelte über die Einstellungen
+        rule.onNodeWithTag("tab-library").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("settingsButton"), 5_000)
+        rule.onNodeWithTag("settingsButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("openDuplicates"), 5_000)
+        rule.onNodeWithTag("openDuplicates").performScrollTo().performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("duplicatesSummary"), 5_000)
+        screenshot("a31-Doppelte")
+        rule.onNodeWithTag("mergeAll").performClick()
+        rule.waitUntil(5_000) { app.library.duplicateGroups().isEmpty() }
+        org.junit.Assert.assertEquals(2, app.library.tracks.size)
     }
 }

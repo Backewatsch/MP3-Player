@@ -58,25 +58,36 @@ import com.backewatsch.mp3player.model.formatTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Cover eines Titels oder ein Verlauf mit Notensymbol */
+/** Cover eines Titels: eigenes Cover (falls gewählt oder eingeschaltet), sonst das App-Logo */
 @Composable
 fun Artwork(track: Track?, size: Dp, corner: Dp = 6.dp) {
     val context = LocalContext.current
     val ownCovers by context.app.showOwnCovers.collectAsState()
-    val bitmap by produceState<ImageBitmap?>(null, track?.id, ownCovers) {
-        value = if (!ownCovers) null else track?.let { t ->
-            withContext(Dispatchers.IO) {
-                context.app.library.artworkOf(t)?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
-            }
-        }
+    val version by context.app.library.coverVersion.collectAsState()
+    val bitmap by produceState<ImageBitmap?>(null, track?.id, ownCovers, version) {
+        value = withContext(Dispatchers.IO) { ArtworkLoader.bitmap(context, track)?.asImageBitmap() }
     }
-    val shape = CutCornerShape(topStart = corner, bottomEnd = corner)
+    val shape = RoundedCornerShape(corner)
     if (bitmap != null) {
         Image(bitmap!!, null, Modifier.size(size).clip(shape), contentScale = ContentScale.Crop)
     } else {
-        // Kein eigenes Cover (oder ausgeschaltet) → App-Logo
         LogoArt(size, shape)
     }
+}
+
+/** Cover einer Playlist: eigenes Bild, sonst das Cover des ersten Titels */
+@Composable
+fun PlaylistArtwork(playlist: com.backewatsch.mp3player.model.Playlist, firstTrack: Track?, size: Dp, corner: Dp = 8.dp) {
+    val context = LocalContext.current
+    val version by context.app.library.coverVersion.collectAsState()
+    val bitmap by produceState<ImageBitmap?>(null, playlist.id, version) {
+        value = withContext(Dispatchers.IO) {
+            context.app.library.playlistCoverFile(playlist).takeIf { it.exists() }
+                ?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
+        }
+    }
+    if (bitmap != null) Image(bitmap!!, null, Modifier.size(size).clip(RoundedCornerShape(corner)), contentScale = ContentScale.Crop)
+    else Artwork(firstTrack, size, corner)
 }
 
 /**
@@ -110,13 +121,13 @@ fun TrackRow(
             .testTag("track-${track.title}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(track, 48.dp)
-        Spacer(Modifier.width(12.dp))
+        Artwork(track, 52.dp, 6.dp)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 track.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = if (isCurrent) NeonCyan else MaterialTheme.colorScheme.onSurface,
-                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                color = if (isCurrent) Accent else MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
             )
             Text(
                 track.artist.ifEmpty { "Unbekannter Interpret" }, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -124,7 +135,7 @@ fun TrackRow(
             )
         }
         if (favorite) Icon(Icons.Default.Favorite, "Lieblingssong", tint = Accent, modifier = Modifier.size(14.dp).testTag("fav-${track.title}"))
-        if (isCurrent && isPlaying) Icon(Icons.Default.GraphicEq, null, tint = NeonCyan, modifier = Modifier.padding(start = 6.dp).size(18.dp))
+        if (isCurrent) PlayingBars(isPlaying, Accent, Modifier.padding(start = 8.dp))
         Text(
             formatTime(track.durationMs), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp),
@@ -141,28 +152,24 @@ fun TrackRow(
     }
 }
 
-/** Überschrift eines Abschnitts im Terminal-Stil: „▮ // OFT GESPIELT“ */
+/** Überschrift eines Abschnitts: groß und fett („Zuletzt gehört“) */
 @Composable
 fun SectionHeader(text: String) {
-    Row(Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(width = 3.dp, height = 14.dp).background(Accent))
-        Spacer(Modifier.width(8.dp))
-        Text("// ", style = MaterialTheme.typography.titleSmall, color = Accent)
-        Text(text.uppercase(), style = MaterialTheme.typography.titleSmall, color = NeonCyan)
-    }
+    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 26.dp, bottom = 10.dp))
 }
 
-/** Gruppe im Cyberpunk-Stil: abgeschrägte Ecken, Neon-Rand */
+/** Gruppe als ruhige, abgerundete Fläche */
 @Composable
 fun Card(content: @Composable () -> Unit) {
-    val shape = CutCornerShape(topStart = 14.dp, bottomEnd = 14.dp)
+    val shape = RoundedCornerShape(16.dp)
     Column(
         Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(CyberPanelHigh, CyberPanel)))
-            .border(1.dp, Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.30f), Accent.copy(alpha = 0.22f))), shape),
+            .background(CyberPanelHigh.copy(alpha = 0.85f)),
         verticalArrangement = Arrangement.Top,
     ) { content() }
 }
@@ -185,25 +192,10 @@ fun GlitchText(
     }
 }
 
-/** Cyberpunk-Hintergrund: Neon-Raster, Leuchten und Scanlines */
+/** Ruhiger dunkler Hintergrund mit leichtem Babyblau-Schimmer oben */
 fun Modifier.cyberBackground(): Modifier = this.drawBehind {
     drawRect(CyberBlack)
-    drawRect(Brush.radialGradient(listOf(Accent.copy(alpha = 0.07f), Color.Transparent),
-        center = Offset(size.width * 0.85f, 0f), radius = size.width * 0.9f))
-    drawRect(Brush.radialGradient(listOf(NeonCyan.copy(alpha = 0.05f), Color.Transparent),
-        center = Offset(0f, size.height), radius = size.width * 1.1f))
-    val step = 48.dp.toPx()
-    var x = 0f
-    while (x < size.width) {
-        drawLine(NeonCyan.copy(alpha = 0.022f), Offset(x, 0f), Offset(x, size.height), 1f)
-        x += step
-    }
-    var y = 0f
-    while (y < size.height) {
-        drawLine(NeonCyan.copy(alpha = 0.022f), Offset(0f, y), Offset(size.width, y), 1f)
-        y += step
-    }
-    // (keine Scanlines – schont die Augen)
+    drawRect(Brush.verticalGradient(listOf(Accent.copy(alpha = 0.07f), Color.Transparent), endY = size.height * 0.35f))
 }
 
 @Composable
@@ -211,7 +203,7 @@ fun EmptyHint(title: String, message: String) {
     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(Icons.Default.MusicNote, null, Modifier.size(40.dp), tint = NeonCyan)
         Spacer(Modifier.size(8.dp))
-        GlitchText(title.uppercase(), style = MaterialTheme.typography.titleMedium)
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.size(4.dp))
         Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

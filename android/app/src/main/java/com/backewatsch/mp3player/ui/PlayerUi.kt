@@ -1,5 +1,27 @@
 package com.backewatsch.mp3player.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.sp
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,45 +95,72 @@ fun MiniPlayer(onOpen: () -> Unit) {
     val state by app.player.state.collectAsState()
     val lib by app.library.state.collectAsState()
     val track = lib.tracks.firstOrNull { it.id == state.currentId } ?: return
-    Column(
+    val color = rememberArtworkColor(track)
+    val haptic = LocalHapticFeedback.current
+    var dragX by remember { mutableFloatStateOf(0f) }
+    val shown by animateFloatAsState(dragX, label = "miniDrag")
+    val fraction = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
+
+    Box(
         Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
             .fillMaxWidth()
-            .background(Brush.horizontalGradient(listOf(CyberPanelHigh, CyberPanel)))
+            .clip(RoundedCornerShape(10.dp))
+            .background(Brush.horizontalGradient(listOf(color, color.copy(alpha = 0.85f))))
+            // Wischen: links = nächster Titel, rechts = vorheriger
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (dragX < -140f) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.next() }
+                        else if (dragX > 140f) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.previous() }
+                        dragX = 0f
+                    },
+                    onDragCancel = { dragX = 0f },
+                ) { _, delta -> dragX = (dragX + delta).coerceIn(-300f, 300f) }
+            }
             .clickable(onClick = onOpen)
             .testTag("miniPlayer"),
     ) {
-        val fraction = if (state.durationMs > 0) (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
-        Box(Modifier.fillMaxWidth().height(3.dp).background(CyberLine)) {
-            Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Brush.horizontalGradient(listOf(Accent, NeonCyan))))
-        }
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Artwork(track, 40.dp)
-            Spacer(Modifier.width(12.dp))
+        Row(
+            Modifier.fillMaxWidth().offset { IntOffset((shown * 0.35f).toInt(), 0) }.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Artwork(track, 42.dp, 6.dp)
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(track.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = NeonCyan)
-                if (track.artist.isNotEmpty()) {
-                    Text(track.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                }
+                Text(track.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium)
+                Text(track.artist.ifEmpty { "Unbekannter Interpret" }, style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // Läuft der Schlafmodus, zeigt der Mini-Player die Restzeit
             rememberSleepRemaining()?.let { remaining ->
-                Icon(Icons.Default.Bedtime, "Schlafmodus läuft", tint = Accent, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Bedtime, "Schlafmodus läuft", tint = Color.White, modifier = Modifier.size(16.dp))
                 Text(" " + com.backewatsch.mp3player.player.SleepTimer.formatRemaining(remaining),
-                    style = MaterialTheme.typography.labelSmall, color = Accent, modifier = Modifier.testTag("miniSleep"))
+                    style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.testTag("miniSleep"))
+            }
+            val favorite = track.id in lib.favorites
+            IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.library.toggleFavorite(track) }) {
+                Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    if (favorite) "Aus Lieblingssongs entfernen" else "Zu Lieblingssongs", tint = if (favorite) Accent else Color.White)
             }
             IconButton(onClick = app.player::togglePlayPause, modifier = Modifier.testTag("miniPlayPause")) {
                 Icon(
                     if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     if (state.isPlaying) "Pause" else "Abspielen",
-                    tint = Accent,
+                    tint = Color.White, modifier = Modifier.size(30.dp),
                 )
             }
-            IconButton(onClick = app.player::next) { Icon(Icons.Default.SkipNext, "Nächster Titel") }
+        }
+        // Fortschritt als feine Linie unten
+        Box(Modifier.align(Alignment.BottomStart).padding(horizontal = 8.dp).fillMaxWidth().height(2.dp)
+            .clip(RoundedCornerShape(1.dp)).background(Color.White.copy(alpha = 0.25f))) {
+            Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Color.White))
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun NowPlayingSheet(onDismiss: () -> Unit) {
     val app = LocalApp.current
@@ -120,8 +169,12 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
     val lib by app.library.state.collectAsState()
     val track = lib.tracks.firstOrNull { it.id == state.currentId }
     var showQueue by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubValue by remember { mutableFloatStateOf(0f) }
+    val haptic = LocalHapticFeedback.current
+    val color = rememberArtworkColor(track)
+    val animatedColor by animateColorAsState(color, tween(600), label = "playerColor")
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -132,88 +185,127 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
         Box(
             Modifier
                 .fillMaxSize()
-                .cyberBackground()
-                .background(Brush.verticalGradient(listOf(Accent.copy(alpha = 0.12f), AccentPurple.copy(alpha = 0.08f), Color.Transparent))),
+                .background(Brush.verticalGradient(listOf(animatedColor, animatedColor.copy(alpha = 0.55f), CyberBlack))),
         ) {
             if (track == null) {
                 EmptyHint("Nichts wird abgespielt", "Wähle einen Titel in der Mediathek.")
                 return@Box
             }
-            Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(Modifier.fillMaxWidth()) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Schließen") }
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { nav.showSound = true }, modifier = Modifier.testTag("soundButton")) {
-                        Icon(Icons.Default.Equalizer, "Klang / Equalizer")
+            Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.Default.KeyboardArrowDown, "Schließen", tint = Color.White, modifier = Modifier.size(32.dp)) }
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("WIRD GESPIELT", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f), letterSpacing = 1.5.sp)
+                        Text(track.album.ifEmpty { "ILLEGAL FREEDOM MUSIC" }, style = MaterialTheme.typography.labelLarge, color = Color.White,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    SleepTimerButton()
-                    IconButton(onClick = { showQueue = true }) { Icon(Icons.AutoMirrored.Filled.QueueMusic, "Wiedergabeliste") }
-                    IconButton(onClick = { nav.actions.open(track) }) { Icon(Icons.Default.MoreVert, "Optionen") }
+                    IconButton(onClick = { nav.actions.open(track) }) { Icon(Icons.Default.MoreVert, "Optionen", tint = Color.White) }
                 }
                 Spacer(Modifier.weight(1f))
-                // Cover mit Neon-Rahmen
+
+                // Großes Cover: wischen wechselt den Titel, bei Pause etwas kleiner
+                var artDrag by remember { mutableFloatStateOf(0f) }
+                val artScale by animateFloatAsState(if (state.isPlaying) 1f else 0.88f, spring(dampingRatio = 0.6f), label = "artScale")
                 Box(
-                    Modifier.border(1.5.dp, Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.6f), Accent.copy(alpha = 0.6f))),
-                        androidx.compose.foundation.shape.CutCornerShape(topStart = 24.dp, bottomEnd = 24.dp)).padding(6.dp),
-                ) { Artwork(track, 290.dp, 20.dp) }
-                Spacer(Modifier.height(28.dp))
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .graphicsLayer { scaleX = artScale; scaleY = artScale; translationX = artDrag * 0.4f }
+                        .shadow(24.dp, RoundedCornerShape(12.dp))
+                        .pointerInput(track.id) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    if (artDrag < -160f) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.next() }
+                                    else if (artDrag > 160f) { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.previous() }
+                                    artDrag = 0f
+                                },
+                                onDragCancel = { artDrag = 0f },
+                            ) { _, d -> artDrag += d }
+                        },
+                ) {
+                    BoxWithConstraints { Artwork(track, maxWidth, 12.dp) }
+                }
+                Spacer(Modifier.weight(1f))
+
+                // Titel + Herz
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.width(48.dp))
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        GlitchText(track.title.uppercase(), style = MaterialTheme.typography.headlineSmall, maxLines = 2)
-                        Text("> " + track.artist.ifEmpty { "Unbekannter Interpret" }, style = MaterialTheme.typography.titleMedium,
-                            color = NeonCyan)
+                    Column(Modifier.weight(1f)) {
+                        Text(track.title, style = MaterialTheme.typography.headlineSmall, color = Color.White, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.basicMarquee())
+                        Text(track.artist.ifEmpty { "Unbekannter Interpret" }, style = MaterialTheme.typography.titleMedium,
+                            color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable(enabled = track.artist.isNotBlank()) { onDismiss(); nav.push(LibRoute.Artist(track.artist)) })
                     }
-                    // Herz: Lieblingssong
                     val favorite = track.id in lib.favorites
-                    IconButton(onClick = { app.library.toggleFavorite(track) }, modifier = Modifier.testTag("favButton")) {
+                    val heartScale by animateFloatAsState(if (favorite) 1.15f else 1f, spring(dampingRatio = 0.35f, stiffness = 400f), label = "heart")
+                    IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.library.toggleFavorite(track) },
+                        modifier = Modifier.testTag("favButton")) {
                         Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             if (favorite) "Aus Lieblingssongs entfernen" else "Zu Lieblingssongs",
-                            tint = if (favorite) Accent else LocalContentColor.current)
+                            tint = if (favorite) Accent else Color.White, modifier = Modifier.size(28.dp).scale(heartScale))
                     }
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(12.dp))
+
+                // Fortschritt
                 val duration = state.durationMs.coerceAtLeast(1)
                 Slider(
                     value = if (scrubbing) scrubValue else state.positionMs.toFloat().coerceIn(0f, duration.toFloat()),
                     onValueChange = { scrubbing = true; scrubValue = it },
                     onValueChangeFinished = { app.player.seekTo(scrubValue.toLong()); scrubbing = false },
                     valueRange = 0f..duration.toFloat(),
-                    colors = SliderDefaults.colors(thumbColor = NeonCyan, activeTrackColor = Accent, inactiveTrackColor = CyberLine),
+                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
                 )
                 Row(Modifier.fillMaxWidth()) {
                     val pos = if (scrubbing) scrubValue.toLong() else state.positionMs
-                    Text(formatTime(pos), style = MaterialTheme.typography.bodySmall)
+                    Text(formatTime(pos), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
                     Spacer(Modifier.weight(1f))
-                    Text("-" + formatTime((state.durationMs - pos).coerceAtLeast(0)), style = MaterialTheme.typography.bodySmall)
+                    Text("-" + formatTime((state.durationMs - pos).coerceAtLeast(0)), style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.7f))
                 }
-                Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.height(8.dp))
+
+                // Steuerung
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = app.player::toggleShuffle) {
                         Icon(Icons.Default.Shuffle, if (state.shuffle) "Zufallswiedergabe an" else "Zufallswiedergabe aus",
-                            tint = if (state.shuffle) Accent else MaterialTheme.colorScheme.onSurfaceVariant)
+                            tint = if (state.shuffle) Accent else Color.White.copy(alpha = 0.8f))
                     }
-                    IconButton(onClick = app.player::previous) { Icon(Icons.Default.SkipPrevious, "Vorheriger Titel", Modifier.size(36.dp)) }
-                    IconButton(onClick = app.player::togglePlayPause, modifier = Modifier.size(80.dp).testTag("bigPlayPause")) {
-                        Icon(
-                            if (state.isPlaying) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
-                            if (state.isPlaying) "Pause" else "Abspielen", Modifier.size(76.dp), tint = Accent,
-                        )
+                    IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.previous() }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Default.SkipPrevious, "Vorheriger Titel", Modifier.size(40.dp), tint = Color.White)
                     }
-                    IconButton(onClick = app.player::next) { Icon(Icons.Default.SkipNext, "Nächster Titel", Modifier.size(36.dp)) }
+                    RoundPlayButton(playing = state.isPlaying, size = 72.dp, modifier = Modifier.testTag("bigPlayPause"), onClick = app.player::togglePlayPause)
+                    IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.next() }, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Default.SkipNext, "Nächster Titel", Modifier.size(40.dp), tint = Color.White)
+                    }
                     IconButton(onClick = app.player::cycleRepeat) {
                         Icon(
                             if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
                             "Wiederholen",
-                            tint = if (state.repeatMode == Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.onSurfaceVariant else Accent,
+                            tint = if (state.repeatMode == Player.REPEAT_MODE_OFF) Color.White.copy(alpha = 0.8f) else Accent,
                         )
                     }
                 }
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(12.dp))
+
+                // Extras: Songtext, Schlafmodus, Klang, Wiedergabeliste
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showLyrics = true }, modifier = Modifier.testTag("lyricsButton")) {
+                        Icon(Icons.Default.Lyrics, "Songtext", tint = Color.White)
+                    }
+                    CompositionLocalProvider(LocalContentColor provides Color.White) { SleepTimerButton() }
+                    IconButton(onClick = { nav.showSound = true }, modifier = Modifier.testTag("soundButton")) {
+                        Icon(Icons.Default.Equalizer, "Klang / Equalizer", tint = Color.White)
+                    }
+                    IconButton(onClick = { showQueue = true }) { Icon(Icons.AutoMirrored.Filled.QueueMusic, "Wiedergabeliste", tint = Color.White) }
+                }
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
     if (showQueue) QueueSheet(onDismiss = { showQueue = false })
+    if (showLyrics && track != null) LyricsSheet(track, onDismiss = { showLyrics = false })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

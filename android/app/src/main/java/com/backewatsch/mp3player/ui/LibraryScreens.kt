@@ -69,6 +69,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -90,6 +92,8 @@ sealed interface LibRoute {
     data class PlaylistDetail(val id: String) : LibRoute
     data object Favorites : LibRoute
     data object Stats : LibRoute
+    data class Smart(val name: String) : LibRoute
+    data object Duplicates : LibRoute
 }
 
 @Composable
@@ -105,6 +109,8 @@ fun LibraryHost() {
         is LibRoute.PlaylistDetail -> PlaylistScreen(route.id)
         LibRoute.Favorites -> FavoritesScreen()
         LibRoute.Stats -> StatsScreen()
+        is LibRoute.Smart -> SmartPlaylistScreen(route.name)
+        LibRoute.Duplicates -> DuplicatesScreen()
     }
 }
 
@@ -112,7 +118,7 @@ fun LibraryHost() {
 @Composable
 fun ScreenTopBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
     CenterAlignedTopAppBar(
-        title = { GlitchText(title.uppercase(), style = MaterialTheme.typography.titleLarge) },
+        title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") } },
         actions = { actions() },
         colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -268,6 +274,11 @@ fun MediathekRoot() {
                 }
             }
 
+            if (lib.tracks.isNotEmpty()) {
+                item { SectionHeader("Deine Mixe") }
+                item { SmartRow() }
+            }
+
             item { SectionHeader("Bibliothek") }
             item {
                 Card {
@@ -339,7 +350,7 @@ private fun PlaylistRow(playlist: Playlist, onClick: () -> Unit) {
     val app = LocalApp.current
     val tracks = app.library.tracksIn(playlist)
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Artwork(tracks.firstOrNull(), 52.dp, 8.dp)
+        PlaylistArtwork(playlist, tracks.firstOrNull(), 52.dp, 8.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -412,23 +423,33 @@ fun FavoritesScreen() {
     val tracks = remember(lib) { app.library.favoriteTracks() }
     val selection = rememberSelection()
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar("Lieblingssongs", onBack = { nav.pop() })
-        if (tracks.isEmpty()) {
-            EmptyHint("Noch keine Lieblingssongs", "Tippe im Player oder im Menü eines Liedes auf das Herz ♥ – dann erscheint es hier.")
-            return@Column
-        }
+        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar("", onBack = { nav.pop() })
         LazyColumn {
             item {
-                PlayShuffleButtons({ app.player.play(tracks, 0) }, { app.player.play(tracks, tracks.indices.random(), shuffle = true) })
+                CollectionHeader(
+                    title = "Lieblingssongs",
+                    subtitle = "${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
+                    colors = listOf(Color(0xFF3A2F7A), Color(0xFF89CFF0)),
+                    art = {
+                        Box(Modifier.size(180.dp).clip(RoundedCornerShape(12.dp))
+                            .background(Brush.linearGradient(listOf(Color(0xFF3A2F7A), Color(0xFF89CFF0)))),
+                            contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Favorite, null, tint = Color.White, modifier = Modifier.size(72.dp))
+                        }
+                    },
+                    playing = player.isPlaying && tracks.any { it.id == player.currentId },
+                    onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
+                    onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
+                )
+            }
+            if (tracks.isEmpty()) item {
+                EmptyHint("Noch keine Lieblingssongs", "Tippe im Player oder im Menü eines Liedes auf das Herz ♥ – dann erscheint es hier.")
             }
             itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
                     onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
-            item {
-                Text("${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(20.dp))
-            }
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
@@ -471,25 +492,26 @@ fun CollectionScreen(name: String, kind: String) {
     val player by app.player.state.collectAsState()
     val tracks = remember(lib, name) { if (kind == "Album") app.library.tracksInAlbum(name) else app.library.tracksByArtist(name) }
     val selection = rememberSelection()
+    val color = rememberArtworkColor(tracks.firstOrNull())
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar(name, onBack = { nav.pop() })
+        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar("", onBack = { nav.pop() })
         LazyColumn {
             item {
-                Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Artwork(tracks.firstOrNull(), 160.dp, 14.dp)
-                    Spacer(Modifier.height(10.dp))
-                    Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("$kind · ${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if (tracks.isNotEmpty()) item {
-                PlayShuffleButtons({ app.player.play(tracks, 0) }, { app.player.play(tracks, tracks.indices.random(), shuffle = true) })
+                CollectionHeader(
+                    title = name,
+                    subtitle = "$kind · ${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
+                    colors = listOf(color, color),
+                    art = { Artwork(tracks.firstOrNull(), 180.dp, 12.dp) },
+                    playing = player.isPlaying && tracks.any { it.id == player.currentId },
+                    onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
+                    onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
+                )
             }
             itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
                     onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
@@ -512,16 +534,37 @@ fun PlaylistScreen(id: String) {
     val tracks = app.library.tracksIn(playlist)
     val isDownloads = playlist.id == DOWNLOADS_PLAYLIST_ID
     val selection = rememberSelection()
+    val context = LocalContext.current
+    val color = rememberArtworkColor(tracks.firstOrNull())
+    // Eigenes Playlist-Cover aus der Galerie
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) app.scope.launch {
+            val jpeg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?.let { com.backewatsch.mp3player.data.MetadataReader.shrinkArtwork(it, 800) }
+            }
+            if (jpeg != null) app.library.setPlaylistCover(playlist, jpeg)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         if (selection.active) SelectionBar(selection, tracks, playlist)
-        else ScreenTopBar(playlist.name, onBack = { nav.pop() }) {
+        else ScreenTopBar("", onBack = { nav.pop() }) {
             TextButton(onClick = { editing = !editing }) { Text(if (editing) "Fertig" else "Bearbeiten") }
         }
         LazyColumn {
-            if (tracks.isNotEmpty()) item {
-                PlayShuffleButtons(
-                    { app.player.play(tracks, 0) },
-                    { app.player.play(tracks, tracks.indices.random(), shuffle = true) },
+            item {
+                CollectionHeader(
+                    title = playlist.name,
+                    subtitle = "Playlist · ${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
+                    colors = listOf(color, color),
+                    art = {
+                        Box(Modifier.clickable {
+                            coverPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }.testTag("playlistCover")) { PlaylistArtwork(playlist, tracks.firstOrNull(), 180.dp, 12.dp) }
+                    },
+                    playing = player.isPlaying && tracks.any { it.id == player.currentId },
+                    onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
+                    onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
                 )
             }
             itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->

@@ -18,6 +18,8 @@ class AudioEffects(context: Context) {
         val bass: Int = 0,
         /** Ein-/Ausblenden zwischen Liedern in Sekunden (0 = aus) */
         val crossfadeSec: Int = 0,
+        /** Alle Lieder ähnlich laut abspielen */
+        val normalize: Boolean = true,
     )
 
     /** Was der Equalizer des Geräts kann (null = nicht verfügbar / noch nicht verbunden) */
@@ -31,6 +33,9 @@ class AudioEffects(context: Context) {
 
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
+    private var enhancer: android.media.audiofx.LoudnessEnhancer? = null
+    /** Verstärkung des laufenden Titels in dB (aus der Lautheits-Messung) */
+    private var trackGainDb = 0f
 
     /** Mit der Audio-Sitzung des Players verbinden (vom Wiedergabedienst aufgerufen) */
     fun attach(audioSessionId: Int) {
@@ -43,10 +48,12 @@ class AudioEffects(context: Context) {
             equalizer = eq
             val bb = runCatching { BassBoost(0, audioSessionId) }.getOrNull()
             bassBoost = bb
+            enhancer = runCatching { android.media.audiofx.LoudnessEnhancer(audioSessionId) }.getOrNull()
             _info.value = Info(centers, range[0].toInt(), range[1].toInt(), bb?.strengthSupported == true)
         } catch (e: Throwable) {
             // Gerät ohne Equalizer – Wiedergabe läuft trotzdem
             release()
+            enhancer = runCatching { android.media.audiofx.LoudnessEnhancer(audioSessionId) }.getOrNull()
         }
         apply()
     }
@@ -54,8 +61,10 @@ class AudioEffects(context: Context) {
     fun release() {
         runCatching { equalizer?.release() }
         runCatching { bassBoost?.release() }
+        runCatching { enhancer?.release() }
         equalizer = null
         bassBoost = null
+        enhancer = null
         _info.value = null
     }
 
@@ -77,6 +86,28 @@ class AudioEffects(context: Context) {
     fun setBass(strength: Int) = change { it.copy(bass = strength.coerceIn(0, 1000), enabled = true) }
 
     fun setCrossfade(seconds: Int) = change { it.copy(crossfadeSec = seconds.coerceIn(0, 12)) }
+
+    fun setNormalize(on: Boolean) = change { it.copy(normalize = on) }
+
+    /** Verstärkung für den laufenden Titel (Anheben über den LoudnessEnhancer, Absenken über die Lautstärke) */
+    fun setTrackGain(gainDb: Float) {
+        trackGainDb = gainDb
+        applyEnhancer()
+    }
+
+    /** Lautstärke-Faktor fürs Absenken lauter Titel */
+    fun attenuation(): Float =
+        if (_settings.value.normalize) com.backewatsch.mp3player.data.LoudnessMeter.attenuation(trackGainDb) else 1f
+
+    private fun applyEnhancer() {
+        enhancer?.let { e ->
+            runCatching {
+                val boost = if (_settings.value.normalize && trackGainDb > 0f) (trackGainDb * 100).toInt() else 0
+                e.setTargetGain(boost)
+                e.setEnabled(boost > 0)
+            }
+        }
+    }
 
     /** Pegel, die gerade gelten (je Band, Millibel) */
     fun currentLevels(): List<Int> {
@@ -107,6 +138,7 @@ class AudioEffects(context: Context) {
                 eq.setEnabled(s.enabled)
             }
         }
+        applyEnhancer()
         bassBoost?.let { bb ->
             runCatching {
                 if (bb.strengthSupported) bb.setStrength(s.bass.toShort())
@@ -121,6 +153,7 @@ class AudioEffects(context: Context) {
         custom = prefs.getString("custom", "").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() },
         bass = prefs.getInt("bass", 0),
         crossfadeSec = prefs.getInt("crossfade", 0),
+        normalize = prefs.getBoolean("normalize", true),
     )
 
     private fun save() {
@@ -131,6 +164,7 @@ class AudioEffects(context: Context) {
             .putString("custom", s.custom.joinToString(","))
             .putInt("bass", s.bass)
             .putInt("crossfade", s.crossfadeSec)
+            .putBoolean("normalize", s.normalize)
             .apply()
     }
 }

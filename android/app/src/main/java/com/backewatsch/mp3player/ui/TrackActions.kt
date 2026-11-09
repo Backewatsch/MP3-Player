@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.HideImage
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HeartBroken
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -81,12 +83,37 @@ class TrackActionsState {
     var info by mutableStateOf<Track?>(null)
     var edit by mutableStateOf<Track?>(null)
     var confirmDelete by mutableStateOf<Track?>(null)
+    /** Für diesen Titel ein eigenes Cover aus der Galerie wählen */
+    var pickCoverFor by mutableStateOf<Track?>(null)
 
     fun open(track: Track, playlist: Playlist? = null) { menu = track to playlist }
 }
 
 @Composable
 fun TrackActionsHost(state: TrackActionsState) {
+    val hostApp = LocalApp.current
+    val hostContext = LocalContext.current
+    // Galerie-Auswahl lebt hier (das Menü ist beim Ergebnis schon geschlossen)
+    val coverPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val track = state.pickCoverFor
+        state.pickCoverFor = null
+        if (uri != null && track != null) hostApp.scope.launch {
+            val jpeg = withContext(Dispatchers.IO) {
+                hostContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { MetadataReader.shrinkArtwork(it, 800) }
+            }
+            if (jpeg != null) {
+                hostApp.library.setCustomCover(track, jpeg)
+                hostApp.player.refreshArtwork()
+            } else Toast.makeText(hostContext, "Bild konnte nicht gelesen werden.", Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(state.pickCoverFor) {
+        if (state.pickCoverFor != null) coverPicker.launch(
+            androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
+    }
     state.menu?.let { (track, playlist) -> TrackMenuSheet(track, playlist, state) }
     state.addToPlaylist?.let { AddToPlaylistSheet(it) { state.addToPlaylist = null } }
     state.info?.let { SongInfoSheet(it) { state.info = null } }
@@ -171,6 +198,16 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
                 app.library.togglePin(current); close()
             }
             ActionRow("Infos bearbeiten", Icons.Default.Edit) { close(); state.edit = current }
+            ActionRow("Cover ändern", Icons.Default.Image) { close(); state.pickCoverFor = current }
+            if (app.library.hasCustomCover(current)) {
+                ActionRow("Eigenes Cover entfernen", Icons.Default.HideImage) {
+                    close()
+                    app.scope.launch {
+                        withContext(Dispatchers.IO) { app.library.removeCustomCover(current) }
+                        app.player.refreshArtwork()
+                    }
+                }
+            }
             if (!FileNames.isMp3(current.fileName)) {
                 ActionRow("In MP3 umwandeln", Icons.Default.Autorenew) {
                     close()

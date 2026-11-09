@@ -1,6 +1,6 @@
 package com.backewatsch.mp3player.ui
 
-import androidx.compose.foundation.shape.CutCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -55,28 +55,27 @@ private val colors = darkColorScheme(
 val CyberMono = FontFamily.Monospace
 
 private val base = Typography()
+/** Klare, kräftige Schrift wie bei Streaming-Apps (Terminal-Schrift nur noch für kleine Akzente) */
 private val typography = base.copy(
-    headlineLarge = base.headlineLarge.copy(fontFamily = CyberMono, fontWeight = FontWeight.Black, letterSpacing = 2.sp),
-    headlineMedium = base.headlineMedium.copy(fontFamily = CyberMono, fontWeight = FontWeight.Black, letterSpacing = 2.sp),
-    headlineSmall = base.headlineSmall.copy(fontFamily = CyberMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
-    titleLarge = base.titleLarge.copy(fontFamily = CyberMono, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp),
-    titleMedium = base.titleMedium.copy(fontFamily = CyberMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
-    titleSmall = base.titleSmall.copy(fontFamily = CyberMono, fontWeight = FontWeight.Bold, letterSpacing = 2.sp),
-    labelLarge = base.labelLarge.copy(fontFamily = CyberMono, fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
-    labelMedium = base.labelMedium.copy(fontFamily = CyberMono, letterSpacing = 0.5.sp),
-    labelSmall = base.labelSmall.copy(fontFamily = CyberMono, letterSpacing = 0.5.sp),
+    headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
+    headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
+    headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.3).sp),
+    titleLarge = base.titleLarge.copy(fontWeight = FontWeight.Bold),
+    titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    titleSmall = base.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+    labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold),
 )
 
-/** Abgeschrägte Ecken statt runder */
+/** Weich abgerundete Ecken */
 private val shapes = Shapes(
-    extraSmall = CutCornerShape(4.dp),
-    small = CutCornerShape(6.dp),
-    medium = CutCornerShape(topStart = 12.dp, bottomEnd = 12.dp),
-    large = CutCornerShape(topStart = 16.dp, bottomEnd = 16.dp),
-    extraLarge = CutCornerShape(topStart = 24.dp, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = 0.dp),
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(18.dp),
+    extraLarge = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
 )
 
-/** Cyberpunk-Design: Neon auf Schwarz, Terminal-Schrift, abgeschrägte Ecken */
+/** Dunkles Design mit Babyblau – klar und ruhig wie bei Streaming-Apps */
 @Composable
 fun MP3Theme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, typography = typography, shapes = shapes, content = content)

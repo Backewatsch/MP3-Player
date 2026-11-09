@@ -91,18 +91,15 @@ fun MainScreen() {
             bottomBar = {
                 Column {
                     MiniPlayer(onOpen = { nav.showNowPlaying = true })
-                    // Neon-Linie über der Navigationsleiste
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(
-                        androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Accent.copy(alpha = 0.4f), NeonCyan.copy(alpha = 0.4f), Accent.copy(alpha = 0.4f)))))
-                    NavigationBar(containerColor = CyberBlack.copy(alpha = 0.96f)) {
+                    NavigationBar(containerColor = CyberBlack.copy(alpha = 0.97f), tonalElevation = 0.dp) {
                         val colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = NeonCyan, selectedTextColor = NeonCyan,
+                            selectedIconColor = androidx.compose.ui.graphics.Color.White, selectedTextColor = androidx.compose.ui.graphics.Color.White,
                             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = NeonCyan.copy(alpha = 0.10f))
+                            indicatorColor = Accent.copy(alpha = 0.16f))
                         NavigationBarItem(
                             selected = nav.tab == TAB_START, onClick = { nav.tab = TAB_START },
-                            icon = { Icon(Icons.Default.Home, null) }, label = { Text("Start") },
+                            icon = { Icon(Icons.Default.Home, null) }, label = { Text("Start", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) },
                             colors = colors, modifier = Modifier.testTag("tab-start"),
                         )
                         NavigationBarItem(

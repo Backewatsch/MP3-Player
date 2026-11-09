@@ -47,6 +47,8 @@ class PlayerConnection(
     /** Hörzeit für die Statistik, wird gesammelt und alle 30 s gespeichert */
     private var listenedPending = 0L
     private var lastTick = 0L
+    private val playbackPrefs = context.getSharedPreferences("playback", Context.MODE_PRIVATE)
+    private var saveTicks = 0
 
     private var controller: MediaController? = null
     private val pending = mutableListOf<(MediaController) -> Unit>()
@@ -107,6 +109,8 @@ class PlayerConnection(
             runCatching { future.get() }.onSuccess { c ->
                 controller = c
                 c.addListener(listener)
+                // Nach einem Neustart: letzte Wiedergabeliste pausiert an gleicher Stelle bereitstellen
+                if (c.mediaItemCount == 0 && pending.isEmpty()) restoreQueue(c)
                 pending.forEach { it(c) }
                 pending.clear()
                 refresh()
@@ -123,10 +127,51 @@ class PlayerConnection(
                     }
                     checkSleepTimer(c)
                     countListening(c.isPlaying)
+                    // Position alle 5 s merken (für „Weiterhören nach Neustart“)
+                    if (c.isPlaying && ++saveTicks >= 10) { saveTicks = 0; saveQueue(c) }
                 }
                 delay(500)
             }
         }
+    }
+
+    // ---------- Weiterhören nach Neustart ----------
+
+
+    /** Wiedergabeliste, laufender Titel, Position, Zufall und Wiederholen merken */
+    private fun saveQueue(c: MediaController) {
+        val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+        if (ids.isEmpty()) {
+            playbackPrefs.edit().clear().apply()
+            return
+        }
+        playbackPrefs.edit()
+            .putString("queue", ids.joinToString(","))
+            .putString("original", originalOrder.joinToString(","))
+            .putInt("index", c.currentMediaItemIndex)
+            .putLong("position", c.currentPosition.coerceAtLeast(0))
+            .putBoolean("shuffled", shuffled)
+            .putInt("repeat", c.repeatMode)
+            .apply()
+    }
+
+    private fun restoreQueue(c: MediaController) {
+        val ids = playbackPrefs.getString("queue", null)?.split(',')?.filter { it.isNotBlank() }.orEmpty()
+        if (ids.isEmpty()) return
+        val byId = library.tracks.associateBy { it.id }
+        val savedIndex = playbackPrefs.getInt("index", 0)
+        val currentId = ids.getOrNull(savedIndex)
+        val tracks = ids.mapNotNull { byId[it] }
+        if (tracks.isEmpty()) return
+        val index = tracks.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
+        val position = if (tracks.getOrNull(index)?.id == currentId) playbackPrefs.getLong("position", 0) else 0
+        originalOrder = playbackPrefs.getString("original", null)?.split(',')?.filter { it in byId }.orEmpty()
+            .ifEmpty { tracks.map { it.id } }
+        shuffled = playbackPrefs.getBoolean("shuffled", false)
+        c.repeatMode = playbackPrefs.getInt("repeat", Player.REPEAT_MODE_OFF)
+        c.setMediaItems(tracks.map(::item), index, position)
+        c.prepare() // pausiert bereit – auf Play tippen spielt sofort weiter
+        refresh()
     }
 
     // ---------- Schlafmodus ----------
@@ -187,6 +232,7 @@ class PlayerConnection(
             shuffle = shuffled,
             repeatMode = c.repeatMode,
         )
+        saveQueue(c)
     }
 
     private fun withController(action: (MediaController) -> Unit) {
@@ -208,23 +254,7 @@ class PlayerConnection(
 
     private fun item(track: Track): MediaItem {
         itemFiles[track.id] = track.fileName
-        val ownCovers = (context.applicationContext as com.backewatsch.mp3player.App).showOwnCovers.value
-        val artwork = if (ownCovers) library.artworkOf(track) else null
-        return MediaItem.Builder()
-            .setMediaId(track.id)
-            .setUri(Uri.fromFile(library.fileOf(track)))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(track.title)
-                    .setArtist(track.artist.ifEmpty { null })
-                    .setAlbumTitle(track.album.ifEmpty { null })
-                    .apply {
-                        if (artwork != null) setArtworkUri(Uri.fromFile(artwork))
-                        else setArtworkData(com.backewatsch.mp3player.ui.LogoBitmap.png(context), MediaMetadata.PICTURE_TYPE_FRONT_COVER)
-                    }
-                    .build(),
-            )
-            .build()
+        return MediaItems.track(context, library, track)
     }
 
     // region Steuerung
@@ -247,6 +277,17 @@ class PlayerConnection(
         c.prepare()
         c.play()
         refresh()
+    }
+
+    /** Weiterspielen – oder, wenn nichts in der Wiedergabeliste ist, alle Lieder abspielen (Widget, Bluetooth) */
+    fun resumeOrStart() = withController { c ->
+        if (c.mediaItemCount == 0) {
+            val all = library.sortedTracks()
+            if (all.isNotEmpty()) play(all, 0)
+        } else {
+            if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0)
+            c.prepare(); c.play()
+        }
     }
 
     fun togglePlayPause() = withController { c ->

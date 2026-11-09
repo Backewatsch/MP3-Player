@@ -43,7 +43,7 @@ fun SoundSheet(onDismiss: () -> Unit) {
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = CyberPanel) {
         Column(Modifier.padding(horizontal = 20.dp).verticalScroll(rememberScrollState())) {
-            GlitchText("KLANG", style = MaterialTheme.typography.headlineSmall)
+            Text("Klang", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -99,6 +99,17 @@ fun SoundSheet(onDismiss: () -> Unit) {
                 Text("Hinweis: Spiele ein Lied ab, dann erscheinen hier die Regler deines Handys.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp))
+            }
+
+            Spacer(Modifier.height(20.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Lautstärke angleichen", fontWeight = FontWeight.SemiBold)
+                    Text("Alle Lieder klingen ähnlich laut – kein ständiges Nachregeln",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(settings.normalize, onCheckedChange = app.sound::setNormalize, modifier = Modifier.testTag("normalizeSwitch"),
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Accent))
             }
 
             Spacer(Modifier.height(20.dp))
