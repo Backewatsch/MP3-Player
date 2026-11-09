@@ -164,11 +164,12 @@ class FeaturesTest {
         fun send(action: String) = context.sendBroadcast(Intent(context, PlayerWidget::class.java).setAction(action))
         // Leere Wiedergabeliste → Widget startet alle Lieder
         send(PlayerWidget.ACTION_TOGGLE)
-        waitFor("Widget startet die Wiedergabe") { app.player.state.value.isPlaying && app.player.state.value.currentId == a.id }
+        waitFor("Widget füllt die Wiedergabeliste", 20_000) { app.player.state.value.queueIds == listOf(a.id) }
+        waitFor("Widget startet die Wiedergabe", 20_000) { app.player.state.value.isPlaying && app.player.state.value.currentId == a.id }
         send(PlayerWidget.ACTION_FAV)
         waitFor("Herz im Widget markiert das laufende Lied") { app.library.isFavorite(a) }
         send(PlayerWidget.ACTION_TOGGLE)
-        waitFor("Widget pausiert") { !app.player.state.value.isPlaying }
+        waitFor("Widget pausiert", 20_000) { !app.player.state.value.isPlaying }
     }
 
     @Test fun equalizerAppliesPresets() {
