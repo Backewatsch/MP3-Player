@@ -1,0 +1,1522 @@
+diff --git a/MP3Player/App/MP3PlayerApp.swift b/MP3Player/App/MP3PlayerApp.swift
+index 3cf530c..2ae2dcb 100644
+--- a/MP3Player/App/MP3PlayerApp.swift
++++ b/MP3Player/App/MP3PlayerApp.swift
+@@ -56,6 +56,7 @@ struct MP3PlayerApp: App {
+         browser.downloads = downloads
+         library.onTrackAdded = { [weak player = player] track, playlistID in
+             player?.libraryDidAdd(track, playlistID: playlistID)
++            Task { @MainActor in await self.library.analyzeLoudness() }
+         }
+         player.onDurationLoaded = { [weak library = library] id, duration in
+             library?.updateDuration(of: id, to: duration)
+@@ -64,5 +65,15 @@ struct MP3PlayerApp: App {
+         player.onTrackStarted = { [weak library = library] id in library?.recordStart(id) }
+         player.onTrackPlayed = { [weak library = library] id in library?.recordPlay(id) }
+         player.onListened = { [weak library = library] seconds in library?.addListened(seconds) }
++        // Lautstärke angleichen
++        player.gainProvider = { [weak library = library] id in library?.gain(of: id) }
++        library.onGainMeasured = { [weak player = player] id, _ in
++            if player?.current?.id == id { player?.applyTrackGain() }
++        }
++        // Weiterhören nach Neustart (nicht in automatischen UI-Tests)
++        if !ProcessInfo.processInfo.arguments.contains("-uiTestReset") {
++            player.restoreQueue(from: library.tracks)
++        }
++        Task { await library.analyzeLoudness() }
+     }
+ }
+diff --git a/MP3Player/Models/Models.swift b/MP3Player/Models/Models.swift
+index dcbff42..aee4c27 100644
+--- a/MP3Player/Models/Models.swift
++++ b/MP3Player/Models/Models.swift
+@@ -109,7 +109,7 @@ struct PlayEvent: Codable, Hashable {
+ 
+ struct LibraryState: Codable {
+     /// 2 = Alben werden gespeichert, 3 = Herzen, Verlauf, Statistik
+-    static let currentVersion = 3
++    static let currentVersion = 4
+ 
+     var version: Int
+     var tracks: [Track]
+@@ -126,6 +126,12 @@ struct LibraryState: Codable {
+     var plays: [PlayEvent] = []
+     /// Hörzeit in Sekunden je Monat („2026-11“)
+     var listenedByMonth: [String: Double] = [:]
++    /// Gemessene Verstärkung je Titel in dB („Lautstärke angleichen“)
++    var gains: [UUID: Float] = [:]
++    /// Selbst eingetragene Songtexte
++    var lyrics: [UUID: String] = [:]
++    /// Titel mit selbst gewähltem Cover
++    var customCovers: [UUID] = []
+ 
+     init(tracks: [Track], playlists: [Playlist], pinned: [UUID], favorites: [UUID] = [], playCounts: [UUID: Int] = [:],
+          history: [PlayEvent] = [], plays: [PlayEvent] = [], listenedByMonth: [String: Double] = [:]) {
+@@ -151,6 +157,9 @@ struct LibraryState: Codable {
+         history = try c.decodeIfPresent([PlayEvent].self, forKey: .history) ?? []
+         plays = try c.decodeIfPresent([PlayEvent].self, forKey: .plays) ?? []
+         listenedByMonth = try c.decodeIfPresent([String: Double].self, forKey: .listenedByMonth) ?? [:]
++        gains = try c.decodeIfPresent([UUID: Float].self, forKey: .gains) ?? [:]
++        lyrics = try c.decodeIfPresent([UUID: String].self, forKey: .lyrics) ?? [:]
++        customCovers = try c.decodeIfPresent([UUID].self, forKey: .customCovers) ?? []
+     }
+ }
+ 
+@@ -291,3 +300,8 @@ extension TimeInterval {
+         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+     }
+ }
++
++extension String {
++    /// `nil` statt leerem Text
++    var nilIfEmpty: String? { isEmpty ? nil : self }
++}
+diff --git a/MP3Player/Models/SmartFeatures.swift b/MP3Player/Models/SmartFeatures.swift
+new file mode 100644
+index 0000000..83bcde8
+--- /dev/null
++++ b/MP3Player/Models/SmartFeatures.swift
+@@ -0,0 +1,144 @@
++import Foundation
++
++/// Findet doppelte Lieder (gleicher Titel + Interpret, fast gleiche Länge)
++enum Duplicates {
++    private static let noise = try! NSRegularExpression(
++        pattern: "\\((official|offizielles|lyrics?|audio|video|hq|hd|explicit|clean|remaster(ed)?|\\d{4} remaster(ed)?)[^)]*\\)|\\[(official|lyrics?|audio|video|hq|hd|explicit)[^\\]]*\\]|\\(\\d+\\)$",
++        options: [.caseInsensitive])
++
++    static func normalize(_ text: String) -> String {
++        var s = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
++        s = noise.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: " ")
++        let parts = s.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
++        return parts.joined(separator: " ")
++    }
++
++    static func groups(_ tracks: [Track], tolerance: Double = 3) -> [[Track]] {
++        var byName: [String: [Track]] = [:]
++        for t in tracks {
++            let title = normalize(t.title)
++            guard !title.isEmpty else { continue }
++            byName[title + "|" + normalize(t.artist), default: []].append(t)
++        }
++        var result: [[Track]] = []
++        for (_, same) in byName where same.count >= 2 {
++            var cluster: [Track] = []
++            for t in same.sorted(by: { $0.duration < $1.duration }) {
++                if let last = cluster.last, t.duration > 0, last.duration > 0, t.duration - last.duration > tolerance {
++                    if cluster.count >= 2 { result.append(cluster) }
++                    cluster = [t]
++                } else {
++                    cluster.append(t)
++                }
++            }
++            if cluster.count >= 2 { result.append(cluster) }
++        }
++        return result.sorted { $0[0].title.localizedCaseInsensitiveCompare($1[0].title) == .orderedAscending }
++    }
++
++    /// Welches Lied bleibt: MP3, meistgespielt, in mehr Playlists, Herz, zuerst hinzugefügt
++    static func keeper(_ group: [Track], playCounts: [UUID: Int], playlistCount: (Track) -> Int, favorites: Set<UUID>) -> Track {
++        func score(_ t: Track) -> (Int, Int, Int, Int) {
++            (Storage.isMP3(t.fileName) ? 1 : 0, playCounts[t.id] ?? 0, playlistCount(t), favorites.contains(t.id) ? 1 : 0)
++        }
++        return group.sorted { a, b in
++            let x = score(a), y = score(b)
++            if x != y { return x > y }
++            return a.addedAt < b.addedAt
++        }[0]
++    }
++}
++
++/// Playlists, die sich selbst füllen
++enum SmartPlaylist: String, CaseIterable, Identifiable {
++    case recentlyAdded, onRepeat, rediscover, neverPlayed
++
++    var id: String { rawValue }
++
++    var title: String {
++        switch self {
++        case .recentlyAdded: return "Neu hinzugefügt"
++        case .onRepeat: return "Dauerschleife"
++        case .rediscover: return "Wiederentdecken"
++        case .neverPlayed: return "Noch nie gehört"
++        }
++    }
++
++    var subtitle: String {
++        switch self {
++        case .recentlyAdded: return "Deine neuesten Lieder"
++        case .onRepeat: return "Was du gerade oft hörst"
++        case .rediscover: return "Lange nicht mehr gehört"
++        case .neverPlayed: return "Gib ihnen eine Chance"
++        }
++    }
++
++    func tracks(_ state: LibraryState, now: Date = Date()) -> [Track] {
++        let month: TimeInterval = 30 * 24 * 3600
++        var lastHeard: [UUID: Date] = [:]
++        for e in state.history + state.plays { lastHeard[e.trackID] = max(lastHeard[e.trackID] ?? .distantPast, e.at) }
++        switch self {
++        case .recentlyAdded:
++            let newest = state.tracks.sorted { $0.addedAt > $1.addedAt }
++            let recent = newest.filter { now.timeIntervalSince($0.addedAt) <= month }
++            return Array((recent.isEmpty ? Array(newest.prefix(25)) : recent).prefix(100))
++        case .onRepeat:
++            var counts: [UUID: Int] = [:]
++            for e in state.plays where now.timeIntervalSince(e.at) <= month { counts[e.trackID, default: 0] += 1 }
++            let byID = Dictionary(state.tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
++            var items: [(Track, Int)] = []
++            for (id, n) in counts where n >= 2 { if let t = byID[id] { items.append((t, n)) } }
++            items.sort { a, b in a.1 > b.1 }
++            return Array(items.prefix(50)).map { $0.0 }
++        case .rediscover:
++            var items = state.tracks.filter { t in
++                guard let d = lastHeard[t.id] else { return false }
++                return now.timeIntervalSince(d) > month
++            }
++            items.sort { a, b in (lastHeard[a.id] ?? .distantPast) < (lastHeard[b.id] ?? .distantPast) }
++            return Array(items.prefix(100))
++        case .neverPlayed:
++            return state.tracks.filter { (state.playCounts[$0.id] ?? 0) == 0 && lastHeard[$0.id] == nil }
++                .sorted { $0.addedAt > $1.addedAt }
++        }
++    }
++}
++
++/// Misst die Lautheit (RMS in 100-ms-Blöcken, Stille zählt nicht)
++struct LoudnessMeter {
++    private let blockSamples: Int
++    private var blockSum = 0.0
++    private var blockCount = 0
++    private var gatedSum = 0.0
++    private var gatedBlocks = 0
++
++    static let target = -14.0
++
++    init(sampleRate: Double, channels: Int) {
++        blockSamples = max(1, Int(sampleRate / 10)) * max(1, channels)
++    }
++
++    mutating func add(_ samples: UnsafeBufferPointer<Float>) {
++        for v in samples {
++            blockSum += Double(v * v)
++            blockCount += 1
++            if blockCount == blockSamples { finishBlock() }
++        }
++    }
++
++    private mutating func finishBlock() {
++        let ms = blockSum / Double(max(blockCount, 1))
++        if ms > 1e-6 { gatedSum += ms; gatedBlocks += 1 }
++        blockSum = 0
++        blockCount = 0
++    }
++
++    mutating func loudnessDB() -> Double? {
++        if blockCount > blockSamples / 2 { finishBlock() }
++        guard gatedBlocks > 0 else { return nil }
++        return 20 * log10((gatedSum / Double(gatedBlocks)).squareRoot())
++    }
++
++    /// Verstärkung in dB (−12 … +6)
++    static func gain(for loudness: Double) -> Float { Float(min(6, max(-12, target - loudness))) }
++}
+diff --git a/MP3Player/Services/AudioPlayer.swift b/MP3Player/Services/AudioPlayer.swift
+index f8e5d2a..1edfbd1 100644
+--- a/MP3Player/Services/AudioPlayer.swift
++++ b/MP3Player/Services/AudioPlayer.swift
+@@ -23,7 +23,7 @@ final class AudioPlayer: NSObject, ObservableObject {
+     @Published private(set) var duration: TimeInterval = 0
+     /// Zufallswiedergabe verwaltet die App selbst: „Als Nächstes“ kommt so immer direkt nach dem laufenden Titel.
+     @Published var shuffle = false {
+-        didSet { if oldValue != shuffle { applyShuffle() } }
++        didSet { if oldValue != shuffle && !restoringShuffle { applyShuffle() } }
+     }
+     @Published var repeatMode: RepeatMode = .off
+     @Published var errorMessage: String?
+@@ -55,6 +55,10 @@ final class AudioPlayer: NSObject, ObservableObject {
+     private let engine = AVAudioEngine()
+     private let node = AVAudioPlayerNode()
+     private let eq = AVAudioUnitEQ(numberOfBands: SoundPresets.bands.count)
++    /// Lautstärke-Angleichung je Titel (eigene Stufe, damit sie auch ohne Equalizer wirkt)
++    private let normalizer = AVAudioUnitEQ(numberOfBands: 0)
++    /// Liefert die gemessene Verstärkung eines Titels (aus der Bibliothek)
++    var gainProvider: ((UUID) -> Float?)?
+     private var file: AVAudioFile?
+     private var connectedFormat: AVAudioFormat?
+     private var sampleRate: Double = 44_100
+@@ -85,6 +89,7 @@ final class AudioPlayer: NSObject, ObservableObject {
+     /// (manche MP3s melden eine etwas zu große Länge, dann kommt keine Ende-Meldung)
+     private var lastFrame: AVAudioFramePosition = -1
+     private var stallTicks = 0
++    private var saveTicks = 0
+ 
+     override init() {
+         super.init()
+@@ -92,6 +97,7 @@ final class AudioPlayer: NSObject, ObservableObject {
+         configureRemoteCommands()
+         engine.attach(node)
+         engine.attach(eq)
++        engine.attach(normalizer)
+         for (i, band) in eq.bands.enumerated() {
+             band.filterType = .parametric
+             band.frequency = SoundPresets.bands[i]
+@@ -112,6 +118,8 @@ final class AudioPlayer: NSObject, ObservableObject {
+             Task { @MainActor in
+                 // Kopfhörer abgezogen → pausieren
+                 if reasonValue == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.pause() }
++                // Bluetooth-Kopfhörer/Auto verbunden → auf Wunsch weiterspielen
++                if reasonValue == AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue { self?.bluetoothConnected() }
+             }
+         })
+         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+@@ -173,6 +181,7 @@ final class AudioPlayer: NSObject, ObservableObject {
+         flushListening()
+         currentTime = Double(pausedFrame) / sampleRate
+         updateNowPlaying()
++        saveQueue()
+     }
+ 
+     func next() {
+@@ -345,8 +354,61 @@ final class AudioPlayer: NSObject, ObservableObject {
+         duration = 0
+         sleepEnd = nil
+         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
++        saveQueue()
+     }
+ 
++    // MARK: Bluetooth
++
++    private func bluetoothConnected() {
++        guard UserDefaults.standard.bool(forKey: "autoplayBluetooth"), !isPlaying, !queue.isEmpty else { return }
++        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType)
++        let bluetooth: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothLE, .carAudio]
++        if outputs.contains(where: { bluetooth.contains($0) }) { resume() }
++    }
++
++    // MARK: Weiterhören nach Neustart
++
++    private let defaults = UserDefaults.standard
++
++    /// Wiedergabeliste, Titel, Position, Zufall und Wiederholen merken
++    func saveQueue() {
++        guard !queue.isEmpty, let index else {
++            defaults.removeObject(forKey: "playback.queue")
++            return
++        }
++        defaults.set(queue.map(\.id.uuidString), forKey: "playback.queue")
++        defaults.set(originalOrder.map(\.id.uuidString), forKey: "playback.original")
++        defaults.set(index, forKey: "playback.index")
++        defaults.set(isPlaying ? Double(currentFrame) / sampleRate : currentTime, forKey: "playback.position")
++        defaults.set(shuffle, forKey: "playback.shuffle")
++        defaults.set(repeatMode == .off ? 0 : repeatMode == .all ? 1 : 2, forKey: "playback.repeat")
++    }
++
++    /// Nach dem Start: letzte Wiedergabeliste pausiert an gleicher Stelle bereitstellen
++    func restoreQueue(from tracks: [Track]) {
++        guard queue.isEmpty, let ids = defaults.stringArray(forKey: "playback.queue"), !ids.isEmpty else { return }
++        let byID = Dictionary(tracks.map { ($0.id.uuidString, $0) }, uniquingKeysWith: { a, _ in a })
++        let restored = ids.compactMap { byID[$0] }
++        guard !restored.isEmpty else { return }
++        let savedIndex = defaults.integer(forKey: "playback.index")
++        let currentID = ids.indices.contains(savedIndex) ? ids[savedIndex] : nil
++        let i = restored.firstIndex { $0.id.uuidString == currentID } ?? 0
++        repeatMode = [RepeatMode.off, .all, .one][min(2, max(0, defaults.integer(forKey: "playback.repeat")))]
++        queue = restored
++        originalOrder = (defaults.stringArray(forKey: "playback.original") ?? []).compactMap { byID[$0] }
++        if originalOrder.isEmpty { originalOrder = restored }
++        load(index: i, autoplay: false)
++        if restored[i].id.uuidString == currentID {
++            seek(to: defaults.double(forKey: "playback.position"))
++        }
++        // Zufall-Zustand ohne Neumischen übernehmen
++        restoringShuffle = true
++        shuffle = defaults.bool(forKey: "playback.shuffle")
++        restoringShuffle = false
++    }
++
++    private var restoringShuffle = false
++
+     // MARK: Schlafmodus
+ 
+     func startSleepTimer(minutes: Int) { startSleepTimer(seconds: Double(minutes) * 60) }
+@@ -369,7 +431,14 @@ final class AudioPlayer: NSObject, ObservableObject {
+     var appliedGains: [Float] { eq.bands.map(\.gain) }
+     var equalizerActive: Bool { !eq.bypass }
+ 
++    /// Verstärkung für den laufenden Titel anwenden
++    func applyTrackGain() {
++        let gain = sound.normalize ? (current.flatMap { gainProvider?($0.id) } ?? 0) : 0
++        normalizer.globalGain = gain
++    }
++
+     private func applySound() {
++        applyTrackGain()
+         let gains = sound.currentGains
+         for (i, band) in eq.bands.enumerated() where gains.indices.contains(i) { band.gain = gains[i] }
+         eq.bypass = !sound.enabled
+@@ -397,7 +466,8 @@ final class AudioPlayer: NSObject, ObservableObject {
+         let wasRunning = engine.isRunning
+         if wasRunning { engine.stop() }
+         engine.connect(node, to: eq, format: format)
+-        engine.connect(eq, to: engine.mainMixerNode, format: format)
++        engine.connect(eq, to: normalizer, format: format)
++        engine.connect(normalizer, to: engine.mainMixerNode, format: format)
+         connectedFormat = format
+         if wasRunning { startEngineIfNeeded() }
+     }
+@@ -446,6 +516,7 @@ final class AudioPlayer: NSObject, ObservableObject {
+             lastFrame = -1
+             duration = Double(fileLength) / sampleRate
+             currentTime = 0
++            applyTrackGain()
+             pausedFrame = 0
+             onDurationLoaded?(track.id, duration)
+             schedule(from: 0)
+@@ -461,6 +532,7 @@ final class AudioPlayer: NSObject, ObservableObject {
+                 stopTimer()
+             }
+             updateNowPlaying()
++            saveQueue()
+         } catch {
+             errorMessage = "„\(track.title)“ kann nicht abgespielt werden: \(error.localizedDescription)"
+             generation += 1
+@@ -589,6 +661,9 @@ final class AudioPlayer: NSObject, ObservableObject {
+             applyVolume()
+             return
+         }
++        // Position alle 5 s merken
++        saveTicks += 1
++        if saveTicks >= 50 { saveTicks = 0; saveQueue() }
+         // Hörzeit und „richtig gehört“
+         listenedPending += delta
+         heardSeconds += delta
+diff --git a/MP3Player/Services/Library.swift b/MP3Player/Services/Library.swift
+index fbf302f..c24dc7b 100644
+--- a/MP3Player/Services/Library.swift
++++ b/MP3Player/Services/Library.swift
+@@ -21,6 +21,17 @@ final class Library: ObservableObject {
+     @Published private(set) var plays: [PlayEvent] = []
+     /// Hörzeit in Sekunden je Monat
+     @Published private(set) var listenedByMonth: [String: Double] = [:]
++    /// Lautstärke-Angleichung je Titel (dB)
++    @Published private(set) var gains: [UUID: Float] = [:]
++    /// Selbst eingetragene Songtexte
++    @Published private(set) var lyricsByID: [UUID: String] = [:]
++    /// Titel mit eigenem Cover (auch für die Cover-Anzeige ohne Zugriff auf die Bibliothek)
++    @Published private(set) var customCovers: [UUID] = [] {
++        didSet { Self.customCoverIDs = Set(customCovers) }
++    }
++    nonisolated(unsafe) static var customCoverIDs = Set<UUID>()
++    /// Zählt hoch, wenn sich ein Cover geändert hat (Anzeige lädt neu)
++    @Published private(set) var coverVersion = 0
+     static let maxHistory = 300
+     /// Fortschritt einer laufenden Umwandlung (für die Anzeige), sonst `nil`
+     @Published private(set) var conversionStatus: String?
+@@ -173,10 +184,122 @@ final class Library: ObservableObject {
+     }
+ 
+     var stateSnapshot: LibraryState {
+-        LibraryState(tracks: tracks, playlists: playlists, pinned: pinnedIDs, favorites: favoriteIDs, playCounts: playCounts,
+-                     history: historyEvents, plays: plays, listenedByMonth: listenedByMonth)
++        var s = LibraryState(tracks: tracks, playlists: playlists, pinned: pinnedIDs, favorites: favoriteIDs, playCounts: playCounts,
++                             history: historyEvents, plays: plays, listenedByMonth: listenedByMonth)
++        s.gains = gains
++        s.lyrics = lyricsByID
++        s.customCovers = customCovers
++        return s
+     }
+ 
++    // MARK: Lautstärke, Songtexte, Cover, Doppelte, Mixe
++
++    func gain(of id: UUID) -> Float? { gains[id] }
++    var tracksWithoutGain: [Track] { tracks.filter { gains[$0.id] == nil } }
++
++    func setGain(_ id: UUID, _ db: Float) {
++        guard track(id: id) != nil else { return }
++        gains[id] = db
++        save()
++    }
++
++    func storedLyrics(_ track: Track) -> String? { lyricsByID[track.id] }
++
++    /// Songtext: selbst eingetragen oder aus der Datei
++    func lyrics(for track: Track) async -> String? {
++        if let s = lyricsByID[track.id] { return s }
++        let asset = AVURLAsset(url: track.fileURL)
++        let text = try? await asset.load(.lyrics)
++        return text?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
++    }
++
++    func setLyrics(_ track: Track, _ text: String) {
++        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
++        lyricsByID[track.id] = clean.isEmpty ? nil : clean
++        save()
++    }
++
++    func hasCustomCover(_ track: Track) -> Bool { customCovers.contains(track.id) }
++
++    func setCustomCover(_ track: Track, image: UIImage) {
++        let thumb = image.preparingThumbnail(of: CGSize(width: 800, height: 800)) ?? image
++        try? thumb.jpegData(compressionQuality: 0.85)?.write(to: track.artworkURL, options: .atomic)
++        ArtworkCache.shared.remove(track.id)
++        if !customCovers.contains(track.id) { customCovers.insert(track.id, at: 0) }
++        coverVersion += 1
++        save()
++    }
++
++    func removeCustomCover(_ track: Track) async {
++        try? FileManager.default.removeItem(at: track.artworkURL)
++        ArtworkCache.shared.remove(track.id)
++        // Eingebettetes Cover wiederherstellen
++        _ = await Self.makeTrack(for: track.fileURL, artworkTo: track.artworkURL)
++        customCovers.removeAll { $0 == track.id }
++        coverVersion += 1
++        save()
++    }
++
++    func playlistCoverURL(_ playlist: Playlist) -> URL { Storage.artwork.appendingPathComponent("playlist-\(playlist.id.uuidString).jpg") }
++
++    func setPlaylistCover(_ playlist: Playlist, image: UIImage) {
++        let thumb = image.preparingThumbnail(of: CGSize(width: 800, height: 800)) ?? image
++        try? thumb.jpegData(compressionQuality: 0.85)?.write(to: playlistCoverURL(playlist), options: .atomic)
++        coverVersion += 1
++    }
++
++    var duplicateGroups: [[Track]] { Duplicates.groups(tracks) }
++
++    private var analyzing = false
++
++    /// Lautheit aller noch nicht gemessenen Lieder im Hintergrund messen
++    func analyzeLoudness() async {
++        guard !analyzing else { return }
++        analyzing = true
++        defer { analyzing = false }
++        while let next = tracksWithoutGain.first {
++            let url = next.fileURL
++            let gain = await Task.detached(priority: .utility) { LoudnessAnalyzer.gain(of: url) }.value
++            setGain(next.id, gain ?? 0)
++            onGainMeasured?(next.id, gain ?? 0)
++        }
++    }
++
++    /// Meldet eine neu gemessene Verstärkung (für den laufenden Titel)
++    var onGainMeasured: ((UUID, Float) -> Void)?
++
++    /// Behält ein Lied der Gruppe, übernimmt Playlists, Herzen, Zähler und Verlauf der anderen und löscht diese
++    @discardableResult
++    func mergeDuplicates(_ group: [Track]) -> Track {
++        let keep = Duplicates.keeper(group, playCounts: playCounts,
++                                     playlistCount: { t in self.playlists.filter { $0.trackIDs.contains(t.id) }.count },
++                                     favorites: Set(favoriteIDs))
++        let others = group.filter { $0.id != keep.id }
++        guard !others.isEmpty else { return keep }
++        let gone = Set(others.map(\.id))
++        func swap(_ id: UUID) -> UUID { gone.contains(id) ? keep.id : id }
++        func unique(_ ids: [UUID]) -> [UUID] {
++            var seen = Set<UUID>(); var out: [UUID] = []
++            for id in ids where seen.insert(id).inserted { out.append(id) }
++            return out
++        }
++        for i in playlists.indices { playlists[i].trackIDs = unique(playlists[i].trackIDs.map(swap)) }
++        pinnedIDs = unique(pinnedIDs.map(swap))
++        favoriteIDs = unique(favoriteIDs.map(swap))
++        var total = 0
++        for t in group { total += playCounts[t.id] ?? 0 }
++        for id in gone { playCounts[id] = nil }
++        playCounts[keep.id] = total
++        historyEvents = historyEvents.map { PlayEvent(trackID: swap($0.trackID), at: $0.at) }
++        plays = plays.map { PlayEvent(trackID: swap($0.trackID), at: $0.at) }
++        if lyricsByID[keep.id] == nil, let text = others.compactMap({ lyricsByID[$0.id] }).first { lyricsByID[keep.id] = text }
++        save()
++        deleteAll(others)
++        return keep
++    }
++
++    func smartTracks(_ kind: SmartPlaylist) -> [Track] { kind.tracks(stateSnapshot) }
++
+     var stats: StatsSummary { StatsSummary.make(stateSnapshot) }
+ 
+     // MARK: Import
+@@ -379,7 +502,8 @@ final class Library: ObservableObject {
+         for i in playlists.indices { playlists[i].trackIDs.removeAll { ids.contains($0) } }
+         pinnedIDs.removeAll { ids.contains($0) }
+         favoriteIDs.removeAll { ids.contains($0) }
+-        for id in ids { playCounts[id] = nil }
++        for id in ids { playCounts[id] = nil; gains[id] = nil; lyricsByID[id] = nil }
++        customCovers.removeAll { ids.contains($0) }
+         historyEvents.removeAll { ids.contains($0.trackID) }
+         plays.removeAll { ids.contains($0.trackID) }
+         save()
+@@ -515,6 +639,10 @@ final class Library: ObservableObject {
+         historyEvents = state.history
+         plays = state.plays
+         listenedByMonth = state.listenedByMonth
++        gains = state.gains
++        lyricsByID = state.lyrics
++        customCovers = state.customCovers
++        Self.customCoverIDs = Set(state.customCovers)
+         // Alben wurden ab Version 2 gespeichert
+         needsMetadataUpgrade = state.version < 2
+     }
+@@ -564,7 +692,7 @@ final class Library: ObservableObject {
+     }
+ 
+     /// Liest ID3-/iTunes-Metadaten (Titel, Interpret, Dauer, Cover).
+-    nonisolated static func makeTrack(for url: URL) async -> Track {
++    nonisolated static func makeTrack(for url: URL, artworkTo: URL? = nil) async -> Track {
+         let asset = AVURLAsset(url: url)
+         var title: String?
+         var artist: String?
+@@ -601,7 +729,7 @@ final class Library: ObservableObject {
+         )
+         if let artworkData, let image = UIImage(data: artworkData) {
+             let thumb = image.preparingThumbnail(of: CGSize(width: 600, height: 600)) ?? image
+-            try? thumb.jpegData(compressionQuality: 0.85)?.write(to: track.artworkURL, options: .atomic)
++            try? thumb.jpegData(compressionQuality: 0.85)?.write(to: artworkTo ?? track.artworkURL, options: .atomic)
+         }
+         return track
+     }
+diff --git a/MP3Player/Services/LoudnessAnalyzer.swift b/MP3Player/Services/LoudnessAnalyzer.swift
+new file mode 100644
+index 0000000..b0c7ff2
+--- /dev/null
++++ b/MP3Player/Services/LoudnessAnalyzer.swift
+@@ -0,0 +1,22 @@
++import AVFoundation
++
++/// Dekodiert ein Lied und misst seine Lautheit („Lautstärke angleichen“)
++enum LoudnessAnalyzer {
++    /// Verstärkung in dB, damit das Lied so laut klingt wie die anderen; `nil` wenn nicht lesbar
++    static func gain(of url: URL) -> Float? {
++        guard let file = try? AVAudioFile(forReading: url) else { return nil }
++        let format = file.processingFormat
++        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 65_536) else { return nil }
++        var meter = LoudnessMeter(sampleRate: format.sampleRate, channels: Int(format.channelCount))
++        while true {
++            do { try file.read(into: buffer) } catch { break }
++            let frames = Int(buffer.frameLength)
++            if frames == 0 { break }
++            guard let channels = buffer.floatChannelData else { return nil }
++            for ch in 0..<Int(format.channelCount) {
++                meter.add(UnsafeBufferPointer(start: channels[ch], count: frames))
++            }
++        }
++        return meter.loudnessDB().map { LoudnessMeter.gain(for: $0) }
++    }
++}
+diff --git a/MP3Player/Services/Sound.swift b/MP3Player/Services/Sound.swift
+index 97a9341..4002462 100644
+--- a/MP3Player/Services/Sound.swift
++++ b/MP3Player/Services/Sound.swift
+@@ -67,6 +67,8 @@ final class SoundSettings: ObservableObject {
+     @Published var custom: [Float] { didSet { save() } }
+     /// Ein-/Ausblenden zwischen Liedern in Sekunden (0 = aus)
+     @Published var crossfade: Double { didSet { save() } }
++    /// Alle Lieder ähnlich laut abspielen
++    @Published var normalize: Bool { didSet { save() } }
+ 
+     private let defaults: UserDefaults
+     var onChange: (() -> Void)?
+@@ -77,6 +79,7 @@ final class SoundSettings: ObservableObject {
+         preset = defaults.string(forKey: "sound.preset") ?? "Normal"
+         custom = (defaults.array(forKey: "sound.custom") as? [Double])?.map { Float($0) } ?? Array(repeating: 0, count: SoundPresets.bands.count)
+         crossfade = defaults.double(forKey: "sound.crossfade")
++        normalize = defaults.object(forKey: "sound.normalize") as? Bool ?? true
+     }
+ 
+     /// Pegel der 10 Bänder in dB
+@@ -107,6 +110,7 @@ final class SoundSettings: ObservableObject {
+         defaults.set(preset, forKey: "sound.preset")
+         defaults.set(custom.map { Double($0) }, forKey: "sound.custom")
+         defaults.set(crossfade, forKey: "sound.crossfade")
++        defaults.set(normalize, forKey: "sound.normalize")
+         onChange?()
+     }
+ }
+diff --git a/MP3Player/Views/Components.swift b/MP3Player/Views/Components.swift
+index d3051e3..2fafef8 100644
+--- a/MP3Player/Views/Components.swift
++++ b/MP3Player/Views/Components.swift
+@@ -9,7 +9,7 @@ struct ArtworkView: View {
+ 
+     var body: some View {
+         Group {
+-            if showOwnCovers, let track, let image = ArtworkCache.shared.image(for: track) {
++            if let track, showOwnCovers || Library.customCoverIDs.contains(track.id), let image = ArtworkCache.shared.image(for: track) {
+                 Image(uiImage: image)
+                     .resizable()
+                     .scaledToFill()
+diff --git a/MP3Player/Views/Design.swift b/MP3Player/Views/Design.swift
+new file mode 100644
+index 0000000..4b5f6f9
+--- /dev/null
++++ b/MP3Player/Views/Design.swift
+@@ -0,0 +1,121 @@
++import CoreImage
++import SwiftUI
++import UIKit
++
++/// Leitfarbe eines Covers (für Player- und Listen-Hintergründe), zwischengespeichert
++enum ArtworkColor {
++    private static var cache: [String: UIColor] = [:]
++    private static let context = CIContext(options: [.workingColorSpace: NSNull()])
++
++    @MainActor
++    static func color(for track: Track?, ownCovers: Bool) -> Color {
++        let custom = track.map { ownCovers || Library.customCoverIDs.contains($0.id) } ?? false
++        let key = custom ? (track?.id.uuidString ?? "-") : "logo"
++        if let c = cache[key] { return Color(c) }
++        let image = (custom ? track.flatMap { ArtworkCache.shared.image(for: $0) } : nil) ?? UIImage(named: "Logo")
++        let c = image.flatMap(average) ?? UIColor(red: 0.12, green: 0.16, blue: 0.23, alpha: 1)
++        cache[key] = c
++        return Color(c)
++    }
++
++    static func invalidate(_ id: UUID) { cache[id.uuidString] = nil }
++
++    /// Durchschnittsfarbe, kräftiger und dunkler gemacht (weiße Schrift bleibt lesbar)
++    private static func average(_ image: UIImage) -> UIColor? {
++        guard let input = CIImage(image: image) else { return nil }
++        let filter = CIFilter(name: "CIAreaAverage", parameters: [kCIInputImageKey: input, kCIInputExtentKey: CIVector(cgRect: input.extent)])
++        guard let output = filter?.outputImage else { return nil }
++        var px = [UInt8](repeating: 0, count: 4)
++        context.render(output, toBitmap: &px, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
++        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
++        UIColor(red: CGFloat(px[0]) / 255, green: CGFloat(px[1]) / 255, blue: CGFloat(px[2]) / 255, alpha: 1)
++            .getHue(&h, saturation: &s, brightness: &b, alpha: &a)
++        return UIColor(hue: h, saturation: min(1, s * 1.4 + 0.1), brightness: min(0.55, max(0.25, b)), alpha: 1)
++    }
++}
++
++/// Drei hüpfende Balken: „läuft gerade“
++struct PlayingBars: View {
++    let playing: Bool
++    @State private var phase = false
++
++    var body: some View {
++        HStack(alignment: .bottom, spacing: 2) {
++            ForEach(0..<3, id: \.self) { i in
++                RoundedRectangle(cornerRadius: 1)
++                    .fill(Color.cyberAccent)
++                    .frame(width: 3, height: playing ? (phase ? [12, 6, 14][i] : [5, 13, 7][i]) : 5)
++            }
++        }
++        .frame(width: 15, height: 15, alignment: .bottom)
++        .animation(playing ? .easeInOut(duration: 0.42).repeatForever(autoreverses: true) : .default, value: phase)
++        .onAppear { phase = true }
++    }
++}
++
++/// Großer runder Abspiel-Knopf
++struct RoundPlayButton: View {
++    let playing: Bool
++    var size: CGFloat = 56
++    let action: () -> Void
++
++    var body: some View {
++        Button {
++            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
++            action()
++        } label: {
++            Image(systemName: playing ? "pause.fill" : "play.fill")
++                .font(.system(size: size * 0.4, weight: .bold))
++                .foregroundStyle(.black)
++                .frame(width: size, height: size)
++                .background(Color.cyberAccent, in: Circle())
++        }
++        .buttonStyle(.plain)
++        .accessibilityLabel(playing ? "Pause" : "Abspielen")
++    }
++}
++
++/// Kopf einer Sammlung (Playlist, Album, Mix) wie in Streaming-Apps
++struct CollectionHeader<Art: View>: View {
++    @EnvironmentObject private var player: AudioPlayer
++    let title: String
++    let subtitle: String
++    let color: Color
++    let tracks: [Track]
++    var playlistID: UUID? = nil
++    @ViewBuilder let art: () -> Art
++
++    var body: some View {
++        let playing = player.isPlaying && tracks.contains { $0.id == player.current?.id }
++        VStack(spacing: 14) {
++            art()
++                .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
++            VStack(alignment: .leading, spacing: 4) {
++                Text(title).font(.title.weight(.black)).lineLimit(2)
++                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
++                HStack {
++                    Spacer()
++                    Button {
++                        player.shuffle = true
++                        if !tracks.isEmpty { player.play(tracks, startAt: Int.random(in: 0..<tracks.count), playlistID: playlistID) }
++                    } label: { Image(systemName: "shuffle").font(.title2).foregroundStyle(Color.cyberAccent) }
++                        .buttonStyle(.plain)
++                        .accessibilityLabel("Zufällig")
++                        .padding(.trailing, 12)
++                    RoundPlayButton(playing: playing) {
++                        if playing { player.pause() } else {
++                            player.shuffle = false
++                            if !tracks.isEmpty { player.play(tracks, startAt: 0, playlistID: playlistID) }
++                        }
++                    }
++                    .accessibilityIdentifier("playAllButton")
++                }
++            }
++            .frame(maxWidth: .infinity, alignment: .leading)
++        }
++        .padding(.horizontal, 4)
++        .padding(.vertical, 8)
++        .listRowBackground(LinearGradient(colors: [color.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom))
++        .listRowSeparator(.hidden)
++    }
++}
+diff --git a/MP3Player/Views/LibraryView.swift b/MP3Player/Views/LibraryView.swift
+index 720ae55..e83270c 100644
+--- a/MP3Player/Views/LibraryView.swift
++++ b/MP3Player/Views/LibraryView.swift
+@@ -11,6 +11,8 @@ enum LibraryRoute: Hashable {
+     case playlist(UUID)
+     case favorites
+     case stats
++    case smart(String)
++    case duplicates
+ }
+ 
+ /// Tab „Mediathek“: Kurzwahl, Titel/Alben/Interpreten und Playlists (inkl. neue Playlist erstellen).
+@@ -194,6 +196,14 @@ struct MediathekView: View {
+             } header: { CyberHeader(text: "Kurzwahl") }
+         }
+ 
++        if !library.tracks.isEmpty {
++            Section {
++                SmartRow()
++                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
++                    .listRowBackground(Color.clear)
++            } header: { CyberHeader(text: "Deine Mixe") }
++        }
++
+         Section {
+             NavigationLink(value: LibraryRoute.favorites) {
+                 categoryRow("Lieblingssongs", "heart.fill", count: library.favoriteTracks.count)
+@@ -306,6 +316,10 @@ struct MediathekView: View {
+             FavoritesView()
+         case .stats:
+             StatsView()
++        case .smart(let name):
++            if let kind = SmartPlaylist(rawValue: name) { SmartPlaylistView(kind: kind) }
++        case .duplicates:
++            DuplicatesView()
+         }
+     }
+ 
+@@ -326,7 +340,7 @@ struct PlaylistRow: View {
+     var body: some View {
+         let tracks = library.tracks(in: playlist)
+         HStack(spacing: 12) {
+-            ArtworkView(track: tracks.first, size: 52, cornerRadius: 8)
++            PlaylistArtwork(playlist: playlist, first: tracks.first, size: 52)
+             VStack(alignment: .leading, spacing: 2) {
+                 HStack(spacing: 6) {
+                     if playlist.id == Library.downloadsPlaylistID {
+@@ -486,3 +500,23 @@ struct PinnedStrip: View {
+ extension UTType {
+     static let mp3Audio = UTType("public.mp3") ?? .audio
+ }
++
++/// Cover einer Playlist: eigenes Bild, sonst das Cover des ersten Titels
++struct PlaylistArtwork: View {
++    @EnvironmentObject private var library: Library
++    let playlist: Playlist
++    let first: Track?
++    var size: CGFloat
++    var cornerRadius: CGFloat = 8
++
++    var body: some View {
++        let _ = library.coverVersion
++        if let image = UIImage(contentsOfFile: library.playlistCoverURL(playlist).path) {
++            Image(uiImage: image).resizable().scaledToFill()
++                .frame(width: size, height: size)
++                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
++        } else {
++            ArtworkView(track: first, size: size, cornerRadius: cornerRadius)
++        }
++    }
++}
+diff --git a/MP3Player/Views/MoreViews.swift b/MP3Player/Views/MoreViews.swift
+new file mode 100644
+index 0000000..05e816d
+--- /dev/null
++++ b/MP3Player/Views/MoreViews.swift
+@@ -0,0 +1,242 @@
++import PhotosUI
++import SwiftUI
++
++/// Songtext groß zum Mitlesen – aus der Datei oder selbst eingetragen
++struct LyricsView: View {
++    @EnvironmentObject private var library: Library
++    @Environment(\.dismiss) private var dismiss
++    @AppStorage("showOwnCovers") private var ownCovers = false
++    let track: Track
++    @State private var text: String?
++    @State private var loaded = false
++    @State private var editing = false
++    @State private var draft = ""
++
++    var body: some View {
++        let color = ArtworkColor.color(for: track, ownCovers: ownCovers)
++        NavigationStack {
++            Group {
++                if editing {
++                    TextEditor(text: $draft)
++                        .scrollContentBackground(.hidden)
++                        .font(.title3)
++                        .padding()
++                        .accessibilityIdentifier("lyricsField")
++                } else {
++                    ScrollView {
++                        VStack(alignment: .leading) {
++                            if !loaded {
++                                ProgressView()
++                            } else if let text {
++                                Text(text).font(.title2.weight(.bold)).lineSpacing(8)
++                                    .accessibilityIdentifier("lyricsText")
++                            } else {
++                                Text("Für dieses Lied ist kein Songtext gespeichert.\n\nTippe oben auf „Bearbeiten“ und füge ihn ein – er bleibt dann gespeichert.")
++                                    .font(.title3).foregroundStyle(.white.opacity(0.8))
++                                    .accessibilityIdentifier("lyricsEmpty")
++                            }
++                        }
++                        .frame(maxWidth: .infinity, alignment: .leading)
++                        .padding(24)
++                    }
++                }
++            }
++            .foregroundStyle(.white)
++            .background(LinearGradient(colors: [color, color.opacity(0.7), .black], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
++            .navigationTitle(track.title)
++            .navigationBarTitleDisplayMode(.inline)
++            .toolbar {
++                ToolbarItem(placement: .cancellationAction) {
++                    Button(editing ? "Abbrechen" : "Fertig") { if editing { editing = false } else { dismiss() } }
++                }
++                ToolbarItem(placement: .confirmationAction) {
++                    if editing {
++                        Button("Sichern") {
++                            library.setLyrics(track, draft)
++                            text = draft.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
++                            editing = false
++                        }
++                        .accessibilityIdentifier("lyricsSave")
++                    } else {
++                        Button("Bearbeiten") { draft = text ?? ""; editing = true }
++                            .accessibilityIdentifier("lyricsEdit")
++                    }
++                }
++            }
++            .task {
++                text = await library.lyrics(for: track)
++                loaded = true
++            }
++        }
++    }
++}
++
++extension SmartPlaylist {
++    var colors: [Color] {
++        switch self {
++        case .recentlyAdded: return [Color(red: 0.18, green: 0.44, blue: 0.62), .cyberAccent]
++        case .onRepeat: return [Color(red: 0.48, green: 0.18, blue: 0.35), Color(red: 0.88, green: 0.48, blue: 0.63)]
++        case .rediscover: return [Color(red: 0.18, green: 0.42, blue: 0.31), Color(red: 0.5, green: 0.82, blue: 0.66)]
++        case .neverPlayed: return [Color(red: 0.42, green: 0.35, blue: 0.18), Color(red: 0.88, green: 0.76, blue: 0.48)]
++        }
++    }
++}
++
++/// Kachel einer automatischen Playlist
++struct SmartTile: View {
++    let kind: SmartPlaylist
++    let count: Int
++    var size: CGFloat = 140
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 4) {
++            ZStack(alignment: .bottomLeading) {
++                LinearGradient(colors: kind.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
++                Text(kind.title).font(.headline.weight(.black)).foregroundStyle(.white).padding(10)
++            }
++            .frame(width: size, height: size)
++            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
++            Text(kind.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
++            Text("\(count) Titel").font(.caption2).foregroundStyle(.secondary)
++        }
++        .frame(width: size)
++    }
++}
++
++/// Waagerechte Reihe „Deine Mixe“
++struct SmartRow: View {
++    @EnvironmentObject private var library: Library
++
++    var body: some View {
++        let state = library.stateSnapshot
++        ScrollView(.horizontal, showsIndicators: false) {
++            HStack(alignment: .top, spacing: 14) {
++                ForEach(SmartPlaylist.allCases) { kind in
++                    NavigationLink(value: LibraryRoute.smart(kind.rawValue)) {
++                        SmartTile(kind: kind, count: kind.tracks(state).count)
++                    }
++                    .buttonStyle(.plain)
++                    .accessibilityIdentifier("mix-\(kind.rawValue)")
++                }
++            }
++            .padding(.horizontal, 16)
++        }
++    }
++}
++
++/// Automatische Playlist anzeigen
++struct SmartPlaylistView: View {
++    @EnvironmentObject private var library: Library
++    @EnvironmentObject private var player: AudioPlayer
++    @StateObject private var selection = SelectionModel()
++    let kind: SmartPlaylist
++
++    var body: some View {
++        let tracks = library.smartTracks(kind)
++        List {
++            Section {
++                CollectionHeader(title: kind.title, subtitle: "\(kind.subtitle) · \(tracks.count) Titel", color: kind.colors[0], tracks: tracks) {
++                    ZStack {
++                        LinearGradient(colors: kind.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
++                        Image(systemName: "sparkles").font(.system(size: 60)).foregroundStyle(.white)
++                    }
++                    .frame(width: 180, height: 180)
++                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
++                    .frame(maxWidth: .infinity)
++                }
++            }
++            Section {
++                if tracks.isEmpty { Text("Hier erscheinen Lieder, sobald es passende gibt.").foregroundStyle(.secondary).cyberRow() }
++                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
++                    TrackListRow(track: track, selection: selection) { player.play(tracks, startAt: index) }
++                        .cyberRow()
++                }
++            }
++        }
++        .cyberList()
++        .navigationBarTitleDisplayMode(.inline)
++        .safeAreaInset(edge: .top) {
++            if selection.active { SelectionBar(selection: selection, all: tracks) }
++        }
++    }
++}
++
++/// Doppelte Lieder finden und aufräumen
++struct DuplicatesView: View {
++    @EnvironmentObject private var library: Library
++
++    var body: some View {
++        let groups = library.duplicateGroups
++        List {
++            if groups.isEmpty {
++                Text("Keine Doppelten 🎉 Jedes Lied ist nur einmal in deiner Mediathek.").cyberRow()
++            } else {
++                Section {
++                    Text("\(groups.count) Lieder sind mehrfach vorhanden. Beim Aufräumen bleibt jeweils eins (MP3, meistgespielt) – Playlists, Herzen und Zähler werden übernommen.")
++                        .font(.footnote)
++                        .accessibilityIdentifier("duplicatesSummary")
++                    Button { groups.forEach { library.mergeDuplicates($0) } } label: {
++                        Label("Alle aufräumen", systemImage: "sparkles")
++                    }
++                    .accessibilityIdentifier("mergeAll")
++                }
++                .cyberRow()
++                ForEach(groups, id: \.first!.id) { group in
++                    Section {
++                        ForEach(group) { t in
++                            HStack(spacing: 10) {
++                                ArtworkView(track: t, size: 40)
++                                VStack(alignment: .leading) {
++                                    Text(t.title).lineLimit(1)
++                                    Text("\(t.fileName) · \(t.duration.formattedTime) · \(library.playCount(t))× gehört")
++                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
++                                }
++                            }
++                        }
++                        Button("Aufräumen") { library.mergeDuplicates(group) }
++                    }
++                    .cyberRow()
++                }
++            }
++        }
++        .cyberList()
++        .navigationTitle("Doppelte Lieder")
++    }
++}
++
++/// Bild aus der Galerie wählen (eigenes Cover)
++struct CoverPicker: View {
++    let onPicked: (UIImage) -> Void
++    @Environment(\.dismiss) private var dismiss
++    @State private var item: PhotosPickerItem?
++
++    var body: some View {
++        NavigationStack {
++            VStack(spacing: 20) {
++                Image(systemName: "photo.on.rectangle.angled").font(.system(size: 54)).foregroundStyle(Color.cyberAccent)
++                Text("Wähle ein Bild aus deiner Galerie als Cover.").multilineTextAlignment(.center)
++                PhotosPicker(selection: $item, matching: .images) {
++                    Label("Bild auswählen", systemImage: "photo").frame(maxWidth: .infinity)
++                }
++                .buttonStyle(.borderedProminent)
++                .tint(Color.cyberAccent)
++            }
++            .padding(32)
++            .frame(maxWidth: .infinity, maxHeight: .infinity)
++            .background(CyberBackground())
++            .navigationTitle("Cover ändern")
++            .navigationBarTitleDisplayMode(.inline)
++            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } } }
++            .onChange(of: item) { newItem in
++                guard let newItem else { return }
++                Task {
++                    if let data = try? await newItem.loadTransferable(type: Data.self), let image = UIImage(data: data) {
++                        onPicked(image)
++                    }
++                    dismiss()
++                }
++            }
++        }
++        .presentationDetents([.medium])
++    }
++}
+diff --git a/MP3Player/Views/PlayerViews.swift b/MP3Player/Views/PlayerViews.swift
+index 4a34b57..6f88168 100644
+--- a/MP3Player/Views/PlayerViews.swift
++++ b/MP3Player/Views/PlayerViews.swift
+@@ -17,7 +17,7 @@ struct MiniPlayerBar: View {
+                 HStack(spacing: 12) {
+                     ArtworkView(track: track, size: 40)
+                     VStack(alignment: .leading, spacing: 1) {
+-                        Text(track.title).font(.subheadline.weight(.semibold)).foregroundStyle(Color.neonCyan).lineLimit(1)
++                        Text(track.title).font(.subheadline.weight(.bold)).foregroundStyle(.white).lineLimit(1)
+                         if !track.artist.isEmpty {
+                             Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                         }
+@@ -41,9 +41,17 @@ struct MiniPlayerBar: View {
+                 .padding(.horizontal, 12)
+                 .padding(.vertical, 6)
+             }
+-            .background(LinearGradient(colors: [.cyberPanelHigh, .cyberPanel], startPoint: .leading, endPoint: .trailing))
++            .background(ArtworkColor.color(for: track, ownCovers: UserDefaults.standard.bool(forKey: "showOwnCovers")))
++            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
++            .padding(.horizontal, 8)
++            .padding(.bottom, 4)
+             .contentShape(Rectangle())
+             .onTapGesture { showNowPlaying = true }
++            // Wischen: links = nächster Titel, rechts = vorheriger
++            .gesture(DragGesture(minimumDistance: 30).onEnded { value in
++                if value.translation.width < -60 { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.next() }
++                else if value.translation.width > 60 { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.previous() }
++            })
+             .accessibilityElement(children: .contain)
+             .accessibilityIdentifier("miniPlayer")
+         }
+@@ -59,6 +67,9 @@ struct NowPlayingView: View {
+     @State private var showQueue = false
+     @State private var showSound = false
+     @State private var showSleep = false
++    @State private var showLyrics = false
++    @State private var dragX: CGFloat = 0
++    @AppStorage("showOwnCovers") private var ownCovers = false
+     @EnvironmentObject private var library: Library
+ 
+     var body: some View {
+@@ -105,52 +116,59 @@ struct NowPlayingView: View {
+             }
+             .background(nowPlayingBackground.ignoresSafeArea())
+             .sheet(isPresented: $showQueue) { QueueView() }
++            .sheet(isPresented: $showLyrics) { if let t = player.current { LyricsView(track: t) } }
+             .sheet(isPresented: $showSound) { SoundView(sound: player.sound) }
+             .sheet(isPresented: $showSleep) { SleepTimerView() }
+         }
+     }
+ 
+-    /// Dunkler Verlauf mit der Akzentfarbe hinter dem Player
++    /// Farbverlauf aus dem Cover hinter dem Player (wie bei Streaming-Apps)
+     private var nowPlayingBackground: some View {
+-        ZStack {
+-            CyberBackground()
+-            LinearGradient(colors: [Color.cyberAccent.opacity(0.16), Color.neonCyan.opacity(0.06), .clear],
+-                           startPoint: .top, endPoint: .bottom)
+-        }
++        let color = ArtworkColor.color(for: player.current, ownCovers: ownCovers)
++        return LinearGradient(colors: [color, color.opacity(0.6), .black], startPoint: .top, endPoint: .bottom)
++            .animation(.easeInOut(duration: 0.6), value: player.current?.id)
+     }
+ 
+     private func content(_ track: Track) -> some View {
+-        VStack(spacing: 24) {
++        VStack(spacing: 20) {
+             Spacer(minLength: 0)
+-            ArtworkView(track: track, size: 300, cornerRadius: 16)
+-                .padding(6)
+-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(
+-                    LinearGradient(colors: [Color.neonCyan.opacity(0.6), Color.cyberAccent.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing),
+-                    lineWidth: 1.5))
+-                .shadow(color: Color.cyberAccent.opacity(0.25), radius: 18, y: 8)
++            // Großes Cover: wischen wechselt den Titel, bei Pause etwas kleiner
++            ArtworkView(track: track, size: 320, cornerRadius: 12)
++                .shadow(color: .black.opacity(0.5), radius: 24, y: 12)
+                 .scaleEffect(player.isPlaying ? 1 : 0.88)
++                .offset(x: dragX * 0.4)
+                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: player.isPlaying)
++                .gesture(DragGesture(minimumDistance: 20)
++                    .onChanged { dragX = $0.translation.width }
++                    .onEnded { value in
++                        if value.translation.width < -80 { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.next() }
++                        else if value.translation.width > 80 { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.previous() }
++                        withAnimation(.spring()) { dragX = 0 }
++                    })
+ 
+-            HStack {
+-                Color.clear.frame(width: 44, height: 44)
+-                VStack(spacing: 4) {
+-                    GlitchText(text: track.title.uppercased(), font: .system(.title3, design: .monospaced).weight(.black))
+-                        .lineLimit(2).multilineTextAlignment(.center)
+-                    Text("> " + (track.artist.isEmpty ? "Unbekannter Interpret" : track.artist))
+-                        .font(.system(.body, design: .monospaced)).foregroundStyle(Color.neonCyan).lineLimit(1)
++            HStack(alignment: .center) {
++                VStack(alignment: .leading, spacing: 2) {
++                    Text(track.title).font(.title2.weight(.bold)).lineLimit(1)
++                    Text(track.artist.isEmpty ? "Unbekannter Interpret" : track.artist)
++                        .font(.title3).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                 }
+-                .frame(maxWidth: .infinity)
++                Spacer()
+                 // Herz: Lieblingssong
+-                Button { library.toggleFavorite(track) } label: {
++                Button {
++                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
++                    library.toggleFavorite(track)
++                } label: {
+                     Image(systemName: library.isFavorite(track) ? "heart.fill" : "heart")
+-                        .font(.title3)
+-                        .foregroundStyle(library.isFavorite(track) ? Color.cyberAccent : .primary)
++                        .font(.title2)
++                        .foregroundStyle(library.isFavorite(track) ? Color.cyberAccent : .white)
++                        .scaleEffect(library.isFavorite(track) ? 1.12 : 1)
++                        .animation(.spring(response: 0.3, dampingFraction: 0.4), value: library.isFavorite(track))
+                         .frame(width: 44, height: 44)
+                 }
+                 .accessibilityLabel(library.isFavorite(track) ? "Aus Lieblingssongs entfernen" : "Zu Lieblingssongs")
+                 .accessibilityIdentifier("favButton")
+             }
+-            .padding(.horizontal)
++            .padding(.horizontal, 24)
+ 
+             VStack(spacing: 4) {
+                 Slider(
+@@ -169,42 +187,57 @@ struct NowPlayingView: View {
+                         }
+                     }
+                 )
++                .tint(.white)
+                 HStack {
+                     Text((scrubbing ? scrubValue : player.currentTime).formattedTime)
+                     Spacer()
+                     Text("-" + max(0, player.duration - (scrubbing ? scrubValue : player.currentTime)).formattedTime)
+                 }
+                 .font(.caption.monospacedDigit())
+-                .foregroundStyle(.secondary)
++                .foregroundStyle(.white.opacity(0.7))
+             }
+-            .padding(.horizontal, 28)
++            .padding(.horizontal, 24)
+ 
+-            HStack(spacing: 36) {
++            HStack {
+                 Button { player.shuffle.toggle() } label: {
+                     Image(systemName: "shuffle").font(.title3)
+-                        .foregroundStyle(player.shuffle ? Color.accentColor : .secondary)
++                        .foregroundStyle(player.shuffle ? Color.cyberAccent : .white.opacity(0.8))
+                 }
+                 .accessibilityLabel(player.shuffle ? "Zufallswiedergabe an" : "Zufallswiedergabe aus")
+-                Button(action: player.previous) { Image(systemName: "backward.fill").font(.title) }
+-                    .accessibilityLabel("Vorheriger Titel")
+-                Button(action: player.togglePlayPause) {
+-                    Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+-                        .font(.system(size: 72))
++                Spacer()
++                Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.previous() } label: {
++                    Image(systemName: "backward.fill").font(.title)
+                 }
+-                .accessibilityLabel(player.isPlaying ? "Pause" : "Abspielen")
+-                .accessibilityIdentifier("bigPlayPause")
+-                Button(action: player.next) { Image(systemName: "forward.fill").font(.title) }
+-                    .accessibilityLabel("Nächster Titel")
++                .accessibilityLabel("Vorheriger Titel")
++                Spacer()
++                RoundPlayButton(playing: player.isPlaying, size: 72, action: player.togglePlayPause)
++                    .accessibilityIdentifier("bigPlayPause")
++                Spacer()
++                Button { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.next() } label: {
++                    Image(systemName: "forward.fill").font(.title)
++                }
++                .accessibilityLabel("Nächster Titel")
++                Spacer()
+                 Button(action: player.cycleRepeatMode) {
+                     Image(systemName: player.repeatMode.symbol).font(.title3)
+-                        .foregroundStyle(player.repeatMode == .off ? .secondary : Color.accentColor)
++                        .foregroundStyle(player.repeatMode == .off ? .white.opacity(0.8) : Color.cyberAccent)
+                 }
+                 .accessibilityLabel(player.repeatMode == .off ? "Wiederholen aus" : player.repeatMode == .all ? "Alle wiederholen" : "Titel wiederholen")
+             }
+-            .foregroundStyle(.primary)
++            .foregroundStyle(.white)
++            .padding(.horizontal, 28)
++
++            Button { showLyrics = true } label: {
++                Label("Songtext", systemImage: "quote.bubble").font(.footnote.weight(.semibold))
++                    .padding(.horizontal, 14).padding(.vertical, 8)
++                    .background(.white.opacity(0.12), in: Capsule())
++            }
++            .foregroundStyle(.white)
++            .accessibilityIdentifier("lyricsButton")
+             Spacer(minLength: 0)
+         }
+-        .padding(.bottom, 24)
++        .foregroundStyle(.white)
++        .padding(.bottom, 16)
+     }
+ }
+ 
+diff --git a/MP3Player/Views/SettingsView.swift b/MP3Player/Views/SettingsView.swift
+index c61aed4..f8186f7 100644
+--- a/MP3Player/Views/SettingsView.swift
++++ b/MP3Player/Views/SettingsView.swift
+@@ -12,6 +12,8 @@ struct SettingsView: View {
+     @Environment(\.openURL) private var openURL
+     @State private var copied = false
+     @AppStorage("showOwnCovers") private var showOwnCovers = false
++    @AppStorage("autoplayBluetooth") private var autoplayBluetooth = false
++    @State private var showDuplicates = false
+     @State private var showSound = false
+     @State private var exportDocument: BackupDocument?
+     @State private var showExporter = false
+@@ -85,6 +87,26 @@ struct SettingsView: View {
+                     Text(showOwnCovers ? "Lieder zeigen ihr eigenes Cover (falls vorhanden)." : "Neben jedem Lied steht das App-Logo.")
+                 }
+ 
++                Section {
++                    Toggle(isOn: $autoplayBluetooth) {
++                        VStack(alignment: .leading, spacing: 2) {
++                            Text("Bei Bluetooth automatisch abspielen")
++                            Text("Kopfhörer oder Auto verbinden → Musik läuft weiter").font(.caption).foregroundStyle(.secondary)
++                        }
++                    }
++                    .tint(Color.cyberAccent)
++                    .accessibilityIdentifier("btAutoplaySwitch")
++                    Button { showDuplicates = true } label: {
++                        Label("Doppelte Lieder aufräumen (\(library.duplicateGroups.count))", systemImage: "sparkles")
++                    }
++                    .accessibilityIdentifier("openDuplicates")
++                } header: {
++                    CyberHeader(text: "Wiedergabe")
++                } footer: {
++                    Text("CarPlay ist mit einer kostenlosen Apple-ID leider nicht möglich – im Auto funktioniert die Steuerung über Bluetooth und den Sperrbildschirm.")
++                }
++                .sheet(isPresented: $showDuplicates) { NavigationStack { DuplicatesView() } }
++
+                 Section {
+                     Button { showSound = true } label: {
+                         Label("Equalizer & Überblenden" + (player.sound.enabled ? " · \(player.sound.preset)" : "")
+diff --git a/MP3Player/Views/SoundViews.swift b/MP3Player/Views/SoundViews.swift
+index d085a37..948a565 100644
+--- a/MP3Player/Views/SoundViews.swift
++++ b/MP3Player/Views/SoundViews.swift
+@@ -42,6 +42,19 @@ struct SoundView: View {
+                 } header: { CyberHeader(text: "Equalizer") }
+                 .cyberRow()
+ 
++                Section {
++                    Toggle(isOn: $sound.normalize) {
++                        VStack(alignment: .leading, spacing: 2) {
++                            Text("Lautstärke angleichen")
++                            Text("Alle Lieder klingen ähnlich laut").font(.caption).foregroundStyle(.secondary)
++                        }
++                    }
++                    .tint(Color.cyberAccent)
++                    .accessibilityIdentifier("normalizeSwitch")
++                    .onChange(of: sound.normalize) { _ in player.applyTrackGain() }
++                } header: { CyberHeader(text: "Lautstärke") }
++                .cyberRow()
++
+                 Section {
+                     VStack(alignment: .leading, spacing: 6) {
+                         Text(sound.crossfade == 0 ? "Aus – Lieder beginnen und enden normal"
+diff --git a/MP3Player/Views/StartView.swift b/MP3Player/Views/StartView.swift
+index 0d71a02..c74b42c 100644
+--- a/MP3Player/Views/StartView.swift
++++ b/MP3Player/Views/StartView.swift
+@@ -38,6 +38,8 @@ struct StartView: View {
+                 switch route {
+                 case .stats: StatsView()
+                 case .favorites: FavoritesView()
++                case .smart(let name): if let kind = SmartPlaylist(rawValue: name) { SmartPlaylistView(kind: kind) }
++                case .playlist(let id): PlaylistDetailView(playlistID: id)
+                 default: EmptyView()
+                 }
+             }
+@@ -50,6 +52,23 @@ struct StartView: View {
+     }
+ 
+     @ViewBuilder private var content: some View {
++        // Schnellzugriff: Lieblingssongs, zuletzt gehörte Lieder, Playlists
++        let quick = quickTiles
++        if !quick.isEmpty {
++            Section {
++                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
++                    ForEach(quick) { tile in QuickTileView(tile: tile) }
++                }
++                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
++                .listRowBackground(Color.clear)
++            }
++        }
++        Section {
++            SmartRow()
++                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
++                .listRowBackground(Color.clear)
++        } header: { CyberHeader(text: "Deine Mixe") }
++
+         if let current = player.current {
+             Section { 
+                 Button { showNowPlaying = true } label: {
+@@ -200,6 +219,14 @@ struct StartView: View {
+         }
+     }
+ 
++    private var quickTiles: [QuickTile] {
++        var tiles: [QuickTile] = []
++        if !library.favoriteTracks.isEmpty { tiles.append(.favorites) }
++        for t in library.recentlyPlayed(limit: 3) { tiles.append(.song(t)) }
++        for p in library.playlists where !p.trackIDs.isEmpty && tiles.count < 6 { tiles.append(.playlist(p)) }
++        return Array(tiles.prefix(6))
++    }
++
+     private var greeting: String {
+         switch Calendar.current.component(.hour, from: Date()) {
+         case 5...10: return "Guten Morgen"
+@@ -396,3 +423,59 @@ struct StatsView: View {
+         .frame(height: 4)
+     }
+ }
++
++/// Eintrag im Schnellzugriff der Startseite
++enum QuickTile: Identifiable {
++    case favorites
++    case song(Track)
++    case playlist(Playlist)
++
++    var id: String {
++        switch self {
++        case .favorites: return "fav"
++        case .song(let t): return "s-\(t.id)"
++        case .playlist(let p): return "p-\(p.id)"
++        }
++    }
++}
++
++struct QuickTileView: View {
++    @EnvironmentObject private var library: Library
++    @EnvironmentObject private var player: AudioPlayer
++    let tile: QuickTile
++
++    var body: some View {
++        Group {
++            switch tile {
++            case .favorites:
++                NavigationLink(value: LibraryRoute.favorites) { label(title: "Lieblingssongs") {
++                    ZStack {
++                        LinearGradient(colors: [Color(red: 0.23, green: 0.18, blue: 0.48), .cyberAccent], startPoint: .topLeading, endPoint: .bottomTrailing)
++                        Image(systemName: "heart.fill").foregroundStyle(.white)
++                    }
++                } }
++            case .song(let t):
++                Button { player.play([t], startAt: 0) } label: { label(title: t.title, playing: player.current?.id == t.id) {
++                    ArtworkView(track: t, size: 56, cornerRadius: 0)
++                } }
++            case .playlist(let p):
++                NavigationLink(value: LibraryRoute.playlist(p.id)) { label(title: p.name) {
++                    PlaylistArtwork(playlist: p, first: library.tracks(in: p).first, size: 56, cornerRadius: 0)
++                } }
++            }
++        }
++        .buttonStyle(.plain)
++    }
++
++    private func label<A: View>(title: String, playing: Bool = false, @ViewBuilder art: () -> A) -> some View {
++        HStack(spacing: 10) {
++            art().frame(width: 56, height: 56).clipped()
++            Text(title).font(.footnote.weight(.bold)).lineLimit(2).multilineTextAlignment(.leading)
++            Spacer(minLength: 0)
++            if playing { PlayingBars(playing: player.isPlaying).padding(.trailing, 8) }
++        }
++        .frame(height: 56)
++        .background(Color.cyberPanelHigh, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
++        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
++    }
++}
+diff --git a/MP3Player/Views/TrackActions.swift b/MP3Player/Views/TrackActions.swift
+index 27149e5..05411e4 100644
+--- a/MP3Player/Views/TrackActions.swift
++++ b/MP3Player/Views/TrackActions.swift
+@@ -10,6 +10,8 @@ final class TrackActions: ObservableObject {
+         case artist(String)
+         case info(Track)
+         case edit(Track)
++        case cover(Track)
++        case lyrics(Track)
+ 
+         var id: String {
+             switch self {
+@@ -19,6 +21,8 @@ final class TrackActions: ObservableObject {
+             case .artist(let a): return "artist-\(a)"
+             case .info(let t): return "info-\(t.id)"
+             case .edit(let t): return "edit-\(t.id)"
++            case .cover(let t): return "cover-\(t.id)"
++            case .lyrics(let t): return "lyrics-\(t.id)"
+             }
+         }
+     }
+@@ -82,6 +86,10 @@ private struct TrackActionsHost: ViewModifier {
+                         SongInfoSheet(track: track)
+                     case .edit(let track):
+                         EditTrackSheet(track: track)
++                    case .cover(let track):
++                        CoverPicker { image in library.setCustomCover(track, image: image) }
++                    case .lyrics(let track):
++                        LyricsView(track: track)
+                     }
+                 }
+                 .environmentObject(actions)
+@@ -164,6 +172,15 @@ struct TrackActionsSheet: View {
+                     actions.close()
+                 }
+                 row("Infos bearbeiten", "pencil") { actions.show(.edit(current)) }
++                row("Songtext", "quote.bubble") { actions.show(.lyrics(current)) }
++                row("Cover ändern", "photo") { actions.show(.cover(current)) }
++                if library.hasCustomCover(current) {
++                    row("Eigenes Cover entfernen", "photo.badge.minus") {
++                        let target = current
++                        actions.close()
++                        Task { await library.removeCustomCover(target) }
++                    }
++                }
+                 if !Storage.isMP3(current.fileName) {
+                     row("In MP3 umwandeln", "arrow.triangle.2.circlepath") {
+                         let target = current
