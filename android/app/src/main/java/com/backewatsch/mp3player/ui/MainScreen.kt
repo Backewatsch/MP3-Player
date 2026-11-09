@@ -57,6 +57,8 @@ class AppNavigation {
     var showDownloads by mutableStateOf(false)
     var showTransfer by mutableStateOf(false)
     var showSound by mutableStateOf(false)
+    /** Jahresrückblick, der gerade gezeigt wird */
+    var recapYear by mutableStateOf<Int?>(null)
     /** Lied, das im Tab „Bearbeiten“ geöffnet ist */
     var editTrackId by mutableStateOf<String?>(null)
 
@@ -137,6 +139,7 @@ fun MainScreen() {
         if (nav.showDownloads) DownloadsSheet(onDismiss = { nav.showDownloads = false })
         if (nav.showTransfer) TransferSheet(onDismiss = { nav.showTransfer = false })
         if (nav.showSound) SoundSheet(onDismiss = { nav.showSound = false })
+        nav.recapYear?.let { year -> RecapStory(year, onClose = { nav.recapYear = null }) }
         TrackActionsHost(nav.actions)
         UpdatePrompt()
     }

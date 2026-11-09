@@ -72,6 +72,7 @@ fun StartScreen() {
     val current = lib.tracks.firstOrNull { it.id == player.currentId }
     val favorites = remember(lib) { app.library.favoriteTracks() }
     val stats = remember(lib) { com.backewatsch.mp3player.data.Stats.summary(lib) }
+    val recapYear = remember(lib) { com.backewatsch.mp3player.data.Recap.defaultYear(lib) }
 
     LazyColumn(Modifier.fillMaxSize().testTag("startScreen")) {
         item {
@@ -99,6 +100,10 @@ fun StartScreen() {
                     }
                 }
             }
+        }
+
+        recapYear?.let { year ->
+            item { RecapBanner(year, Modifier.padding(16.dp, 8.dp)) }
         }
 
         if (lib.tracks.isEmpty()) {

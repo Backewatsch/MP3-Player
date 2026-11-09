@@ -459,4 +459,67 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("track-Sommernacht"), 5_000)
         screenshot("a35-Genre-HipHop")
     }
+
+    /** Jahresrückblick: Karte auf der Startseite, Folien durchtippen, Bild zum Teilen */
+    @Test fun t8_yearRecap() {
+        val app = instrumentation.targetContext.app
+        val dir = File(instrumentation.targetContext.cacheDir, "ui-recap").apply { mkdirs() }
+        val tracks = listOf("Mondlicht", "Stadtlichter", "Regenbogen").mapIndexed { i, name ->
+            val f = File(dir, "$name.mp3")
+            instrumentation.context.assets.open("untagged.mp3").use { input -> f.outputStream().use { input.copyTo(it) } }
+            val t = kotlinx.coroutines.runBlocking { app.library.import(f, move = true) }
+            app.library.editInfo(t, name, if (i == 0) "Nova" else "Echo", "Lichter", "Pop")
+            t
+        }
+        repeat(4) { app.library.recordPlay(tracks[0].id) }
+        app.library.recordPlay(tracks[1].id)
+        app.library.recordPlay(tracks[2].id)
+        app.library.addListened(95 * 60_000L)
+        val year = java.time.LocalDate.now().year
+        val shared = File(instrumentation.targetContext.cacheDir, "recap/Mein-Jahr-$year.png").apply { delete() }
+
+        rule.onNodeWithTag("tab-start").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("recapBanner-$year"), 10_000)
+        screenshot("a40-Rueckblick-Karte")
+        rule.onNodeWithTag("recapBanner-$year").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("recap-intro"), 5_000)
+        Thread.sleep(800)
+        screenshot("a41-Rueckblick-Start")
+
+        var n = 0
+        while (rule.onAllNodesWithTag("recap-summary").fetchSemanticsNodes().isEmpty() && n++ < 20) {
+            rule.onNodeWithTag("recapStory").performClick()
+            rule.waitForIdle()
+            Thread.sleep(900)
+            listOf("minutes", "topSong", "type").forEach { name ->
+                if (rule.onAllNodesWithTag("recap-$name").fetchSemanticsNodes().isNotEmpty()) screenshot("a42-Rueckblick-$name")
+            }
+        }
+        rule.waitUntilAtLeastOneExists(hasTestTag("recapSummaryCard"), 5_000)
+        check(rule.onAllNodesWithText("Mondlicht", substring = true).fetchSemanticsNodes().isNotEmpty()) { "Song des Jahres fehlt" }
+        screenshot("a43-Rueckblick-Zusammenfassung")
+
+        // Nochmal von vorn, dann schließen
+        rule.onNodeWithTag("recapReplay").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("recap-intro"), 5_000)
+        rule.onNodeWithTag("recapClose").performClick()
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag("recapStory").fetchSemanticsNodes().isEmpty() }
+
+        // Über die Statistik erneut öffnen und das Bild zum Teilen erzeugen
+        rule.onNodeWithTag("startScreen").performScrollToNode(hasTestTag("startStats"))
+        rule.onNodeWithTag("startStats").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("recapBanner-$year"), 5_000)
+        rule.onNodeWithTag("recapBanner-$year").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("recapStory"), 5_000)
+        n = 0
+        while (rule.onAllNodesWithTag("recapShare").fetchSemanticsNodes().isEmpty() && n++ < 20) {
+            rule.onNodeWithTag("recapStory").performClick()
+            rule.waitForIdle()
+        }
+        Thread.sleep(800)
+        rule.onNodeWithTag("recapShare").performClick()
+        rule.waitUntil(15_000) { shared.exists() && shared.length() > 10_000 }
+        Thread.sleep(2500)
+        back() // Teilen-Fenster schließen
+    }
 }

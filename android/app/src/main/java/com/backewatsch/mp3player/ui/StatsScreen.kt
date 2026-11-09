@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -47,12 +48,14 @@ fun StatsScreen() {
     val nav = LocalNav.current
     val lib by app.library.state.collectAsState()
     val stats = remember(lib) { Stats.summary(lib) }
+    val recapYears = remember(lib) { com.backewatsch.mp3player.data.Recap.availableYears(lib) }
     val month = LocalDate.now().month.getDisplayName(TextStyle.FULL_STANDALONE, Locale.GERMAN)
     var confirmClear by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         ScreenTopBar("Statistik", onBack = { nav.pop() })
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize().testTag("statsList")) {
+            items(recapYears, key = { "recap-$it" }) { year -> RecapBanner(year, Modifier.padding(16.dp, 0.dp, 16.dp, 12.dp)) }
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     StatTile("Hörzeit im $month", Stats.formatListening(stats.listenedThisMonthMs), Modifier.weight(1f), "stat-month")

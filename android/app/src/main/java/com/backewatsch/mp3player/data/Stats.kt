@@ -8,7 +8,7 @@ import java.time.ZoneId
 
 /** Hör-Statistik (ohne Android-Abhängigkeiten, getestet). */
 object Stats {
-    const val MAX_PLAYS = 5000
+    const val MAX_PLAYS = 15000
 
     fun monthKey(at: Long, zone: ZoneId = ZoneId.systemDefault()): String =
         YearMonth.from(Instant.ofEpochMilli(at).atZone(zone)).toString()
