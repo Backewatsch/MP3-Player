@@ -82,8 +82,12 @@ class SearchTagsTest {
             cover = cover, lyrics = "Zeile 1\nZeile 2"))
         assertArrayEquals("Audio bleibt unverändert", audioBefore, audioOf(f))
         assertEquals("Zeile 1\nZeile 2", Id3Lyrics.parse(f.readBytes()))
-        val text = String(f.readBytes(), Charsets.UTF_16LE)
-        assertTrue(text.contains("Neuer Titel") && text.contains("Künstlerin"))
+        val bytes = f.readBytes()
+        fun has(text: String): Boolean {
+            val p = text.toByteArray(Charsets.UTF_16LE)
+            return (0..bytes.size - p.size).any { i -> p.indices.all { bytes[i + it] == p[it] } }
+        }
+        assertTrue("Titel und Interpret als UTF-16 im Tag", has("Neuer Titel") && has("Künstlerin") && has("Pop"))
         assertTrue("TYER bleibt erhalten", String(f.readBytes(), Charsets.ISO_8859_1).contains("TYER"))
         assertTrue("alter Titel ersetzt", !String(f.readBytes(), Charsets.ISO_8859_1).contains("\u0000Alt"))
 
