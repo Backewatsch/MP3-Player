@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player.ui
 
+import com.backewatsch.mp3player.data.*
+
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -104,9 +106,7 @@ fun TrackRow(
     onMore: () -> Unit,
     selection: SelectionState? = null,
 ) {
-    val app = LocalContext.current.app
-    val lib by app.library.state.collectAsState()
-    val favorite = track.id in lib.favorites
+    val favorite = track.id in LocalFavorites.current
     val selecting = selection?.active == true
     val selected = selection != null && track.id in selection.ids
     Row(

@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player
 
+import com.backewatsch.mp3player.data.*
+
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.backewatsch.mp3player.convert.Mp3Converter
@@ -137,6 +139,7 @@ class ConverterAndLibraryTest {
         assertTrue(library.tracksInAlbum("testalbum").any { it.id == c.id })
 
         // Neu laden → alles gespeichert
+        library.flush() // Schreiben passiert sonst gebündelt im Hintergrund
         val reloaded = Library(Storage(context, root), CoroutineScope(Dispatchers.Default), autoConvert = false)
         assertEquals(listOf(c.id, b.id), reloaded.tracksIn(reloaded.playlist(playlist.id)!!).map { it.id })
         assertTrue(reloaded.isPinned(c))
@@ -158,6 +161,7 @@ class ConverterAndLibraryTest {
         assertEquals(listOf(b.id to 2, a.id to 1), library.mostPlayed().map { it.first.id to it.second })
 
         // gespeichert?
+        library.flush() // Schreiben passiert sonst gebündelt im Hintergrund
         val reloaded = Library(Storage(context, root), CoroutineScope(Dispatchers.Default), autoConvert = false)
         assertEquals(2, reloaded.playCount(b))
         assertEquals(3, reloaded.history().size)

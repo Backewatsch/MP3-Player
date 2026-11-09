@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player
 
+import com.backewatsch.mp3player.data.*
+
 import android.Manifest
 import android.graphics.Bitmap
 import androidx.test.rule.GrantPermissionRule

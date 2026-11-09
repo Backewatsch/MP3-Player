@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player.ui
 
+import com.backewatsch.mp3player.data.*
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement

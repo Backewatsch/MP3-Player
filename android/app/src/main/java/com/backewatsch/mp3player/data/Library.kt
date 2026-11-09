@@ -29,7 +29,7 @@ class Library(
     class LibraryException(message: String) : Exception(message)
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val _state = MutableStateFlow(LibraryState())
+    internal val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
     /** Fortschritt einer laufenden Umwandlung, sonst null */
@@ -39,13 +39,24 @@ class Library(
     /** Wird aufgerufen, wenn ein Titel hinzugekommen ist (Ziel-Playlist bei Downloads) */
     var onTrackAdded: ((Track, String?) -> Unit)? = null
 
-    private val mutex = Mutex()
-    private val importing = mutableSetOf<String>()
+    internal val mutex = Mutex()
+    internal val importing = mutableSetOf<String>()
     @Volatile private var converting = false
+
+    /** Speicher-Wünsche: werden gebündelt und im Hintergrund geschrieben */
+    private val saveRequests = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    @Volatile private var dirty = false
 
     init {
         load()
         ensureDownloadsPlaylist()
+        scope.launch(Dispatchers.IO) {
+            for (request in saveRequests) {
+                // Kurz warten, damit mehrere Änderungen in einem Schreibvorgang landen
+                kotlinx.coroutines.delay(SAVE_DELAY_MS)
+                writeNow()
+            }
+        }
     }
 
     // region Abfragen
@@ -293,93 +304,9 @@ class Library(
         save()
     }
 
-    // region Lautstärke, Songtexte, Cover, Doppelte, automatische Playlists
-
-    fun gainOf(trackId: String): Float? = _state.value.gains[trackId]
-    fun tracksWithoutGain(): List<Track> = tracks.filter { it.id !in _state.value.gains }
-
-    fun setGain(trackId: String, gainDb: Float) {
-        if (track(trackId) == null) return
-        _state.update { s -> s.copy(gains = s.gains + (trackId to gainDb)) }
-        save()
-    }
-
-    /** Songtext: selbst eingetragen oder aus der MP3 (USLT) gelesen */
-    fun lyricsOf(track: Track): String? =
-        _state.value.lyrics[track.id] ?: Id3Lyrics.read(fileOf(track))
-
-    fun setLyrics(track: Track, text: String) {
-        val clean = text.trim()
-        _state.update { s -> s.copy(lyrics = if (clean.isEmpty()) s.lyrics - track.id else s.lyrics + (track.id to clean)) }
-        save()
-        writeTags(track, Id3Writer.Update(lyrics = clean))
-    }
-
-    fun hasCustomCover(track: Track) = track.id in _state.value.customCovers
-
-    /** Eigenes Cover (JPEG-Bytes) für einen Titel speichern */
-    fun setCustomCover(track: Track, jpeg: ByteArray) {
-        storage.artworkFor(track.id).writeBytes(jpeg)
-        _state.update { s -> s.copy(customCovers = (listOf(track.id) + s.customCovers).distinct()) }
-        coverVersion.value++
-        save()
-        // Auch in die MP3 schreiben – dann sehen andere Apps das Cover ebenfalls
-        writeTags(track, Id3Writer.Update(cover = jpeg))
-    }
-
-    fun removeCustomCover(track: Track) {
-        storage.artworkFor(track.id).delete()
-        // Das eigene Cover steckt auch in der MP3 → dort ebenfalls entfernen
-        writeTags(track, Id3Writer.Update(cover = ByteArray(0)))
-        _state.update { s -> s.copy(customCovers = s.customCovers - track.id) }
-        coverVersion.value++
-        save()
-    }
-
-    fun playlistCoverFile(playlist: Playlist) = File(storage.artworkDir, "playlist-${playlist.id}.jpg")
-
-    fun setPlaylistCover(playlist: Playlist, jpeg: ByteArray?) {
-        val f = playlistCoverFile(playlist)
-        if (jpeg == null) f.delete() else f.writeBytes(jpeg)
-        // Anzeige lädt das Bild neu
-        coverVersion.value++
-    }
-
+    // Lautstärke, Songtexte, Cover, Doppelte, Mixe: siehe LibraryExtras.kt
     /** Zählt hoch, wenn sich ein Cover-Bild geändert hat (Anzeige lädt dann neu) */
     val coverVersion = MutableStateFlow(0)
-
-    fun duplicateGroups(): List<List<Track>> = Duplicates.groups(tracks)
-
-    /** Behält ein Lied der Gruppe, übernimmt Playlists, Herzen, Zähler und Verlauf der anderen und löscht diese. */
-    fun mergeDuplicates(group: List<Track>): Track {
-        val s0 = _state.value
-        val keep = Duplicates.keeper(group, s0.playCounts, { t -> s0.playlists.count { t.id in it.trackIds } }, s0.favorites.toSet())
-        val others = group.filter { it.id != keep.id }
-        if (others.isEmpty()) return keep
-        val gone = others.map { it.id }.toSet()
-        fun swap(id: String) = if (id in gone) keep.id else id
-        _state.update { s ->
-            s.copy(
-                playlists = s.playlists.map { p -> p.copy(trackIds = p.trackIds.map(::swap).distinct()) },
-                pinned = s.pinned.map(::swap).distinct(),
-                favorites = s.favorites.map(::swap).distinct(),
-                playCounts = (s.playCounts - gone) + (keep.id to group.sumOf { s.playCounts[it.id] ?: 0 }),
-                history = s.history.map { it.copy(trackId = swap(it.trackId)) },
-                plays = s.plays.map { it.copy(trackId = swap(it.trackId)) },
-                lyrics = run {
-                    val text = s.lyrics[keep.id] ?: others.firstNotNullOfOrNull { s.lyrics[it.id] }
-                    (s.lyrics - gone - keep.id) + (if (text != null) mapOf(keep.id to text) else emptyMap())
-                },
-            )
-        }
-        save()
-        deleteAll(others)
-        return keep
-    }
-
-    fun smartTracks(kind: SmartPlaylist): List<Track> = kind.tracks(_state.value)
-
-    // endregion
 
     fun toggleFavorite(track: Track) {
         _state.update { s ->
@@ -411,7 +338,7 @@ class Library(
     }
 
     /** Änderungen in die MP3 schreiben (Fehler ändern nichts an der Mediathek) */
-    private fun writeTags(track: Track, update: Id3Writer.Update) {
+    internal fun writeTags(track: Track, update: Id3Writer.Update) {
         val file = fileOf(track)
         if (!FileNames.isMp3(file.name) || !file.exists()) return
         // Die Datei ist dabei immer vorhanden (neue Fassung wird erst fertig geschrieben, dann ausgetauscht)
@@ -457,72 +384,7 @@ class Library(
         return playlist(playlist.id) ?: playlist
     }
 
-    // region Oft gespielt & Verlauf
-
-    /** Titel wurde gestartet → in den Verlauf (gleicher Titel innerhalb einer Minute nur einmal) */
-    fun recordStart(trackId: String, now: Long = System.currentTimeMillis()) {
-        if (track(trackId) == null) return
-        _state.update { s ->
-            val recent = s.history.firstOrNull()
-            if (recent != null && recent.trackId == trackId && now - recent.at < 60_000) return@update s
-            s.copy(history = (listOf(PlayEvent(trackId, now)) + s.history).take(MAX_HISTORY))
-        }
-        save()
-    }
-
-    /** Titel wurde richtig gehört (nicht nur angespielt) → zählt für „Oft gespielt“ */
-    fun recordPlay(trackId: String) {
-        if (track(trackId) == null) return
-        val now = System.currentTimeMillis()
-        _state.update { s ->
-            s.copy(
-                playCounts = s.playCounts + (trackId to ((s.playCounts[trackId] ?: 0) + 1)),
-                plays = (listOf(PlayEvent(trackId, now)) + s.plays).take(Stats.MAX_PLAYS),
-            )
-        }
-        save()
-    }
-
-    /** Hörzeit für die Statistik hinzufügen */
-    fun addListened(ms: Long, now: Long = System.currentTimeMillis()) {
-        if (ms <= 0) return
-        val key = Stats.monthKey(now)
-        _state.update { s -> s.copy(listenedByMonth = s.listenedByMonth + (key to ((s.listenedByMonth[key] ?: 0) + ms))) }
-        save()
-    }
-
-    fun clearStats() {
-        _state.update { it.copy(plays = emptyList(), listenedByMonth = emptyMap()) }
-        save()
-    }
-
-    fun playCount(track: Track) = _state.value.playCounts[track.id] ?: 0
-
-    /** Meistgehörte Titel, häufigste zuerst */
-    fun mostPlayed(limit: Int = 50): List<Pair<Track, Int>> {
-        val byId = tracks.associateBy { it.id }
-        return _state.value.playCounts.entries
-            .filter { it.value > 0 }
-            .sortedByDescending { it.value }
-            .mapNotNull { (id, count) -> byId[id]?.let { it to count } }
-            .take(limit)
-    }
-
-    /** Verlauf: Titel mit Zeitpunkt, neueste zuerst */
-    fun history(limit: Int = MAX_HISTORY): List<Pair<Track, Long>> {
-        val byId = tracks.associateBy { it.id }
-        return _state.value.history.mapNotNull { e -> byId[e.trackId]?.let { it to e.at } }.take(limit)
-    }
-
-    /** Zuletzt gehört, jeder Titel nur einmal */
-    fun recentlyPlayed(limit: Int = 20): List<Track> = history().map { it.first }.distinctBy { it.id }.take(limit)
-
-    fun clearHistory() {
-        _state.update { it.copy(history = emptyList(), playCounts = emptyMap()) }
-        save()
-    }
-
-    // endregion
+    // Oft gespielt, Verlauf, Statistik: siehe LibraryHistory.kt
 
     fun createPlaylist(name: String): Playlist {
         val playlist = Playlist(name = name.trim().ifEmpty { "Neue Playlist" })
@@ -574,84 +436,8 @@ class Library(
     /** Aktueller Stand für eine Sicherung */
     fun snapshot(): LibraryState = _state.value
 
-    /**
-     * Spielt eine Sicherung ein, ohne Vorhandenes zu verlieren: Titel werden über ID, Herkunft oder
-     * Titel+Interpret+Länge wiedererkannt; fehlende Titel kommen aus [musicFiles] (Dateiname → Datei), falls vorhanden.
-     * Playlists werden über den Namen zusammengeführt, Herzen/Kurzwahl vereinigt, Zähler und Hörzeit übernommen.
-     */
-    suspend fun restore(backup: LibraryState, musicFiles: Map<String, File>, artworkFiles: Map<String, File>): RestoreResult {
-        val idMap = mutableMapOf<String, String>()
-        var added = 0
-        var matched = 0
-        var missing = 0
-        val newTracks = mutableListOf<Track>()
-        val reserved = mutableListOf<String>()
-        try {
-            for (bt in backup.tracks) {
-                val existing = track(bt.id)
-                    ?: tracks.firstOrNull { bt.source.isNotEmpty() && it.source == bt.source }
-                    ?: tracks.firstOrNull {
-                        it.title.equals(bt.title, ignoreCase = true) && it.artist.equals(bt.artist, ignoreCase = true) &&
-                            kotlin.math.abs(it.durationMs - bt.durationMs) < 2_000
-                    }
-                if (existing != null) {
-                    idMap[bt.id] = existing.id; matched++; continue
-                }
-                val file = musicFiles[bt.fileName]
-                if (file == null || !file.exists()) { missing++; continue }
-                val destination = mutex.withLock {
-                    storage.uniqueDestination(FileNames.sanitize(bt.fileName)).also { importing += it.name; reserved += it.name }
-                }
-                withContext(Dispatchers.IO) { file.copyTo(destination, overwrite = false) }
-                val id = if (newTracks.none { it.id == bt.id }) bt.id else java.util.UUID.randomUUID().toString()
-                artworkFiles[bt.id]?.takeIf { it.exists() }?.let { art ->
-                    withContext(Dispatchers.IO) { art.copyTo(storage.artworkFor(id), overwrite = true) }
-                }
-                newTracks += bt.copy(id = id, fileName = destination.name)
-                idMap[bt.id] = id
-                added++
-            }
 
-            fun map(ids: List<String>) = ids.mapNotNull { idMap[it] }
-            mutex.withLock {
-                _state.update { s ->
-                    var playlists = s.playlists
-                    for (bp in backup.playlists) {
-                        val ids = map(bp.trackIds)
-                        val target = if (bp.id == DOWNLOADS_PLAYLIST_ID) playlists.firstOrNull { it.id == DOWNLOADS_PLAYLIST_ID }
-                            else playlists.firstOrNull { it.id != DOWNLOADS_PLAYLIST_ID && it.name.equals(bp.name.trim(), ignoreCase = true) }
-                        playlists = if (target != null) {
-                            playlists.map { if (it.id == target.id) it.copy(trackIds = (it.trackIds + ids).distinct()) else it }
-                        } else {
-                            val id = if (playlists.none { it.id == bp.id }) bp.id else java.util.UUID.randomUUID().toString()
-                            playlists + Playlist(id = id, name = bp.name, trackIds = ids.distinct())
-                        }
-                    }
-                    val counts = s.playCounts.toMutableMap()
-                    backup.playCounts.forEach { (id, n) -> idMap[id]?.let { counts[it] = maxOf(counts[it] ?: 0, n) } }
-                    val listened = s.listenedByMonth.toMutableMap()
-                    backup.listenedByMonth.forEach { (k, v) -> listened[k] = maxOf(listened[k] ?: 0, v) }
-                    fun mergeEvents(a: List<PlayEvent>, b: List<PlayEvent>, max: Int) =
-                        (a + b.mapNotNull { e -> idMap[e.trackId]?.let { e.copy(trackId = it) } })
-                            .distinctBy { it.trackId to it.at }.sortedByDescending { it.at }.take(max)
-                    s.copy(
-                        tracks = s.tracks + newTracks,
-                        playlists = playlists,
-                        pinned = (s.pinned + map(backup.pinned)).distinct(),
-                        favorites = (s.favorites + map(backup.favorites)).distinct(),
-                        playCounts = counts,
-                        history = mergeEvents(s.history, backup.history, MAX_HISTORY),
-                        plays = mergeEvents(s.plays, backup.plays, Stats.MAX_PLAYS),
-                        listenedByMonth = listened,
-                    )
-                }
-            }
-            save()
-            return RestoreResult(added, matched, missing, backup.playlists.size)
-        } finally {
-            mutex.withLock { importing -= reserved.toSet() }
-        }
-    }
+    // Wiederherstellen: siehe LibraryBackup.kt
 
     // endregion
 
@@ -664,8 +450,20 @@ class Library(
             .onSuccess { loaded -> _state.value = loaded.copy(pinned = loaded.pinned.filter { id -> loaded.tracks.any { it.id == id } }) }
     }
 
+    /** Änderung merken – geschrieben wird gebündelt im Hintergrund (nie im Haupt-Thread) */
+    internal fun save() {
+        dirty = true
+        saveRequests.trySend(Unit)
+    }
+
+    /** Sofort schreiben, falls etwas offen ist (z. B. wenn die App in den Hintergrund geht) */
+    fun flush() {
+        if (dirty) writeNow()
+    }
+
     @Synchronized
-    private fun save() {
+    private fun writeNow() {
+        dirty = false
         val text = json.encodeToString(LibraryState.serializer(), _state.value.copy(version = LibraryState.CURRENT_VERSION))
         val tmp = File(storage.indexFile.parentFile, storage.indexFile.name + ".tmp")
         tmp.writeText(text)
@@ -674,6 +472,7 @@ class Library(
 
     /** Nur für automatische Tests: leere Bibliothek */
     fun resetForTests() {
+        dirty = false
         storage.resetAll()
         _state.value = LibraryState()
         ensureDownloadsPlaylist()
@@ -681,6 +480,7 @@ class Library(
 
     companion object {
         const val MAX_HISTORY = 300
+        const val SAVE_DELAY_MS = 400L
     }
 
     private fun ensureDownloadsPlaylist() {

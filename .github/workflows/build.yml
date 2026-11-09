@@ -177,6 +177,31 @@ jobs:
         working-directory: android
         run: gradle --no-daemon --stacktrace testDebugUnitTest assembleRelease assembleDebug assembleDebugAndroidTest
 
+      - name: Mit neuem Schlüssel signieren (Schlüsselwechsel)
+        env:
+          NEW_KEYSTORE_BASE64: ${{ secrets.ANDROID_NEW_KEYSTORE_BASE64 }}
+          NEW_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_NEW_KEYSTORE_PASSWORD }}
+          NEW_KEY_ALIAS: ${{ secrets.ANDROID_NEW_KEY_ALIAS }}
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          if [ -z "$NEW_KEYSTORE_BASE64" ]; then
+            echo "::warning::Neuer Signier-Schlüssel ist noch nicht als GitHub-Secret hinterlegt – APK bleibt mit dem alten Schlüssel signiert."
+            exit 0
+          fi
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          echo "$NEW_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/new.p12"
+          # Nachweis „alter Schlüssel → neuer Schlüssel“ (Android 9+ akzeptiert dann nur noch den neuen)
+          "$BT/apksigner" rotate --out "$RUNNER_TEMP/lineage" \
+            --old-signer --ks android/keystore/mp3player-release.jks --ks-key-alias mp3player --ks-pass pass:mp3player-release \
+            --new-signer --ks "$RUNNER_TEMP/new.p12" --ks-key-alias "$NEW_KEY_ALIAS" --ks-pass env:NEW_KEYSTORE_PASSWORD
+          "$BT/apksigner" sign --out "$RUNNER_TEMP/rotated.apk" --lineage "$RUNNER_TEMP/lineage" --rotation-min-sdk-version 28 \
+            --ks android/keystore/mp3player-release.jks --ks-key-alias mp3player --ks-pass pass:mp3player-release \
+            --next-signer --ks "$RUNNER_TEMP/new.p12" --ks-key-alias "$NEW_KEY_ALIAS" --ks-pass env:NEW_KEYSTORE_PASSWORD \
+            "$APK"
+          "$BT/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/rotated.apk" | grep -E "Verified using|Signer|SHA-256" | head -20
+          cp "$RUNNER_TEMP/rotated.apk" "$APK"
+          rm -f "$RUNNER_TEMP/new.p12"
+
       - name: APK bereitstellen
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk MP3Player.apk

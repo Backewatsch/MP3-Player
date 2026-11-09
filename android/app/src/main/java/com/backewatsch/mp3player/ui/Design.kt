@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player.ui
 
+import com.backewatsch.mp3player.data.*
+
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.animation.core.RepeatMode

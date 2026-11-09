@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player
 
+import com.backewatsch.mp3player.data.*
+
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry

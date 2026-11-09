@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player
 
+import com.backewatsch.mp3player.data.*
+
 import android.app.Application
 import android.content.Context
 import android.net.Uri

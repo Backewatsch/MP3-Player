@@ -42,6 +42,12 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
+    override fun onStop() {
+        super.onStop()
+        // Offene Änderungen sofort sichern, bevor Android die App ggf. beendet
+        app.scope.launch(kotlinx.coroutines.Dispatchers.IO) { app.library.flush() }
+    }
+
     override fun onResume() {
         super.onResume()
         lifecycleScope.launch {

@@ -1,5 +1,7 @@
 package com.backewatsch.mp3player.player
 
+import com.backewatsch.mp3player.data.*
+
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes

@@ -41,6 +41,8 @@ import kotlinx.coroutines.launch
 
 val LocalApp = staticCompositionLocalOf<App> { error("App fehlt") }
 val LocalNav = staticCompositionLocalOf<AppNavigation> { error("Navigation fehlt") }
+/** Lieblingssongs (IDs) – einmal zentral beobachtet statt in jeder Liedzeile */
+val LocalFavorites = androidx.compose.runtime.compositionLocalOf<Set<String>> { emptySet() }
 
 /** Tabs und Navigation innerhalb der Mediathek */
 const val TAB_START = 0
@@ -74,7 +76,10 @@ class AppNavigation {
 fun MainScreen() {
     val app = LocalContext.current.app
     val nav = remember { AppNavigation() }
-    CompositionLocalProvider(LocalApp provides app, LocalNav provides nav) {
+    val favoriteIds by app.library.state.collectAsState().let { lib ->
+        androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { lib.value.favorites.toSet() } }
+    }
+    CompositionLocalProvider(LocalApp provides app, LocalNav provides nav, LocalFavorites provides favoriteIds) {
         val downloads by app.downloads.items.collectAsState()
         val unseen by app.downloads.unseen.collectAsState()
         val active = downloads.count { it.state is com.backewatsch.mp3player.download.DownloadRepository.State.Running ||
