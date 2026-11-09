@@ -189,7 +189,9 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(pin.waitForExistence(timeout: 5))
         pin.tap()
         goBackToRoot()
+        // Kurzwahl steht ganz oben – die Liste ist evtl. noch nach unten gescrollt
         let pinned = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "Kurzwahl")).firstMatch
+        for _ in 0..<6 where !(pinned.exists && pinned.isHittable) { app.swipeDown() }
         XCTAssertTrue(pinned.waitForExistence(timeout: 5), "Kurzwahl erscheint nicht")
         screenshot("16-Mediathek-Kurzwahl")
     }
