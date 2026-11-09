@@ -220,6 +220,11 @@ jobs:
             gradle --no-daemon connectedDebugAndroidTest > ../android-test.log 2>&1 || touch ../android-test-failed
             adb pull /sdcard/Android/data/com.backewatsch.mp3player/files/screenshots ../android-screenshots || true
             grep -E "Tests on|tests completed|FAILED|AssertionError|Exception" ../android-test.log | head -60 || true
+            # Absturzursachen (falls die App abgestürzt ist)
+            echo "===== CRASH-LOG ====="
+            adb logcat -d -b crash | tail -120 || true
+            adb logcat -d | grep -E -A40 "FATAL EXCEPTION|Fatal signal|ANR in com.backewatsch" | head -200 || true
+            echo "===== ENDE CRASH-LOG ====="
             test ! -f ../android-test-failed
 
       - name: Screenshots als Vorschau ins Log schreiben
