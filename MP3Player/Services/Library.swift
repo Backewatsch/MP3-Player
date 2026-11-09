@@ -217,14 +217,18 @@ final class Library: ObservableObject {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         lyricsByID[track.id] = clean.isEmpty ? nil : clean
         save()
+        writeTags(track, Id3Writer.Update(lyrics: clean))
     }
 
     func hasCustomCover(_ track: Track) -> Bool { customCovers.contains(track.id) }
 
     func setCustomCover(_ track: Track, image: UIImage) {
         let thumb = image.preparingThumbnail(of: CGSize(width: 800, height: 800)) ?? image
-        try? thumb.jpegData(compressionQuality: 0.85)?.write(to: track.artworkURL, options: .atomic)
+        let jpeg = thumb.jpegData(compressionQuality: 0.85)
+        try? jpeg?.write(to: track.artworkURL, options: .atomic)
         ArtworkCache.shared.remove(track.id)
+        // Cover auch in die MP3 schreiben
+        if let jpeg { writeTags(track, Id3Writer.Update(cover: jpeg)) }
         if !customCovers.contains(track.id) { customCovers.insert(track.id, at: 0) }
         coverVersion += 1
         save()
@@ -517,11 +521,54 @@ final class Library: ObservableObject {
     }
 
     func rename(_ track: Track, title: String, artist: String) {
+        let current = tracks.first { $0.id == track.id } ?? track
+        editInfo(track, title: title, artist: artist, album: current.album, genre: current.genre)
+    }
+
+    /// Infos ändern – in der Mediathek und direkt in der MP3 (dann stimmen sie auch in anderen Apps)
+    func editInfo(_ track: Track, title: String, artist: String, album: String, genre: String) {
         guard let i = tracks.firstIndex(where: { $0.id == track.id }) else { return }
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         tracks[i].title = t.isEmpty ? tracks[i].title : t
         tracks[i].artist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        tracks[i].album = album.trimmingCharacters(in: .whitespacesAndNewlines)
+        let g = Genres.normalize(genre)
+        tracks[i].genre = g.isEmpty ? genre.trimmingCharacters(in: .whitespacesAndNewlines) : g
         save()
+        let edited = tracks[i]
+        writeTags(edited, Id3Writer.Update(title: edited.title, artist: edited.artist, album: edited.album, genre: edited.genre))
+    }
+
+    /// Änderungen in die MP3 schreiben (Fehler ändern nichts an der Mediathek)
+    func writeTags(_ track: Track, _ update: Id3Writer.Update) {
+        guard Storage.isMP3(track.fileName) else { return }
+        let url = track.fileURL
+        Task.detached(priority: .utility) { try? Id3Writer.write(url, update) }
+    }
+
+    // MARK: Genres
+
+    /// Genres der vorhandenen Lieder einmal aus den Dateien lesen (ältere Bibliotheken)
+    func scanGenresOnce() async {
+        let key = "genresScanned"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        for t in tracks where t.genre.isEmpty {
+            let g = await Self.readGenre(AVURLAsset(url: t.fileURL))
+            if !g.isEmpty, let i = tracks.firstIndex(where: { $0.id == t.id }) { tracks[i].genre = g }
+        }
+        save()
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
+    var genreNames: [String] {
+        var seen = Set<String>()
+        return tracks.map(\.genre).filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    func tracks(inGenre genre: String) -> [Track] {
+        tracks.filter { $0.genre.caseInsensitiveCompare(genre) == .orderedSame }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
     /// Korrigiert die Dauer, wenn der Player sie genauer kennt als die Metadaten.
@@ -699,6 +746,22 @@ final class Library: ObservableObject {
     }
 
     /// Liest ID3-/iTunes-Metadaten (Titel, Interpret, Dauer, Cover).
+    /// Genre aus ID3 (TCON) bzw. iTunes-Angaben, vereinheitlicht
+    nonisolated static func readGenre(_ asset: AVURLAsset) async -> String {
+        var items: [AVMetadataItem] = []
+        for format in (try? await asset.load(.availableMetadataFormats)) ?? [] {
+            items += (try? await asset.loadMetadata(for: format)) ?? []
+        }
+        for item in items where item.identifier == .id3MetadataContentType || item.identifier == .iTunesMetadataUserGenre
+            || item.identifier == .commonIdentifierType {
+            if let value = try? await item.load(.stringValue) {
+                let g = Genres.normalize(value)
+                if !g.isEmpty { return g }
+            }
+        }
+        return ""
+    }
+
     nonisolated static func makeTrack(for url: URL, artworkTo: URL? = nil) async -> Track {
         let asset = AVURLAsset(url: url)
         var title: String?
@@ -724,8 +787,9 @@ final class Library: ObservableObject {
             }
         }
 
+        let genre = await readGenre(asset)
         let fallbackTitle = (url.lastPathComponent as NSString).deletingPathExtension
-        let track = Track(
+        var track = Track(
             id: UUID(),
             fileName: url.lastPathComponent,
             title: (title?.isEmpty == false ? title! : fallbackTitle),
@@ -734,6 +798,7 @@ final class Library: ObservableObject {
             addedAt: Date(),
             album: album?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         )
+        track.genre = genre
         if let artworkData, let image = UIImage(data: artworkData) {
             let thumb = image.preparingThumbnail(of: CGSize(width: 600, height: 600)) ?? image
             try? thumb.jpegData(compressionQuality: 0.85)?.write(to: artworkTo ?? track.artworkURL, options: .atomic)

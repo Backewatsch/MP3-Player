@@ -72,6 +72,8 @@ struct Track: Identifiable, Codable, Hashable {
     var duration: Double
     var addedAt: Date
     var album: String = ""
+    /// Genre (z. B. „Hip-Hop“), aus der Datei gelesen oder selbst eingetragen
+    var genre: String = ""
 
     var fileURL: URL { Storage.documents.appendingPathComponent(fileName) }
     var artworkURL: URL { Storage.artwork.appendingPathComponent("\(id.uuidString).jpg") }
@@ -79,7 +81,7 @@ struct Track: Identifiable, Codable, Hashable {
 
 extension Track {
     enum CodingKeys: String, CodingKey {
-        case id, fileName, title, artist, duration, addedAt, album
+        case id, fileName, title, artist, duration, addedAt, album, genre
     }
 
     /// Ältere Bibliotheken (vor Version 1.0.9) haben noch kein Album gespeichert.
@@ -92,6 +94,7 @@ extension Track {
         duration = try c.decode(Double.self, forKey: .duration)
         addedAt = try c.decode(Date.self, forKey: .addedAt)
         album = try c.decodeIfPresent(String.self, forKey: .album) ?? ""
+        genre = try c.decodeIfPresent(String.self, forKey: .genre) ?? ""
     }
 }
 

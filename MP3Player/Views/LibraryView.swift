@@ -13,6 +13,8 @@ enum LibraryRoute: Hashable {
     case stats
     case smart(String)
     case duplicates
+    case genres
+    case genre(String)
 }
 
 /// Tab „Mediathek“: Kurzwahl, Titel/Alben/Interpreten und Playlists (inkl. neue Playlist erstellen).
@@ -31,12 +33,76 @@ struct MediathekView: View {
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
 
-    private var searchResults: [Track] {
-        let q = search.trimmingCharacters(in: .whitespaces)
-        return library.sortedTracks.filter {
-            $0.title.localizedCaseInsensitiveContains(q) || $0.artist.localizedCaseInsensitiveContains(q)
-                || $0.album.localizedCaseInsensitiveContains(q)
+    @AppStorage("recentSearches") private var recentRaw = ""
+    private var recentSearches: [String] { recentRaw.split(separator: "\n").map(String.init) }
+
+    private func rememberSearch() {
+        recentRaw = LibrarySearch.remember(recentSearches, search).joined(separator: "\n")
+    }
+
+    /// Suchergebnisse nach Art sortiert (wie in den Apple-Apps)
+    @ViewBuilder private var searchSections: some View {
+        let r = LibrarySearch.run(tracks: library.tracks, playlists: library.playlists, query: search)
+        if r.isEmpty {
+            Section {
+                Text("Keine Treffer für „\(search.trimmingCharacters(in: .whitespaces))“").foregroundStyle(.secondary)
+            }
         }
+        if !r.artists.isEmpty {
+            Section {
+                ForEach(r.artists, id: \.self) { name in
+                    NavigationLink(value: LibraryRoute.artist(name)) {
+                        resultRow(name, "Interpret", art: ArtworkView(track: library.tracks(byArtist: name).first, size: 44, cornerRadius: 22))
+                    }
+                    .simultaneousGesture(TapGesture().onEnded { rememberSearch() })
+                }
+            } header: { Text("Interpreten") }
+        }
+        if !r.albums.isEmpty || !r.genres.isEmpty || !r.playlists.isEmpty {
+            Section {
+                ForEach(r.albums, id: \.self) { name in
+                    NavigationLink(value: LibraryRoute.album(name)) {
+                        resultRow(name, "Album", art: ArtworkView(track: library.tracks(inAlbum: name).first, size: 44, cornerRadius: 6))
+                    }
+                }
+                ForEach(r.genres, id: \.self) { name in
+                    NavigationLink(value: LibraryRoute.genre(name)) {
+                        resultRow(name, "Genre", art: symbolArt("guitars.fill"))
+                    }
+                }
+                ForEach(r.playlists) { p in
+                    NavigationLink(value: LibraryRoute.playlist(p.id)) {
+                        resultRow(p.name, "Playlist · \(p.trackIDs.count) Titel", art: PlaylistArtwork(playlist: p, first: library.tracks(in: p).first, size: 44, cornerRadius: 6))
+                    }
+                }
+            } header: { Text("Alben, Genres und Playlists") }
+        }
+        if !r.tracks.isEmpty {
+            Section {
+                ForEach(Array(r.tracks.enumerated()), id: \.element.id) { index, track in
+                    TrackListRow(track: track) { rememberSearch(); player.play(r.tracks, startAt: index) }
+                }
+            } header: { Text("Lieder (\(r.tracks.count))") }
+        }
+    }
+
+    private func resultRow<A: View>(_ title: String, _ subtitle: String, art: A) -> some View {
+        HStack(spacing: 12) {
+            art
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).lineLimit(1)
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func symbolArt(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.title3)
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .background(LinearGradient(colors: [Color.accentColor.opacity(0.7), Color.accentColor], startPoint: .top, endPoint: .bottom),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     var body: some View {
@@ -45,12 +111,7 @@ struct MediathekView: View {
                 if search.trimmingCharacters(in: .whitespaces).isEmpty {
                     overview
                 } else {
-                    let results = searchResults
-                    Section {
-                        ForEach(Array(results.enumerated()), id: \.element.id) { index, track in
-                            TrackListRow(track: track) { player.play(results, startAt: index) }
-                        }
-                    } header: { SectionTitle(text: "\(results.count) Treffer") }
+                    searchSections
                 }
             }
             .listStyle(.insetGrouped)
@@ -71,7 +132,15 @@ struct MediathekView: View {
                 }
             }
             .navigationTitle("Mediathek")
-            .searchable(text: $search, prompt: "Titel, Interpret oder Album")
+            .searchable(text: $search, prompt: "Lieder, Interpreten, Alben, Genres")
+            .searchSuggestions {
+                if search.isEmpty {
+                    ForEach(recentSearches, id: \.self) { q in
+                        Label(q, systemImage: "clock.arrow.circlepath").searchCompletion(q)
+                    }
+                }
+            }
+            .onSubmit(of: .search) { rememberSearch() }
             .navigationDestination(for: LibraryRoute.self, destination: destination)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -211,6 +280,10 @@ struct MediathekView: View {
                 categoryRow("Interpreten", "music.mic", count: artistNames.count)
             }
             .accessibilityIdentifier("category-Interpreten")
+            NavigationLink(value: LibraryRoute.genres) {
+                categoryRow("Genres", "guitars", count: library.genreNames.count)
+            }
+            .accessibilityIdentifier("category-Genres")
             NavigationLink(value: LibraryRoute.stats) {
                 categoryRow("Statistik", "chart.bar.fill", count: nil)
             }
@@ -303,6 +376,12 @@ struct MediathekView: View {
             if let kind = SmartPlaylist(rawValue: name) { SmartPlaylistView(kind: kind) }
         case .duplicates:
             DuplicatesView()
+        case .genres:
+            GroupListView(title: "Genres", names: library.genreNames, symbol: "guitars") { .genre($0) }
+                tracksFor: { library.tracks(inGenre: $0) }
+        case .genre(let name):
+            TrackCollectionList(title: name, subtitle: "Genre", tracks: library.tracks(inGenre: name))
+                .navigationTitle(name)
         }
     }
 }

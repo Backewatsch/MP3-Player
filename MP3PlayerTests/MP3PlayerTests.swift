@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import MP3Player
 
 /// Hilfsfunktionen für die Tests.
@@ -1123,5 +1124,54 @@ final class RecapTests: XCTestCase {
         XCTAssertEqual(r.listenedSeconds, 180, "ohne Hörzeit: aus Liedlänge geschätzt")
         XCTAssertFalse(r.hasData)
         XCTAssertEqual(Recap.number(12_345), "12.345")
+    }
+}
+
+// MARK: - Genres, Suche, Infos in die MP3 schreiben
+
+final class SearchAndTagsTests: XCTestCase {
+    func testNormalizesGenres() {
+        XCTAssertEqual(Genres.normalize("(17)"), "Rock")
+        XCTAssertEqual(Genres.normalize("7"), "Hip-Hop")
+        XCTAssertEqual(Genres.normalize("(17)Rock"), "Rock")
+        XCTAssertEqual(Genres.normalize("hip hop"), "Hip-Hop")
+        XCTAssertEqual(Genres.normalize("Pop; Dance"), "Pop")
+        XCTAssertEqual(Genres.normalize("deutsch rap"), "Deutschrap")
+        XCTAssertEqual(Genres.normalize("  "), "")
+        XCTAssertEqual(Genres.normalize("(999)"), "")
+    }
+
+    func testSearchFindsCategories() {
+        var a = Track(id: UUID(), fileName: "a.mp3", title: "Bella Ciao", artist: "Band", duration: 3, addedAt: Date())
+        a.genre = "Folk"
+        var b = Track(id: UUID(), fileName: "b.mp3", title: "Sommernacht", artist: "Bella", duration: 3, addedAt: Date())
+        b.album = "Bella Album"; b.genre = "Hip-Hop"
+        let playlist = Playlist(id: UUID(), name: "Bella Mix", trackIDs: [])
+        let r = LibrarySearch.run(tracks: [a, b], playlists: [playlist], query: "bella")
+        XCTAssertEqual(r.artists, ["Bella"])
+        XCTAssertEqual(r.albums, ["Bella Album"])
+        XCTAssertEqual(r.playlists.map(\.name), ["Bella Mix"])
+        XCTAssertEqual(r.tracks.first?.title, "Bella Ciao", "Titel-Treffer zuerst")
+        XCTAssertEqual(LibrarySearch.run(tracks: [a, b], playlists: [], query: "hip").genres, ["Hip-Hop"])
+        XCTAssertTrue(LibrarySearch.run(tracks: [a, b], playlists: [], query: "xyz").isEmpty)
+        XCTAssertEqual(LibrarySearch.remember(["alt", "Bella"], "bella"), ["bella", "alt"])
+        XCTAssertEqual(LibrarySearch.remember(["alt"], "a"), ["alt"], "zu kurz")
+    }
+
+    func testWritesTagsIntoMP3() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tags-\(UUID().uuidString).mp3")
+        try FileManager.default.copyItem(at: Fixture.url("tagged.mp3"), to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let before = try Mp3Trimmer.parse([UInt8](Data(contentsOf: url))).frames.count
+        try Id3Writer.write(url, Id3Writer.Update(title: "Neuer Titel", artist: "Neue Band", album: "Neues Album", genre: "Hip-Hop", lyrics: "Erste Zeile"))
+        let track = await Library.makeTrack(for: url, artworkTo: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).jpg"))
+        XCTAssertEqual(track.title, "Neuer Titel")
+        XCTAssertEqual(track.artist, "Neue Band")
+        XCTAssertEqual(track.album, "Neues Album")
+        XCTAssertEqual(track.genre, "Hip-Hop")
+        let lyrics = try await AVURLAsset(url: url).load(.lyrics)
+        XCTAssertEqual(lyrics, "Erste Zeile")
+        // Musik unverändert
+        XCTAssertEqual(try Mp3Trimmer.parse([UInt8](Data(contentsOf: url))).frames.count, before)
     }
 }

@@ -73,6 +73,6 @@ struct MP3PlayerApp: App {
         if !ProcessInfo.processInfo.arguments.contains("-uiTestReset") {
             player.restoreQueue(from: library.tracks)
         }
-        Task { await library.analyzeLoudness() }
+        Task { await library.scanGenresOnce(); await library.analyzeLoudness() }
     }
 }

@@ -72,19 +72,40 @@ struct TrackRow: View {
     }
 }
 
-/// Dialog zum Bearbeiten von Titel und Interpret.
+/// Dialog zum Bearbeiten von Titel, Interpret, Album und Genre (wird auch in die MP3 geschrieben)
 struct EditTrackSheet: View {
     @EnvironmentObject private var library: Library
     @Environment(\.dismiss) private var dismiss
     let track: Track
     @State private var title = ""
     @State private var artist = ""
+    @State private var album = ""
+    @State private var genre = ""
 
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Titel", text: $title)
-                TextField("Interpret", text: $artist)
+                Section {
+                    TextField("Titel", text: $title)
+                    TextField("Interpret", text: $artist)
+                    TextField("Album", text: $album)
+                    TextField("Genre", text: $genre)
+                } footer: {
+                    Text("Die Angaben werden auch in die MP3 geschrieben – so stimmen sie auch in anderen Apps.")
+                }
+                if !library.genreNames.isEmpty {
+                    Section("Vorhandene Genres") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack {
+                                ForEach(library.genreNames, id: \.self) { g in
+                                    Button(g) { genre = g }
+                                        .buttonStyle(.bordered)
+                                        .buttonBorderShape(.capsule)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             .navigationTitle("Infos bearbeiten")
             .navigationBarTitleDisplayMode(.inline)
@@ -92,17 +113,21 @@ struct EditTrackSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sichern") {
-                        library.rename(track, title: title, artist: artist)
+                        library.editInfo(track, title: title, artist: artist, album: album, genre: genre)
                         dismiss()
                     }
+                    .accessibilityIdentifier("editSave")
                 }
             }
             .onAppear {
-                title = track.title
-                artist = track.artist
+                let current = library.track(id: track.id) ?? track
+                title = current.title
+                artist = current.artist
+                album = current.album
+                genre = current.genre
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 }
 
