@@ -25,10 +25,7 @@ class PlayerWidget : AppWidgetProvider() {
         when (intent.action) {
             ACTION_TOGGLE -> {
                 // Nach einem Neustart ist die Wiedergabeliste leer → alle Lieder abspielen
-                if (player.state.value.queueIds.isEmpty()) {
-                    val all = context.app.library.sortedTracks(context.app.trackSort.value)
-                    if (all.isNotEmpty()) player.play(all, 0) else openApp(context)
-                } else player.togglePlayPause()
+                if (context.app.library.tracks.isEmpty()) openApp(context) else player.togglePlayPauseOrStart()
             }
             ACTION_NEXT -> player.next()
             ACTION_PREV -> player.previous()
@@ -87,7 +84,7 @@ class PlayerWidget : AppWidgetProvider() {
         )
 
         private fun openApp(context: Context) {
-            context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            runCatching { context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
     }
 }

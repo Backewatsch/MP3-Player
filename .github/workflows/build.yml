@@ -223,7 +223,9 @@ jobs:
             # Absturzursachen (falls die App abgestürzt ist)
             echo "===== CRASH-LOG ====="
             adb logcat -d -b crash | tail -120 || true
-            adb logcat -d | grep -E -A40 "FATAL EXCEPTION|Fatal signal|ANR in com.backewatsch" | head -200 || true
+            # Warum Android die App beendet hat (Speicher, Signal, ANR …)
+            adb shell dumpsys activity exit-info com.backewatsch.mp3player | head -80 || true
+            adb logcat -d | grep -E "com\.backewatsch|lowmemorykiller|lmkd" | grep -iE "kill|died|crash|signal|anr|exception|fatal" | tail -60 || true
             echo "===== ENDE CRASH-LOG ====="
             test ! -f ../android-test-failed
 

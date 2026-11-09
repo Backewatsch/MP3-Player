@@ -118,10 +118,12 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasText("Sommerhits", ignoreCase = true), 5_000)
         screenshot("a02-Neue-Playlist")
         rule.onNodeWithContentDescription("Zurück").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("settingsButton"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasTestTag("libraryList"), 5_000)
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasText("Sommerhits", ignoreCase = true))
         rule.waitUntilAtLeastOneExists(hasText("Sommerhits", ignoreCase = true), 5_000)
 
         // Info & Updates
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasTestTag("settingsButton"))
         rule.onNodeWithTag("settingsButton").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("currentVersion"), 5_000)
         rule.onNodeWithTag("convertAllButton").assertExists()

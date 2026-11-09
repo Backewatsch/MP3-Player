@@ -290,6 +290,18 @@ class PlayerConnection(
         }
     }
 
+    /** Widget: Abspielen/Pause – bei leerer Wiedergabeliste alle Lieder starten */
+    fun togglePlayPauseOrStart() = withController { c ->
+        when {
+            c.mediaItemCount == 0 -> library.sortedTracks().takeIf { it.isNotEmpty() }?.let { play(it, 0) }
+            c.isPlaying -> c.pause()
+            else -> {
+                if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0)
+                c.prepare(); c.play()
+            }
+        }
+    }
+
     fun togglePlayPause() = withController { c ->
         if (c.isPlaying) c.pause() else {
             if (c.playbackState == Player.STATE_ENDED) c.seekTo(0, 0)
