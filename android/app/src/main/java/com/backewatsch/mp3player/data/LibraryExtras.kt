@@ -37,21 +37,39 @@ fun Library.hasCustomCover(track: Track) = track.id in _state.value.customCovers
 
 /** Eigenes Cover (JPEG-Bytes) für einen Titel speichern */
 fun Library.setCustomCover(track: Track, jpeg: ByteArray) {
+    val firstTime = track.id !in _state.value.customCovers
     storage.artworkFor(track.id).writeBytes(jpeg)
     _state.update { s -> s.copy(customCovers = (listOf(track.id) + s.customCovers).distinct()) }
     coverVersion.value++
     save()
-    // Auch in die MP3 schreiben – dann sehen andere Apps das Cover ebenfalls
-    writeTags(track, Id3Writer.Update(cover = jpeg))
+    // Auch in die MP3 schreiben – dann sehen andere Apps das Cover ebenfalls.
+    // Vorher das Original-Cover sichern, damit „Eigenes Cover entfernen“ es zurückholen kann.
+    val file = fileOf(track)
+    if (!FileNames.isMp3(file.name)) return
+    val backup = storage.originalCoverFor(track.id)
+    runOnFiles {
+        if (firstTime && !backup.exists()) MetadataReader.read(file).artwork?.let { backup.writeBytes(it) }
+        Id3Writer.write(file, Id3Writer.Update(cover = jpeg))
+    }
 }
 
+/** Eigenes Cover entfernen: das ursprüngliche Cover der MP3 kommt zurück (falls es eines gab) */
 fun Library.removeCustomCover(track: Track) {
     storage.artworkFor(track.id).delete()
-    // Das eigene Cover steckt auch in der MP3 → dort ebenfalls entfernen
-    writeTags(track, Id3Writer.Update(cover = ByteArray(0)))
     _state.update { s -> s.copy(customCovers = s.customCovers - track.id) }
     coverVersion.value++
     save()
+    val file = fileOf(track)
+    if (!FileNames.isMp3(file.name)) return
+    val backup = storage.originalCoverFor(track.id)
+    val thumb = storage.artworkFor(track.id)
+    runOnFiles {
+        val original = backup.takeIf { it.exists() }?.readBytes()
+        Id3Writer.write(file, Id3Writer.Update(cover = original ?: ByteArray(0)))
+        original?.let { MetadataReader.shrinkArtwork(it)?.let { small -> thumb.writeBytes(small) } }
+        backup.delete()
+        coverVersion.value++
+    }
 }
 
 fun Library.playlistCoverFile(playlist: Playlist) = File(storage.artworkDir, "playlist-${playlist.id}.jpg")

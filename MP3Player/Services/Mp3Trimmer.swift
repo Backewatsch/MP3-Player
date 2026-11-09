@@ -200,29 +200,35 @@ extension Library {
         guard canTrim(track) else { throw Mp3Trimmer.TrimError.notMP3 }
         let source = track.fileURL
         let startMs = Int64(start * 1000), endMs = Int64(end * 1000)
-        let (trimmed, newDuration) = try await Task.detached { () throws -> ([UInt8], Double) in
-            let out = try Mp3Trimmer.trim([UInt8](Data(contentsOf: source)), startMs: startMs, endMs: endMs)
-            return (out, Double(try Mp3Trimmer.parse(out).durationMs) / 1000)
-        }.value
 
-        if asCopy {
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: dir) }
-            let base = (track.fileName as NSString).deletingPathExtension
-            let file = dir.appendingPathComponent("\(base) (gekürzt).mp3")
-            try Data(trimmed).write(to: file)
-            let copy = try await importAudio(from: file, move: true)
-            rename(copy, title: track.title + " (gekürzt)", artist: track.artist)
-            setExactDuration(of: copy.id, to: newDuration)
-            return tracks.first { $0.id == copy.id } ?? copy
+        if !asCopy {
+            // Original ersetzen: lesen, schneiden und austauschen in einem Schritt – nacheinander mit anderen
+            // Dateiänderungen, damit nichts verloren geht. Erst komplett schreiben, dann austauschen.
+            let newDuration = try await Self.onFiles { () throws -> Double in
+                let out = try Mp3Trimmer.trim([UInt8](Data(contentsOf: source)), startMs: startMs, endMs: endMs)
+                let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("trim-\(UUID().uuidString).mp3")
+                try Data(out).write(to: tmp)
+                _ = try FileManager.default.replaceItemAt(source, withItemAt: tmp)
+                return Double(try Mp3Trimmer.parse(out).durationMs) / 1000
+            }
+            setExactDuration(of: track.id, to: newDuration)
+            return tracks.first { $0.id == track.id } ?? track
         }
 
-        // Original ersetzen: erst komplett schreiben, dann austauschen (bricht nie halb ab)
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("trim-\(track.id.uuidString).mp3")
-        try Data(trimmed).write(to: tmp)
-        _ = try FileManager.default.replaceItemAt(source, withItemAt: tmp)
-        setExactDuration(of: track.id, to: newDuration)
-        return tracks.first { $0.id == track.id } ?? track
+        let (trimmed, newDuration) = try await Self.onFiles { () throws -> ([UInt8], Double) in
+            let out = try Mp3Trimmer.trim([UInt8](Data(contentsOf: source)), startMs: startMs, endMs: endMs)
+            return (out, Double(try Mp3Trimmer.parse(out).durationMs) / 1000)
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let base = (track.fileName as NSString).deletingPathExtension
+        let file = dir.appendingPathComponent("\(base) (gekürzt).mp3")
+        try Data(trimmed).write(to: file)
+        let copy = try await importAudio(from: file, move: true)
+        rename(copy, title: track.title + " (gekürzt)", artist: track.artist)
+        setExactDuration(of: copy.id, to: newDuration)
+        return tracks.first { $0.id == copy.id } ?? copy
     }
 }

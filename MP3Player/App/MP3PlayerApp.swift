@@ -45,6 +45,7 @@ struct MP3PlayerApp: App {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
+                (Appearance(rawValue: UserDefaults.standard.string(forKey: Appearance.key) ?? "") ?? .dark).apply()
                 Task { await library.rescan() }
                 Task { await updates.checkIfDue() }
             }

@@ -36,7 +36,9 @@ struct ContentView: View {
                 .trackActionsHost()
                 .presentationDragIndicator(.visible)
         }
-        .preferredColorScheme((Appearance(rawValue: appearance) ?? .dark).colorScheme)
+        // Erscheinungsbild direkt am Fenster setzen: so klappt auch der Wechsel zurück auf „Automatisch“ sofort
+        .onAppear { (Appearance(rawValue: appearance) ?? .dark).apply() }
+        .onChange(of: appearance) { (Appearance(rawValue: $0) ?? .dark).apply() }
         .onReceive(NotificationCenter.default.publisher(for: .openTrimEditor)) { note in
             // „Zuschneiden“ aus dem Menü eines Liedes
             guard let id = note.object as? UUID else { return }

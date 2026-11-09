@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Apple-Design: Systemfarben, Hell/Dunkel nach Systemeinstellung, Akzentfarbe aus dem Asset-Katalog („AccentColor“).
 
@@ -22,7 +23,14 @@ enum Appearance: String, CaseIterable, Identifiable {
     var label: String {
         switch self { case .system: return "Automatisch"; case .light: return "Hell"; case .dark: return "Dunkel" }
     }
-    var colorScheme: ColorScheme? {
-        switch self { case .system: return nil; case .light: return .light; case .dark: return .dark }
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self { case .system: return .unspecified; case .light: return .light; case .dark: return .dark }
+    }
+
+    /// Für alle Fenster der App setzen (wirkt auch auf geöffnete Blätter)
+    @MainActor func apply() {
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] { window.overrideUserInterfaceStyle = interfaceStyle }
+        }
     }
 }

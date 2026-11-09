@@ -207,7 +207,7 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
                 ActionRow("Eigenes Cover entfernen", Icons.Default.HideImage) {
                     close()
                     app.scope.launch {
-                        withContext(Dispatchers.IO) { app.library.removeCustomCover(current) }
+                        withContext(Dispatchers.IO) { app.library.removeCustomCover(current); app.library.awaitFileWrites() }
                         app.player.refreshArtwork()
                     }
                 }

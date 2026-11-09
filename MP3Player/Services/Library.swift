@@ -32,7 +32,7 @@ final class Library: ObservableObject {
     nonisolated(unsafe) static var customCoverIDs = Set<UUID>()
     /// Zählt hoch, wenn sich ein Cover geändert hat (Anzeige lädt neu)
     @Published private(set) var coverVersion = 0
-    static let maxHistory = 300
+    nonisolated static let maxHistory = 300
     /// Fortschritt einer laufenden Umwandlung (für die Anzeige), sonst `nil`
     @Published private(set) var conversionStatus: String?
 
@@ -223,21 +223,40 @@ final class Library: ObservableObject {
     func hasCustomCover(_ track: Track) -> Bool { customCovers.contains(track.id) }
 
     func setCustomCover(_ track: Track, image: UIImage) {
+        let firstTime = !customCovers.contains(track.id)
         let thumb = image.preparingThumbnail(of: CGSize(width: 800, height: 800)) ?? image
         let jpeg = thumb.jpegData(compressionQuality: 0.85)
         try? jpeg?.write(to: track.artworkURL, options: .atomic)
         ArtworkCache.shared.remove(track.id)
-        // Cover auch in die MP3 schreiben
-        if let jpeg { writeTags(track, Id3Writer.Update(cover: jpeg)) }
         if !customCovers.contains(track.id) { customCovers.insert(track.id, at: 0) }
         coverVersion += 1
         save()
+        // Cover auch in die MP3 schreiben – vorher das Original sichern, damit „Eigenes Cover entfernen“ es zurückholt
+        guard let jpeg, Storage.isMP3(track.fileName) else { return }
+        let url = track.fileURL
+        let backup = Self.originalCoverURL(track)
+        Self.fileQueue.async {
+            if firstTime, !FileManager.default.fileExists(atPath: backup.path), let original = Id3Writer.picture(url) {
+                try? original.write(to: backup, options: .atomic)
+            }
+            try? Id3Writer.write(url, Id3Writer.Update(cover: jpeg))
+        }
     }
 
+    /// Eigenes Cover entfernen: das ursprüngliche Cover der MP3 kommt zurück (falls es eines gab)
     func removeCustomCover(_ track: Track) async {
         try? FileManager.default.removeItem(at: track.artworkURL)
         ArtworkCache.shared.remove(track.id)
-        // Eingebettetes Cover wiederherstellen
+        if Storage.isMP3(track.fileName) {
+            let url = track.fileURL
+            let backup = Self.originalCoverURL(track)
+            _ = try? await Self.onFiles {
+                let original = try? Data(contentsOf: backup)
+                try Id3Writer.write(url, Id3Writer.Update(cover: original ?? Data()))
+                try? FileManager.default.removeItem(at: backup)
+            }
+        }
+        // Vorschaubild aus dem (wiederhergestellten) Cover der Datei neu erzeugen
         _ = await Self.makeTrack(for: track.fileURL, artworkTo: track.artworkURL)
         customCovers.removeAll { $0 == track.id }
         coverVersion += 1
@@ -500,6 +519,7 @@ final class Library: ObservableObject {
         for track in list {
             try? FileManager.default.removeItem(at: track.fileURL)
             try? FileManager.default.removeItem(at: track.artworkURL)
+            try? FileManager.default.removeItem(at: Self.originalCoverURL(track))
             ArtworkCache.shared.remove(track.id)
         }
         tracks.removeAll { ids.contains($0.id) }
@@ -543,7 +563,26 @@ final class Library: ObservableObject {
     func writeTags(_ track: Track, _ update: Id3Writer.Update) {
         guard Storage.isMP3(track.fileName) else { return }
         let url = track.fileURL
-        Task.detached(priority: .utility) { try? Id3Writer.write(url, update) }
+        Self.fileQueue.async { if FileManager.default.fileExists(atPath: url.path) { try? Id3Writer.write(url, update) } }
+    }
+
+    /// Alle Änderungen an den MP3-Dateien laufen nacheinander im Hintergrund – nie zwei gleichzeitig
+    /// (sonst könnte z. B. Zuschneiden eine gerade geschriebene Info überschreiben).
+    nonisolated static let fileQueue = DispatchQueue(label: "com.backewatsch.mp3player.files", qos: .utility)
+
+    /// Arbeit in der Datei-Warteschlange ausführen und auf das Ergebnis warten
+    nonisolated static func onFiles<T>(_ work: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            fileQueue.async { continuation.resume(with: Result(catching: work)) }
+        }
+    }
+
+    /// Wartet, bis alle Änderungen an den MP3-Dateien geschrieben sind (Tests, Sicherung)
+    nonisolated static func awaitFileWrites() async { _ = try? await onFiles { () } }
+
+    /// Gesichertes Original-Cover aus der MP3 (bevor ein eigenes Cover hineingeschrieben wurde)
+    nonisolated static func originalCoverURL(_ track: Track) -> URL {
+        Storage.artwork.appendingPathComponent("\(track.id.uuidString).original")
     }
 
     // MARK: Genres

@@ -56,6 +56,28 @@ enum Id3Writer {
         try Data(result).write(to: url, options: .atomic)
     }
 
+    /// Bilddaten des Covers (APIC) aus der MP3 – `nil`, wenn keins drin ist
+    static func picture(_ url: URL) -> Data? {
+        guard let bytes = try? [UInt8](Data(contentsOf: url)) else { return nil }
+        guard let frame = readTag(bytes).1.first(where: { $0.id == "APIC" }) else { return nil }
+        let d = frame.data
+        guard d.count > 4 else { return nil }
+        let encoding = d[0]
+        var i = 1
+        while i < d.count && d[i] != 0 { i += 1 } // MIME-Typ
+        i += 2 // Ende des MIME-Typs + Bildtyp
+        // Beschreibung überspringen (UTF-16 endet mit zwei Nullbytes)
+        if encoding == 1 || encoding == 2 {
+            while i + 1 < d.count && !(d[i] == 0 && d[i + 1] == 0) { i += 2 }
+            i += 2
+        } else {
+            while i < d.count && d[i] != 0 { i += 1 }
+            i += 1
+        }
+        guard i < d.count else { return nil }
+        return Data(d[i...])
+    }
+
     /// Vorhandenes Tag lesen: Version, Frames (bei 2.2 keine) und wo die Musik beginnt
     private static func readTag(_ b: [UInt8]) -> (Int, [Frame], Int) {
         guard b.count >= 10, b[0] == 0x49, b[1] == 0x44, b[2] == 0x33 else { return (3, [], 0) }

@@ -6,9 +6,9 @@ import Foundation
 /// Installiert werden sie über AltStore/SideStore (die App kann sich unter iOS nicht selbst ersetzen).
 @MainActor
 final class UpdateChecker: ObservableObject {
-    static let repository = "Backewatsch/MP3-Player"
+    nonisolated static let repository = "Backewatsch/MP3-Player"
     /// Dauerhafte Adresse der AltStore-/SideStore-Quelle (zeigt immer auf das neueste Release).
-    static let sourceURL = URL(string: "https://github.com/\(repository)/releases/latest/download/altstore-source.json")!
+    nonisolated static let sourceURL = URL(string: "https://github.com/\(repository)/releases/latest/download/altstore-source.json")!
     static let releasesPage = URL(string: "https://github.com/\(repository)/releases")!
 
     struct Release: Equatable {

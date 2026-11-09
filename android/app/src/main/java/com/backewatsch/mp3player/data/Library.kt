@@ -286,7 +286,7 @@ class Library(
     fun deleteAll(list: List<Track>) {
         if (list.isEmpty()) return
         val ids = list.map { it.id }.toSet()
-        list.forEach { fileOf(it).delete(); storage.artworkFor(it.id).delete() }
+        list.forEach { fileOf(it).delete(); storage.artworkFor(it.id).delete(); storage.originalCoverFor(it.id).delete() }
         _state.update { s ->
             s.copy(
                 tracks = s.tracks.filter { it.id !in ids },
@@ -337,12 +337,27 @@ class Library(
         writeTags(track, Id3Writer.Update(title = t, artist = artist.trim(), album = album.trim(), genre = g))
     }
 
+    /**
+     * Alle Änderungen an den MP3-Dateien laufen nacheinander im Hintergrund – nie im Hauptthread und nie
+     * zwei gleichzeitig (sonst könnte z. B. Zuschneiden eine gerade geschriebene Info überschreiben).
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    internal val fileDispatcher = Dispatchers.IO.limitedParallelism(1)
+    @Volatile private var lastFileJob: kotlinx.coroutines.Job? = null
+
+    internal fun runOnFiles(block: () -> Unit) {
+        lastFileJob = scope.launch(fileDispatcher) { runCatching(block) }
+    }
+
+    /** Wartet, bis alle Änderungen an den MP3-Dateien geschrieben sind (Tests, Sicherung) */
+    fun awaitFileWrites() = kotlinx.coroutines.runBlocking { lastFileJob?.join() }
+
     /** Änderungen in die MP3 schreiben (Fehler ändern nichts an der Mediathek) */
     internal fun writeTags(track: Track, update: Id3Writer.Update) {
         val file = fileOf(track)
-        if (!FileNames.isMp3(file.name) || !file.exists()) return
-        // Die Datei ist dabei immer vorhanden (neue Fassung wird erst fertig geschrieben, dann ausgetauscht)
-        runCatching { Id3Writer.write(file, update) }
+        if (!FileNames.isMp3(file.name)) return
+        // Die Datei bleibt dabei immer vollständig (neue Fassung wird erst fertig geschrieben, dann ausgetauscht)
+        runOnFiles { if (file.exists()) Id3Writer.write(file, update) }
     }
 
     /** Genres aller Titel einmalig aus den Dateien lesen (ältere Mediatheken kannten noch keine Genres) */

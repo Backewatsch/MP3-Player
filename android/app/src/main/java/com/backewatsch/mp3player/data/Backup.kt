@@ -21,6 +21,8 @@ class Backup(private val library: Library) {
     /** Schreibt die Sicherung; [onProgress] bekommt (fertig, gesamt). */
     suspend fun export(output: OutputStream, includeMusic: Boolean, onProgress: (Int, Int) -> Unit = { _, _ -> }) =
         withContext(Dispatchers.IO) {
+            // Noch laufende Änderungen an den MP3s (Infos, Cover) erst fertig schreiben
+            library.awaitFileWrites()
             val state = library.snapshot()
             ZipOutputStream(output.buffered()).use { zip ->
                 zip.putNextEntry(ZipEntry(INDEX))

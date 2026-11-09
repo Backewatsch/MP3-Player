@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import UIKit
 @testable import MP3Player
 
 /// Hilfsfunktionen für die Tests.
@@ -1173,5 +1174,33 @@ final class SearchAndTagsTests: XCTestCase {
         XCTAssertEqual(lyrics, "Erste Zeile")
         // Musik unverändert
         XCTAssertEqual(try Mp3Trimmer.parse([UInt8](Data(contentsOf: url))).frames.count, before)
+    }
+}
+
+// MARK: - Eigenes Cover entfernen holt das Original zurück
+
+final class CoverRestoreTests: XCTestCase {
+    @MainActor
+    func testRemovingCustomCoverRestoresOriginal() async throws {
+        let library = Library()
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("cover-\(UUID().uuidString).mp3")
+        try FileManager.default.copyItem(at: Fixture.url("tagged.mp3"), to: tmp)
+        let track = try await library.importAudio(from: tmp, move: true)
+        defer { library.delete(track) }
+        let original = try XCTUnwrap(Id3Writer.picture(track.fileURL), "Testlied hat ein Cover")
+
+        let red = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40)).image { ctx in
+            UIColor.red.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
+        library.setCustomCover(track, image: red)
+        await Library.awaitFileWrites()
+        let custom = try XCTUnwrap(Id3Writer.picture(track.fileURL))
+        XCTAssertNotEqual(custom, original, "eigenes Cover steht in der MP3")
+        XCTAssertTrue(library.hasCustomCover(track))
+
+        await library.removeCustomCover(track)
+        XCTAssertEqual(Id3Writer.picture(track.fileURL), original, "Original-Cover wiederhergestellt")
+        XCTAssertFalse(library.hasCustomCover(track))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: Library.originalCoverURL(track).path))
     }
 }

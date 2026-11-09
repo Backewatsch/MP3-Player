@@ -321,7 +321,10 @@ class MoreFeaturesTest {
 
     @Test fun editInfoWritesIntoMp3() {
         val a = add("Bearbeiten", "tagged.mp3")
+        val originalCover = com.backewatsch.mp3player.data.MetadataReader.read(app.library.fileOf(a)).artwork
+        assertTrue("Testlied hat ein eigenes Cover", originalCover != null)
         app.library.editInfo(a, "Neuer Titel", "Neue Band", "Neues Album", "hip hop")
+        app.library.awaitFileWrites()
         val t = app.library.track(a.id)!!
         assertEquals("Hip-Hop", t.genre)
         val info = com.backewatsch.mp3player.data.MetadataReader.read(app.library.fileOf(t))
@@ -339,8 +342,16 @@ class MoreFeaturesTest {
         }.toByteArray()
         app.library.setCustomCover(t, jpeg)
         app.library.setLyrics(t, "La la la")
+        app.library.awaitFileWrites()
         val after = com.backewatsch.mp3player.data.MetadataReader.read(app.library.fileOf(t))
         assertTrue("Cover in der MP3", after.artwork != null)
+        assertFalse("eigenes Cover statt Original", after.artwork!!.contentEquals(originalCover!!))
+        assertEquals("La la la", com.backewatsch.mp3player.data.Id3Lyrics.read(app.library.fileOf(t)))
+        // Eigenes Cover entfernen → das Original-Cover kommt zurück
+        app.library.removeCustomCover(t)
+        app.library.awaitFileWrites()
+        val restored = com.backewatsch.mp3player.data.MetadataReader.read(app.library.fileOf(t)).artwork
+        assertTrue("Original-Cover wiederhergestellt", restored != null && restored.contentEquals(originalCover))
         assertEquals("La la la", com.backewatsch.mp3player.data.Id3Lyrics.read(app.library.fileOf(t)))
         // Mediathek erkennt die Datei weiterhin (keine Doppelten nach dem Neuschreiben)
         kotlinx.coroutines.runBlocking { app.library.rescan() }

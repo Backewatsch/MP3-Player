@@ -20,6 +20,8 @@ class Storage(context: Context, testRoot: File? = null) {
 
     fun fileFor(fileName: String) = File(musicDir, fileName)
     fun artworkFor(trackId: String) = File(artworkDir, "$trackId.jpg")
+    /** Gesichertes Original-Cover aus der MP3 (bevor ein eigenes Cover hineingeschrieben wurde) */
+    fun originalCoverFor(trackId: String) = File(artworkDir, "$trackId.original")
 
     fun uniqueDestination(name: String): File {
         var candidate = File(musicDir, name)
