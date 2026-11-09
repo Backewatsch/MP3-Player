@@ -11,33 +11,24 @@ struct StartView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("> SYSTEM ONLINE_").font(.system(.footnote, design: .monospaced)).foregroundStyle(Color.neonYellow)
-                        GlitchText(text: "ILLEGAL", font: .system(.largeTitle, design: .monospaced).weight(.black))
-                        Text("FREEDOM MUSIC").font(.system(.title, design: .monospaced).weight(.black)).foregroundStyle(Color.cyberAccent)
-                        Text("// \(greeting), Runner").font(.system(.footnote, design: .monospaced)).foregroundStyle(Color.neonCyan)
-                    }
-                    .listRowBackground(Color.clear)
-                    .accessibilityIdentifier("startScreen")
-                }
-
                 if library.tracks.isEmpty {
                     Section {
                         EmptyStateView(title: "Willkommen!", systemImage: "music.note",
-                                       message: "Lade im Tab „Lieder downloaden“ Musik oder importiere Dateien in der Mediathek. Hier erscheinen dann deine meistgehörten Lieder und dein Verlauf.")
+                                       message: "Importiere Musik in der Mediathek über ＋ (Dateien-App oder Link) oder teile eine MP3 aus Safari mit der App. Hier erscheinen dann deine meistgehörten Lieder und dein Verlauf.")
                     }
-                    .cyberRow()
                 } else {
                     content
                 }
             }
-            .cyberList()
-            .navigationBarHidden(true)
+            .listStyle(.insetGrouped)
+            .accessibilityIdentifier("startScreen")
+            .navigationTitle(greeting)
             .navigationDestination(for: LibraryRoute.self) { route in
                 switch route {
                 case .stats: StatsView()
                 case .favorites: FavoritesView()
+                case .smart(let name): if let kind = SmartPlaylist(rawValue: name) { SmartPlaylistView(kind: kind) }
+                case .playlist(let id): PlaylistDetailView(playlistID: id)
                 default: EmptyView()
                 }
             }
@@ -50,6 +41,23 @@ struct StartView: View {
     }
 
     @ViewBuilder private var content: some View {
+        // Schnellzugriff: Lieblingssongs, zuletzt gehörte Lieder, Playlists
+        let quick = quickTiles
+        if !quick.isEmpty {
+            Section {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                    ForEach(quick) { tile in QuickTileView(tile: tile) }
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(Color.clear)
+            }
+        }
+        Section {
+            SmartRow()
+                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                .listRowBackground(Color.clear)
+        } header: { SectionTitle(text: "Deine Mixe") }
+
         if let current = player.current {
             Section { 
                 Button { showNowPlaying = true } label: {
@@ -60,12 +68,11 @@ struct StartView: View {
                             Text(current.artist.isEmpty ? "Unbekannter Interpret" : current.artist).font(.subheadline).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: player.isPlaying ? "waveform" : "play.fill").foregroundStyle(Color.cyberAccent)
+                        Image(systemName: player.isPlaying ? "waveform" : "play.fill").foregroundStyle(Color.accentColor)
                     }
                 }
                 .buttonStyle(.plain)
-                .cyberRow()
-            } header: { CyberHeader(text: "Weiterhören") }
+            } header: { SectionTitle(text: "Weiterhören") }
         }
 
         let favorites = library.favoriteTracks
@@ -91,10 +98,10 @@ struct StartView: View {
                 .listRowBackground(Color.clear)
             } header: {
                 HStack {
-                    CyberHeader(text: "Lieblingssongs")
+                    SectionTitle(text: "Lieblingssongs")
                     Spacer()
                     Button("Alle abspielen") { player.shuffle = false; player.play(favorites, startAt: 0) }
-                        .font(.footnote).foregroundStyle(Color.cyberAccent)
+                        .font(.footnote).foregroundStyle(Color.accentColor)
                 }
             }
         }
@@ -103,7 +110,7 @@ struct StartView: View {
         Section {
             NavigationLink(value: LibraryRoute.stats) {
                 HStack(spacing: 12) {
-                    Image(systemName: "chart.bar.fill").foregroundStyle(Color.cyberAccent)
+                    Image(systemName: "chart.bar.fill").foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Diesen Monat: \(StatsSummary.formatListening(stats.listenedThisMonth)) · \(stats.playsThisMonth) Lieder")
                             .font(.subheadline.weight(.semibold))
@@ -113,35 +120,32 @@ struct StartView: View {
                 }
             }
             .accessibilityIdentifier("startStats")
-            .cyberRow()
-        } header: { CyberHeader(text: "Deine Statistik") }
+        } header: { SectionTitle(text: "Deine Statistik") }
 
         let most = library.mostPlayed(limit: 10)
         Section {
             if most.isEmpty {
                 Text("Noch nichts – Lieder, die du öfter hörst (ab 30 Sekunden), erscheinen hier.")
-                    .font(.footnote).foregroundStyle(.secondary).cyberRow()
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(Array(most.enumerated()), id: \.offset) { index, item in
                 Button { player.play(most.map { $0.0 }, startAt: index) } label: {
                     HStack(spacing: 10) {
-                        Text(String(format: "%02d", index + 1)).font(.system(.body, design: .monospaced).weight(.bold))
-                            .foregroundStyle(Color.neonYellow).frame(width: 30)
+                        Text("\(index + 1)").font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary).frame(width: 24)
                         TrackRow(track: item.0)
-                        Image(systemName: "flame.fill").foregroundStyle(Color.cyberAccent)
-                        Text("\(item.1)×").font(.footnote.weight(.semibold)).foregroundStyle(Color.neonYellow)
+                        Text("\(item.1)×").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
-                .cyberRow()
             }
         } header: {
             HStack {
-                CyberHeader(text: "Oft gespielt")
+                SectionTitle(text: "Oft gespielt")
                 Spacer()
                 if !most.isEmpty {
                     Button("Alle abspielen") { player.shuffle = false; player.play(most.map { $0.0 }, startAt: 0) }
-                        .font(.footnote).foregroundStyle(Color.cyberAccent)
+                        .font(.footnote).foregroundStyle(Color.accentColor)
                 }
             }
         }
@@ -166,12 +170,12 @@ struct StartView: View {
                 }
                 .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
                 .listRowBackground(Color.clear)
-            } header: { CyberHeader(text: "Zuletzt gehört") }
+            } header: { SectionTitle(text: "Zuletzt gehört") }
         }
 
         let history = library.history()
         Section {
-            if history.isEmpty { Text("Noch leer.").font(.footnote).foregroundStyle(.secondary).cyberRow() }
+            if history.isEmpty { Text("Noch leer.").font(.footnote).foregroundStyle(.secondary) }
             ForEach(Array((showAllHistory ? history : Array(history.prefix(15))).enumerated()), id: \.offset) { _, item in
                 Button { player.play([item.0], startAt: 0) } label: {
                     HStack(spacing: 10) {
@@ -185,19 +189,26 @@ struct StartView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("history-\(item.0.title)")
-                .cyberRow()
             }
             if history.count > 15 && !showAllHistory {
                 Button("Ganzen Verlauf anzeigen (\(history.count))") { showAllHistory = true }
-                    .foregroundStyle(Color.cyberAccent).cyberRow()
+                    .foregroundStyle(Color.accentColor)
             }
         } header: {
             HStack {
-                CyberHeader(text: "Verlauf")
+                SectionTitle(text: "Verlauf")
                 Spacer()
                 if !history.isEmpty { Button("Löschen") { confirmClear = true }.font(.footnote).foregroundStyle(.secondary) }
             }
         }
+    }
+
+    private var quickTiles: [QuickTile] {
+        var tiles: [QuickTile] = []
+        if !library.favoriteTracks.isEmpty { tiles.append(.favorites) }
+        for t in library.recentlyPlayed(limit: 3) { tiles.append(.song(t)) }
+        for p in library.playlists where !p.trackIDs.isEmpty && tiles.count < 6 { tiles.append(.playlist(p)) }
+        return Array(tiles.prefix(6))
     }
 
     private var greeting: String {
@@ -222,7 +233,7 @@ struct FavoritesView: View {
             if tracks.isEmpty {
                 EmptyStateView(title: "Noch keine Lieblingssongs", systemImage: "heart",
                                message: "Tippe im Player oder im Menü eines Liedes auf das Herz – dann erscheint es hier.")
-                    .background(CyberBackground())
+                    .background(Color(.systemGroupedBackground).ignoresSafeArea())
             } else {
                 List {
                     Section {
@@ -231,13 +242,11 @@ struct FavoritesView: View {
                     Section {
                         ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                             TrackListRow(track: track, selection: selection) { player.play(tracks, startAt: index) }
-                                .cyberRow()
                         }
                     } footer: {
                         Text("\(tracks.count) Titel · \(tracks.reduce(0) { $0 + $1.duration }.formattedTime)")
                     }
                 }
-                .cyberList()
             }
         }
         .navigationTitle("Lieblingssongs")
@@ -273,7 +282,7 @@ struct PlayShuffleRow: View {
             } label: { Label("Zufällig", systemImage: "shuffle").frame(maxWidth: .infinity) }
         }
         .buttonStyle(.bordered)
-        .tint(Color.cyberAccent)
+        .tint(Color.accentColor)
         .disabled(tracks.isEmpty)
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
         .listRowBackground(Color.clear)
@@ -309,41 +318,39 @@ struct StatsView: View {
             Section {
                 if stats.topThisMonth.isEmpty {
                     Text("Noch nichts gehört in diesem Monat. Ein Lied zählt, wenn du es mindestens 30 Sekunden (oder zur Hälfte) hörst.")
-                        .font(.footnote).foregroundStyle(.secondary).cyberRow()
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 topRows(stats.topThisMonth)
-            } header: { CyberHeader(text: "Top 10 im \(month)") }
+            } header: { SectionTitle(text: "Top 10 im \(month)") }
             if !stats.topArtists.isEmpty {
                 Section {
                     let max = stats.topArtists.first?.1 ?? 1
                     ForEach(Array(stats.topArtists.enumerated()), id: \.offset) { index, item in
                         HStack(spacing: 10) {
-                            Text(String(format: "%02d", index + 1)).font(.system(.body, design: .monospaced).weight(.bold))
-                                .foregroundStyle(Color.neonYellow).frame(width: 30)
+                            Text("\(index + 1)").font(.body.weight(.semibold))
+                                .foregroundStyle(.secondary).frame(width: 24)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.0).lineLimit(1)
                                 bar(Double(item.1) / Double(max))
                             }
-                            Text("\(item.1)×").font(.footnote.weight(.semibold)).foregroundStyle(Color.neonYellow)
+                            Text("\(item.1)×").font(.footnote).foregroundStyle(.secondary)
                         }
-                        .cyberRow()
                     }
-                } header: { CyberHeader(text: "Top-Interpreten") }
+                } header: { SectionTitle(text: "Top-Interpreten") }
             }
             if !stats.topAllTime.isEmpty {
-                Section { topRows(stats.topAllTime) } header: { CyberHeader(text: "Top 10 aller Zeiten") }
+                Section { topRows(stats.topAllTime) } header: { SectionTitle(text: "Top 10 aller Zeiten") }
             }
             Section {
-                LabeledContent("Lieder", value: "\(stats.trackCount)").cyberRow()
-                LabeledContent("Gesamtdauer", value: stats.libraryDuration.formattedTime).cyberRow()
-                LabeledContent("Playlists", value: "\(library.playlists.count)").cyberRow()
-                LabeledContent("Gehörte Lieder insgesamt", value: "\(stats.playsTotal)").cyberRow()
-            } header: { CyberHeader(text: "Mediathek") }
+                LabeledContent("Lieder", value: "\(stats.trackCount)")
+                LabeledContent("Gesamtdauer", value: stats.libraryDuration.formattedTime)
+                LabeledContent("Playlists", value: "\(library.playlists.count)")
+                LabeledContent("Gehörte Lieder insgesamt", value: "\(stats.playsTotal)")
+            } header: { SectionTitle(text: "Mediathek") }
             Section {
-                Button("Statistik zurücksetzen") { confirmClear = true }.foregroundStyle(.secondary).cyberRow()
+                Button("Statistik zurücksetzen") { confirmClear = true }.foregroundStyle(.secondary)
             }
         }
-        .cyberList()
         .navigationTitle("Statistik")
         .confirmationDialog("Statistik zurücksetzen?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Zurücksetzen", role: .destructive) { library.clearStats() }
@@ -354,13 +361,12 @@ struct StatsView: View {
 
     private func tile(_ label: String, _ value: String, id: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.system(.title2, design: .monospaced).weight(.bold)).foregroundStyle(Color.cyberAccent)
+            Text(value).font(.title2.weight(.bold)).foregroundStyle(Color.accentColor)
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(LinearGradient(colors: [Color.cyberPanelHigh, Color.cyberPanel], startPoint: .top, endPoint: .bottom),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(id)
     }
@@ -370,29 +376,84 @@ struct StatsView: View {
         ForEach(Array(items.enumerated()), id: \.offset) { index, item in
             Button { player.play(items.map { $0.0 }, startAt: index) } label: {
                 HStack(spacing: 10) {
-                    Text(String(format: "%02d", index + 1)).font(.system(.body, design: .monospaced).weight(.bold))
-                        .foregroundStyle(Color.neonYellow).frame(width: 30)
+                    Text("\(index + 1)").font(.body.weight(.semibold))
+                        .foregroundStyle(.secondary).frame(width: 24)
                     ArtworkView(track: item.0, size: 40)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.0.title).lineLimit(1)
                         bar(Double(item.1) / Double(max))
                     }
-                    Text("\(item.1)×").font(.footnote.weight(.semibold)).foregroundStyle(Color.neonYellow)
+                    Text("\(item.1)×").font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.plain)
-            .cyberRow()
         }
     }
 
     private func bar(_ fraction: Double) -> some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Rectangle().fill(Color.cyberLine)
-                Rectangle().fill(LinearGradient(colors: [.cyberAccent, .neonCyan], startPoint: .leading, endPoint: .trailing))
+                Capsule().fill(Color(.systemFill))
+                Capsule().fill(Color.accentColor)
                     .frame(width: geo.size.width * min(1, max(0.03, fraction)))
             }
         }
         .frame(height: 4)
+    }
+}
+
+/// Eintrag im Schnellzugriff der Startseite
+enum QuickTile: Identifiable {
+    case favorites
+    case song(Track)
+    case playlist(Playlist)
+
+    var id: String {
+        switch self {
+        case .favorites: return "fav"
+        case .song(let t): return "s-\(t.id)"
+        case .playlist(let p): return "p-\(p.id)"
+        }
+    }
+}
+
+struct QuickTileView: View {
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var player: AudioPlayer
+    let tile: QuickTile
+
+    var body: some View {
+        Group {
+            switch tile {
+            case .favorites:
+                NavigationLink(value: LibraryRoute.favorites) { label(title: "Lieblingssongs") {
+                    ZStack {
+                        LinearGradient(colors: [Color.accentColor.opacity(0.7), Color.accentColor], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Image(systemName: "heart.fill").foregroundStyle(.white)
+                    }
+                } }
+            case .song(let t):
+                Button { player.play([t], startAt: 0) } label: { label(title: t.title, playing: player.current?.id == t.id) {
+                    ArtworkView(track: t, size: 56, cornerRadius: 0)
+                } }
+            case .playlist(let p):
+                NavigationLink(value: LibraryRoute.playlist(p.id)) { label(title: p.name) {
+                    PlaylistArtwork(playlist: p, first: library.tracks(in: p).first, size: 56, cornerRadius: 0)
+                } }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func label<A: View>(title: String, playing: Bool = false, @ViewBuilder art: () -> A) -> some View {
+        HStack(spacing: 10) {
+            art().frame(width: 56, height: 56).clipped()
+            Text(title).font(.footnote.weight(.bold)).lineLimit(2).multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+            if playing { PlayingBars(playing: player.isPlaying).padding(.trailing, 8) }
+        }
+        .frame(height: 56)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

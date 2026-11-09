@@ -67,6 +67,8 @@ final class SoundSettings: ObservableObject {
     @Published var custom: [Float] { didSet { save() } }
     /// Ein-/Ausblenden zwischen Liedern in Sekunden (0 = aus)
     @Published var crossfade: Double { didSet { save() } }
+    /// Alle Lieder ähnlich laut abspielen
+    @Published var normalize: Bool { didSet { save() } }
 
     private let defaults: UserDefaults
     var onChange: (() -> Void)?
@@ -77,6 +79,7 @@ final class SoundSettings: ObservableObject {
         preset = defaults.string(forKey: "sound.preset") ?? "Normal"
         custom = (defaults.array(forKey: "sound.custom") as? [Double])?.map { Float($0) } ?? Array(repeating: 0, count: SoundPresets.bands.count)
         crossfade = defaults.double(forKey: "sound.crossfade")
+        normalize = defaults.object(forKey: "sound.normalize") as? Bool ?? true
     }
 
     /// Pegel der 10 Bänder in dB
@@ -107,6 +110,7 @@ final class SoundSettings: ObservableObject {
         defaults.set(preset, forKey: "sound.preset")
         defaults.set(custom.map { Double($0) }, forKey: "sound.custom")
         defaults.set(crossfade, forKey: "sound.crossfade")
+        defaults.set(normalize, forKey: "sound.normalize")
         onChange?()
     }
 }

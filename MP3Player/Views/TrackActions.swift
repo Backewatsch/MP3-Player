@@ -10,6 +10,8 @@ final class TrackActions: ObservableObject {
         case artist(String)
         case info(Track)
         case edit(Track)
+        case cover(Track)
+        case lyrics(Track)
 
         var id: String {
             switch self {
@@ -19,6 +21,8 @@ final class TrackActions: ObservableObject {
             case .artist(let a): return "artist-\(a)"
             case .info(let t): return "info-\(t.id)"
             case .edit(let t): return "edit-\(t.id)"
+            case .cover(let t): return "cover-\(t.id)"
+            case .lyrics(let t): return "lyrics-\(t.id)"
             }
         }
     }
@@ -82,6 +86,10 @@ private struct TrackActionsHost: ViewModifier {
                         SongInfoSheet(track: track)
                     case .edit(let track):
                         EditTrackSheet(track: track)
+                    case .cover(let track):
+                        CoverPicker { image in library.setCustomCover(track, image: image) }
+                    case .lyrics(let track):
+                        LyricsView(track: track)
                     }
                 }
                 .environmentObject(actions)
@@ -164,6 +172,23 @@ struct TrackActionsSheet: View {
                     actions.close()
                 }
                 row("Infos bearbeiten", "pencil") { actions.show(.edit(current)) }
+                row("Zuschneiden", "scissors") {
+                    let id = current.id
+                    actions.close()
+                    // Erst nach dem Schließen des Menüs wechseln
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        NotificationCenter.default.post(name: .openTrimEditor, object: id)
+                    }
+                }
+                row("Songtext", "quote.bubble") { actions.show(.lyrics(current)) }
+                row("Cover ändern", "photo") { actions.show(.cover(current)) }
+                if library.hasCustomCover(current) {
+                    row("Eigenes Cover entfernen", "photo.badge.minus") {
+                        let target = current
+                        actions.close()
+                        Task { await library.removeCustomCover(target) }
+                    }
+                }
                 if !Storage.isMP3(current.fileName) {
                     row("In MP3 umwandeln", "arrow.triangle.2.circlepath") {
                         let target = current
@@ -369,12 +394,10 @@ struct TrackCollectionList: View {
                 Section {
                     ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                         TrackListRow(track: track, selection: selection) { player.play(tracks, startAt: index) }
-                            .cyberRow()
                     }
                 }
             }
             .listStyle(.insetGrouped)
-            .cyberList()
             .toolbar {
                 if !tracks.isEmpty {
                     Button(selection.active ? "Fertig" : "Auswählen") { if selection.active { selection.clear() } else { selection.start() } }
@@ -466,7 +489,7 @@ private struct SelectableTrackRow: View {
                 HStack(spacing: 10) {
                     Image(systemName: selection.ids.contains(track.id) ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
-                        .foregroundStyle(selection.ids.contains(track.id) ? Color.cyberAccent : .secondary)
+                        .foregroundStyle(selection.ids.contains(track.id) ? Color.accentColor : .secondary)
                     TrackRow(track: track)
                 }
             }
@@ -515,6 +538,7 @@ private struct PlainTrackRow: View {
                       systemImage: library.isFavorite(track) ? "heart.slash" : "heart")
             }
             Button { actions.show(.addToPlaylist(track)) } label: { Label("Zu Playlist hinzufügen", systemImage: "text.badge.plus") }
+            Button { NotificationCenter.default.post(name: .openTrimEditor, object: track.id) } label: { Label("Zuschneiden", systemImage: "scissors") }
             Button { actions.open(track, in: playlist) } label: { Label("Weitere Optionen …", systemImage: "ellipsis.circle") }
         }
     }

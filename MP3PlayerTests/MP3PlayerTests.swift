@@ -86,15 +86,6 @@ final class HelperTests: XCTestCase {
         XCTAssertEqual(TimeInterval.nan.formattedTime, "0:00")
         XCTAssertEqual(TimeInterval(-5).formattedTime, "0:00")
     }
-
-    @MainActor
-    func testBrowserInputParsing() {
-        XCTAssertEqual(BrowserModel.url(fromInput: "https://archive.org")?.absoluteString, "https://archive.org")
-        XCTAssertEqual(BrowserModel.url(fromInput: "archive.org/details/audio")?.absoluteString, "https://archive.org/details/audio")
-        let search = BrowserModel.url(fromInput: "freie musik mp3")
-        XCTAssertEqual(search?.host, "duckduckgo.com")
-        XCTAssertTrue(search?.absoluteString.contains("q=freie%20musik%20mp3") == true)
-    }
 }
 
 // MARK: - Bibliothek
@@ -471,16 +462,6 @@ final class ConverterAndExtrasTests: XCTestCase {
         XCTAssertEqual(player.current?.id, track.id)
         XCTAssertFalse(player.isPlaying, "startet nicht von selbst")
         player.stop()
-    }
-
-    func testBrowserDetectsPlayingMedia() {
-        let browser = BrowserModel()
-        browser.mediaStartedPlaying(source: "https://example.com/video/clip.mp4")
-        XCTAssertEqual(browser.detectedMedia, .downloadable(URL(string: "https://example.com/video/clip.mp4")!))
-        browser.mediaStartedPlaying(source: "blob:https://www.youtube.com/1234")
-        XCTAssertEqual(browser.detectedMedia, .stream)
-        browser.mediaStartedPlaying(source: "")
-        XCTAssertEqual(browser.detectedMedia, .stream)
     }
 
     func testOldLibraryFormatStillLoads() throws {
@@ -985,5 +966,90 @@ final class FeaturePlayerTests: XCTestCase {
         // Testlied ist ~2 s lang → nach der Hälfte gilt es als gehört
         let counted = await waitUntil(timeout: 5) { played.contains(self.tracks[1].id) }
         XCTAssertTrue(counted)
+    }
+}
+
+// MARK: - Zuschneiden
+
+/// Verlustfreies Zuschneiden: nur ganze Frames, Tags bleiben, Längenangabe stimmt
+final class Mp3TrimmerTests: XCTestCase {
+    /// MPEG-1 Layer III, 128 kbit/s, 44,1 kHz, Stereo → 417 Bytes, 1152 Samples (≈ 26,1 ms)
+    private func frame(_ fill: UInt8) -> [UInt8] {
+        var f = [UInt8](repeating: fill, count: 417)
+        f[0] = 0xFF; f[1] = 0xFB; f[2] = 0x90; f[3] = 0x00
+        return f
+    }
+
+    private func infoFrame(frames: Int, bytes: Int) -> [UInt8] {
+        var f = [UInt8](repeating: 0, count: 417)
+        f[0] = 0xFF; f[1] = 0xFB; f[2] = 0x90; f[3] = 0x00
+        f.replaceSubrange(36..<40, with: Array("Info".utf8))
+        for (i, v) in [3, frames, bytes].enumerated() {
+            let p = 40 + i * 4
+            f[p] = UInt8((v >> 24) & 0xFF); f[p + 1] = UInt8((v >> 16) & 0xFF); f[p + 2] = UInt8((v >> 8) & 0xFF); f[p + 3] = UInt8(v & 0xFF)
+        }
+        return f
+    }
+
+    private let id3: [UInt8] = Array("ID3".utf8) + [3, 0, 0, 0, 0, 0, 20] + [UInt8](repeating: 7, count: 20)
+    private let id3v1: [UInt8] = Array("TAG".utf8) + [UInt8](repeating: 1, count: 125)
+
+    private func song(_ count: Int, info: Bool) -> [UInt8] {
+        var out = id3
+        if info { out += infoFrame(frames: count, bytes: 417 * (count + 1)) }
+        for i in 0..<count { out += frame(UInt8(i % 100)) }
+        return out + id3v1
+    }
+
+    private func int(_ b: [UInt8], _ p: Int) -> Int {
+        (Int(b[p]) << 24) | (Int(b[p + 1]) << 16) | (Int(b[p + 2]) << 8) | Int(b[p + 3])
+    }
+
+    func testReadsDuration() throws {
+        let p = try Mp3Trimmer.parse(song(383, info: true))
+        XCTAssertEqual(p.frames.count, 383)
+        XCTAssertEqual(p.durationMs, 10_004)
+        XCTAssertNotNil(p.infoFrame)
+    }
+
+    func testCutsTheLastSecondsAndKeepsTags() throws {
+        let trimmed = try Mp3Trimmer.trim(song(383, info: true), startMs: 0, endMs: 10_004 - 3_000)
+        let p = try Mp3Trimmer.parse(trimmed)
+        XCTAssertTrue((6_980...7_020).contains(p.durationMs), "war \(p.durationMs)")
+        XCTAssertEqual(Array(trimmed[0..<id3.count]), id3)
+        XCTAssertEqual(Array(trimmed[(trimmed.count - 128)...]), id3v1)
+        XCTAssertEqual(int(trimmed, id3.count + 44), p.frames.count)
+        XCTAssertEqual(int(trimmed, id3.count + 48), 417 * (p.frames.count + 1))
+        XCTAssertEqual(trimmed[id3.count + 417 + 4], 0)
+    }
+
+    func testCutsStartAndEnd() throws {
+        let trimmed = try Mp3Trimmer.trim(song(383, info: false), startMs: 2_000, endMs: 5_000)
+        let p = try Mp3Trimmer.parse(trimmed)
+        XCTAssertTrue((2_970...3_030).contains(p.durationMs), "war \(p.durationMs)")
+        XCTAssertEqual(trimmed[id3.count + 4], 77, "erster behaltener Frame ist Nr. 77")
+    }
+
+    func testRefusesToCutEverything() {
+        XCTAssertThrowsError(try Mp3Trimmer.trim(song(100, info: false), startMs: 1_000, endMs: 1_500))
+        XCTAssertThrowsError(try Mp3Trimmer.parse([UInt8](repeating: 0x41, count: 5000)))
+    }
+
+    @MainActor
+    func testTrimsRealSongInLibrary() async throws {
+        let library = Library()
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("trim-\(UUID().uuidString).mp3")
+        try FileManager.default.copyItem(at: Fixture.url("tagged.mp3"), to: tmp)
+        let track = try await library.importAudio(from: tmp, move: true)
+        defer { library.delete(track) }
+        let before = await library.exactDuration(of: track)
+        XCTAssertGreaterThan(before, 2)
+        let copy = try await library.trim(track, start: 0, end: before - 1, asCopy: true)
+        defer { library.delete(copy) }
+        XCTAssertEqual(copy.title, track.title + " (gekürzt)")
+        XCTAssertEqual(copy.duration, before - 1, accuracy: 0.1)
+        // Original unverändert
+        let original = await library.exactDuration(of: track)
+        XCTAssertEqual(original, before, accuracy: 0.01)
     }
 }

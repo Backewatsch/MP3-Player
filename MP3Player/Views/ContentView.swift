@@ -5,35 +5,44 @@ struct ContentView: View {
     @EnvironmentObject private var downloads: DownloadManager
     @State private var tab = Tab.start
     @State private var showNowPlaying = false
+    @State private var editorPath = NavigationPath()
 
-    enum Tab: Hashable { case start, library, downloader }
+    enum Tab: Hashable { case start, library, editor }
 
     var body: some View {
         TabView(selection: $tab) {
             StartView(showNowPlaying: $showNowPlaying)
                 .miniPlayer($showNowPlaying)
                 .trackActionsHost()
-                .tabItem { Label("Start", systemImage: "house") }
+                .tabItem { Label("Start", systemImage: "house.fill") }
                 .tag(Tab.start)
 
             MediathekView()
                 .miniPlayer($showNowPlaying)
                 .trackActionsHost()
-                .tabItem { Label("Mediathek", systemImage: "music.note.house") }
+                .tabItem { Label("Mediathek", systemImage: "square.stack.fill") }
+                .badge(downloads.activeCount)
                 .tag(Tab.library)
 
-            BrowserView()
+            EditorView(path: $editorPath)
                 .miniPlayer($showNowPlaying)
-                .tabItem { Label("Lieder downloaden", systemImage: "arrow.down.circle") }
-                .badge(downloads.activeCount + downloads.unseenCount)
-                .tag(Tab.downloader)
+                .trackActionsHost()
+                .tabItem { Label("Bearbeiten", systemImage: "scissors") }
+                .tag(Tab.editor)
         }
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
                 .trackActionsHost()
+                .presentationDragIndicator(.visible)
         }
-        .preferredColorScheme(.dark)
-        .tint(Color.cyberAccent)
+        .onReceive(NotificationCenter.default.publisher(for: .openTrimEditor)) { note in
+            // „Zuschneiden“ aus dem Menü eines Liedes
+            guard let id = note.object as? UUID else { return }
+            showNowPlaying = false
+            tab = .editor
+            editorPath = NavigationPath()
+            editorPath.append(id)
+        }
         .alert("Hinweis", isPresented: Binding(
             get: { player.errorMessage != nil },
             set: { if !$0 { player.errorMessage = nil } }
@@ -59,4 +68,9 @@ extension View {
     func miniPlayer(_ show: Binding<Bool>) -> some View {
         modifier(MiniPlayerModifier(showNowPlaying: show))
     }
+}
+
+extension Notification.Name {
+    /// Öffnet ein Lied im Tab „Bearbeiten“ (object: UUID des Liedes)
+    static let openTrimEditor = Notification.Name("openTrimEditor")
 }

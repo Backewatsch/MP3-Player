@@ -11,7 +11,9 @@ struct SettingsView: View {
     @State private var conversionResult: String?
     @Environment(\.openURL) private var openURL
     @State private var copied = false
-    @AppStorage("showOwnCovers") private var showOwnCovers = false
+    @AppStorage("showOwnCovers") private var showOwnCovers = true
+    @AppStorage("autoplayBluetooth") private var autoplayBluetooth = false
+    @State private var showDuplicates = false
     @State private var showSound = false
     @State private var exportDocument: BackupDocument?
     @State private var showExporter = false
@@ -77,13 +79,33 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Eigene Cover der Lieder anzeigen", isOn: $showOwnCovers)
-                        .tint(Color.cyberAccent)
+                        .tint(Color.accentColor)
                         .accessibilityIdentifier("ownCoversSwitch")
                 } header: {
-                    CyberHeader(text: "Darstellung")
+                    Text("Darstellung")
                 } footer: {
                     Text(showOwnCovers ? "Lieder zeigen ihr eigenes Cover (falls vorhanden)." : "Neben jedem Lied steht das App-Logo.")
                 }
+
+                Section {
+                    Toggle(isOn: $autoplayBluetooth) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Bei Bluetooth automatisch abspielen")
+                            Text("Kopfhörer oder Auto verbinden → Musik läuft weiter").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(Color.accentColor)
+                    .accessibilityIdentifier("btAutoplaySwitch")
+                    Button { showDuplicates = true } label: {
+                        Label("Doppelte Lieder aufräumen (\(library.duplicateGroups.count))", systemImage: "sparkles")
+                    }
+                    .accessibilityIdentifier("openDuplicates")
+                } header: {
+                    Text("Wiedergabe")
+                } footer: {
+                    Text("CarPlay ist mit einer kostenlosen Apple-ID leider nicht möglich – im Auto funktioniert die Steuerung über Bluetooth und den Sperrbildschirm.")
+                }
+                .sheet(isPresented: $showDuplicates) { NavigationStack { DuplicatesView() } }
 
                 Section {
                     Button { showSound = true } label: {
@@ -92,7 +114,7 @@ struct SettingsView: View {
                               systemImage: "slider.vertical.3")
                     }
                     .accessibilityIdentifier("openSound")
-                } header: { CyberHeader(text: "Klang") }
+                } header: { Text("Klang") }
 
                 Section {
                     Button {
@@ -106,7 +128,7 @@ struct SettingsView: View {
                         Text(backupStatus).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("backupStatus")
                     }
                 } header: {
-                    CyberHeader(text: "Sicherung")
+                    Text("Sicherung")
                 } footer: {
                     Text("Sichert Playlists, Herzen, Kurzwahl, Verlauf und Statistik. Die Musikdateien selbst findest du in der Dateien-App unter „Auf meinem iPhone › ILLEGAL FREEDOM MUSIC“ – kopiere sie z. B. nach iCloud Drive. Beim Wiederherstellen geht nichts verloren.")
                 }
@@ -191,7 +213,6 @@ struct SettingsView: View {
                     Text("Wenn du die Quelle in AltStore oder SideStore hinzufügst, zeigen diese Apps neue Versionen automatisch an und installieren sie mit einem Tipp. Deine Musik bleibt bei einem Update erhalten.")
                 }
             }
-            .cyberList()
             .sheet(isPresented: $showSound) { SoundView(sound: player.sound) }
             .navigationTitle("Info & Updates")
             .navigationBarTitleDisplayMode(.inline)

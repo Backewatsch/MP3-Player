@@ -6,12 +6,13 @@ struct MP3PlayerApp: App {
     @StateObject private var library = Library()
     @StateObject private var player = AudioPlayer()
     @StateObject private var downloads = DownloadManager()
-    @StateObject private var browser = BrowserModel()
     @StateObject private var updates = UpdateChecker()
     @Environment(\.scenePhase) private var scenePhase
     @State private var openError: String?
 
     init() {
+        // Apple-Design: eigene Cover der Lieder standardmäßig anzeigen
+        UserDefaults.standard.register(defaults: ["showOwnCovers": true])
         // Für automatische UI-Tests: mit leerer Bibliothek starten
         if ProcessInfo.processInfo.arguments.contains("-uiTestReset") {
             Storage.resetAll()
@@ -24,7 +25,6 @@ struct MP3PlayerApp: App {
                 .environmentObject(library)
                 .environmentObject(player)
                 .environmentObject(downloads)
-                .environmentObject(browser)
                 .environmentObject(updates)
                 .onAppear(perform: connect)
                 .onOpenURL { url in
@@ -53,9 +53,9 @@ struct MP3PlayerApp: App {
 
     private func connect() {
         downloads.library = library
-        browser.downloads = downloads
         library.onTrackAdded = { [weak player = player] track, playlistID in
             player?.libraryDidAdd(track, playlistID: playlistID)
+            Task { @MainActor in await self.library.analyzeLoudness() }
         }
         player.onDurationLoaded = { [weak library = library] id, duration in
             library?.updateDuration(of: id, to: duration)
@@ -64,5 +64,15 @@ struct MP3PlayerApp: App {
         player.onTrackStarted = { [weak library = library] id in library?.recordStart(id) }
         player.onTrackPlayed = { [weak library = library] id in library?.recordPlay(id) }
         player.onListened = { [weak library = library] seconds in library?.addListened(seconds) }
+        // Lautstärke angleichen
+        player.gainProvider = { [weak library = library] id in library?.gain(of: id) }
+        library.onGainMeasured = { [weak player = player] id, _ in
+            if player?.current?.id == id { player?.applyTrackGain() }
+        }
+        // Weiterhören nach Neustart (nicht in automatischen UI-Tests)
+        if !ProcessInfo.processInfo.arguments.contains("-uiTestReset") {
+            player.restoreQueue(from: library.tracks)
+        }
+        Task { await library.analyzeLoudness() }
     }
 }

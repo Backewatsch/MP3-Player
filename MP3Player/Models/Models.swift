@@ -109,7 +109,7 @@ struct PlayEvent: Codable, Hashable {
 
 struct LibraryState: Codable {
     /// 2 = Alben werden gespeichert, 3 = Herzen, Verlauf, Statistik
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     var version: Int
     var tracks: [Track]
@@ -126,6 +126,12 @@ struct LibraryState: Codable {
     var plays: [PlayEvent] = []
     /// Hörzeit in Sekunden je Monat („2026-11“)
     var listenedByMonth: [String: Double] = [:]
+    /// Gemessene Verstärkung je Titel in dB („Lautstärke angleichen“)
+    var gains: [UUID: Float] = [:]
+    /// Selbst eingetragene Songtexte
+    var lyrics: [UUID: String] = [:]
+    /// Titel mit selbst gewähltem Cover
+    var customCovers: [UUID] = []
 
     init(tracks: [Track], playlists: [Playlist], pinned: [UUID], favorites: [UUID] = [], playCounts: [UUID: Int] = [:],
          history: [PlayEvent] = [], plays: [PlayEvent] = [], listenedByMonth: [String: Double] = [:]) {
@@ -151,6 +157,9 @@ struct LibraryState: Codable {
         history = try c.decodeIfPresent([PlayEvent].self, forKey: .history) ?? []
         plays = try c.decodeIfPresent([PlayEvent].self, forKey: .plays) ?? []
         listenedByMonth = try c.decodeIfPresent([String: Double].self, forKey: .listenedByMonth) ?? [:]
+        gains = try c.decodeIfPresent([UUID: Float].self, forKey: .gains) ?? [:]
+        lyrics = try c.decodeIfPresent([UUID: String].self, forKey: .lyrics) ?? [:]
+        customCovers = try c.decodeIfPresent([UUID].self, forKey: .customCovers) ?? []
     }
 }
 
@@ -290,4 +299,9 @@ extension TimeInterval {
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
+}
+
+extension String {
+    /// `nil` statt leerem Text
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

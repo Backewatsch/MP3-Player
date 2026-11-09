@@ -37,8 +37,8 @@ struct SelectionBar: View {
         VStack(spacing: 8) {
             HStack {
                 Text("\(chosen.count) ausgewählt")
-                    .font(.system(.headline, design: .monospaced))
-                    .foregroundStyle(Color.neonCyan)
+                    .font(.headline)
+                    .foregroundStyle(Color.accentColor)
                     .accessibilityIdentifier("selectionCount")
                 Spacer()
                 Button(chosen.count == all.count ? "Keine" : "Alle") {
@@ -70,8 +70,8 @@ struct SelectionBar: View {
             .disabled(chosen.isEmpty)
         }
         .padding(12)
-        .background(Color.cyberPanelHigh.opacity(0.97))
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.cyberAccent.opacity(0.4)).frame(height: 1) }
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
         .sheet(isPresented: $showAdd) {
             AddManyToPlaylistSheet(tracks: chosen) { selection.clear() }
         }
@@ -93,7 +93,7 @@ struct SelectionBar: View {
                 Text(title).font(.caption2)
             }
             .frame(maxWidth: .infinity)
-            .foregroundStyle(destructive ? Color.red : Color.cyberAccent)
+            .foregroundStyle(destructive ? Color.red : Color.accentColor)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
@@ -122,7 +122,6 @@ struct AddManyToPlaylistSheet: View {
                     .accessibilityIdentifier("addTo-\(playlist.name)")
                 }
             }
-            .cyberList()
             .navigationTitle("\(tracks.count) Titel hinzufügen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } } }

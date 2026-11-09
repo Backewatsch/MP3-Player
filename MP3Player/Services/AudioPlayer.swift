@@ -23,7 +23,7 @@ final class AudioPlayer: NSObject, ObservableObject {
     @Published private(set) var duration: TimeInterval = 0
     /// Zufallswiedergabe verwaltet die App selbst: „Als Nächstes“ kommt so immer direkt nach dem laufenden Titel.
     @Published var shuffle = false {
-        didSet { if oldValue != shuffle { applyShuffle() } }
+        didSet { if oldValue != shuffle && !restoringShuffle { applyShuffle() } }
     }
     @Published var repeatMode: RepeatMode = .off
     @Published var errorMessage: String?
@@ -55,6 +55,10 @@ final class AudioPlayer: NSObject, ObservableObject {
     private let engine = AVAudioEngine()
     private let node = AVAudioPlayerNode()
     private let eq = AVAudioUnitEQ(numberOfBands: SoundPresets.bands.count)
+    /// Lautstärke-Angleichung je Titel (eigene Stufe, damit sie auch ohne Equalizer wirkt)
+    private let normalizer = AVAudioUnitEQ(numberOfBands: 0)
+    /// Liefert die gemessene Verstärkung eines Titels (aus der Bibliothek)
+    var gainProvider: ((UUID) -> Float?)?
     private var file: AVAudioFile?
     private var connectedFormat: AVAudioFormat?
     private var sampleRate: Double = 44_100
@@ -85,6 +89,7 @@ final class AudioPlayer: NSObject, ObservableObject {
     /// (manche MP3s melden eine etwas zu große Länge, dann kommt keine Ende-Meldung)
     private var lastFrame: AVAudioFramePosition = -1
     private var stallTicks = 0
+    private var saveTicks = 0
 
     override init() {
         super.init()
@@ -92,6 +97,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         configureRemoteCommands()
         engine.attach(node)
         engine.attach(eq)
+        engine.attach(normalizer)
         for (i, band) in eq.bands.enumerated() {
             band.filterType = .parametric
             band.frequency = SoundPresets.bands[i]
@@ -112,6 +118,8 @@ final class AudioPlayer: NSObject, ObservableObject {
             Task { @MainActor in
                 // Kopfhörer abgezogen → pausieren
                 if reasonValue == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.pause() }
+                // Bluetooth-Kopfhörer/Auto verbunden → auf Wunsch weiterspielen
+                if reasonValue == AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue { self?.bluetoothConnected() }
             }
         })
         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
@@ -173,6 +181,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         flushListening()
         currentTime = Double(pausedFrame) / sampleRate
         updateNowPlaying()
+        saveQueue()
     }
 
     func next() {
@@ -345,7 +354,60 @@ final class AudioPlayer: NSObject, ObservableObject {
         duration = 0
         sleepEnd = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        saveQueue()
     }
+
+    // MARK: Bluetooth
+
+    private func bluetoothConnected() {
+        guard UserDefaults.standard.bool(forKey: "autoplayBluetooth"), !isPlaying, !queue.isEmpty else { return }
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType)
+        let bluetooth: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothLE, .carAudio]
+        if outputs.contains(where: { bluetooth.contains($0) }) { resume() }
+    }
+
+    // MARK: Weiterhören nach Neustart
+
+    private let defaults = UserDefaults.standard
+
+    /// Wiedergabeliste, Titel, Position, Zufall und Wiederholen merken
+    func saveQueue() {
+        guard !queue.isEmpty, let index else {
+            defaults.removeObject(forKey: "playback.queue")
+            return
+        }
+        defaults.set(queue.map(\.id.uuidString), forKey: "playback.queue")
+        defaults.set(originalOrder.map(\.id.uuidString), forKey: "playback.original")
+        defaults.set(index, forKey: "playback.index")
+        defaults.set(isPlaying ? Double(currentFrame) / sampleRate : currentTime, forKey: "playback.position")
+        defaults.set(shuffle, forKey: "playback.shuffle")
+        defaults.set(repeatMode == .off ? 0 : repeatMode == .all ? 1 : 2, forKey: "playback.repeat")
+    }
+
+    /// Nach dem Start: letzte Wiedergabeliste pausiert an gleicher Stelle bereitstellen
+    func restoreQueue(from tracks: [Track]) {
+        guard queue.isEmpty, let ids = defaults.stringArray(forKey: "playback.queue"), !ids.isEmpty else { return }
+        let byID = Dictionary(tracks.map { ($0.id.uuidString, $0) }, uniquingKeysWith: { a, _ in a })
+        let restored = ids.compactMap { byID[$0] }
+        guard !restored.isEmpty else { return }
+        let savedIndex = defaults.integer(forKey: "playback.index")
+        let currentID = ids.indices.contains(savedIndex) ? ids[savedIndex] : nil
+        let i = restored.firstIndex { $0.id.uuidString == currentID } ?? 0
+        repeatMode = [RepeatMode.off, .all, .one][min(2, max(0, defaults.integer(forKey: "playback.repeat")))]
+        queue = restored
+        originalOrder = (defaults.stringArray(forKey: "playback.original") ?? []).compactMap { byID[$0] }
+        if originalOrder.isEmpty { originalOrder = restored }
+        load(index: i, autoplay: false)
+        if restored[i].id.uuidString == currentID {
+            seek(to: defaults.double(forKey: "playback.position"))
+        }
+        // Zufall-Zustand ohne Neumischen übernehmen
+        restoringShuffle = true
+        shuffle = defaults.bool(forKey: "playback.shuffle")
+        restoringShuffle = false
+    }
+
+    private var restoringShuffle = false
 
     // MARK: Schlafmodus
 
@@ -369,7 +431,14 @@ final class AudioPlayer: NSObject, ObservableObject {
     var appliedGains: [Float] { eq.bands.map(\.gain) }
     var equalizerActive: Bool { !eq.bypass }
 
+    /// Verstärkung für den laufenden Titel anwenden
+    func applyTrackGain() {
+        let gain = sound.normalize ? (current.flatMap { gainProvider?($0.id) } ?? 0) : 0
+        normalizer.globalGain = gain
+    }
+
     private func applySound() {
+        applyTrackGain()
         let gains = sound.currentGains
         for (i, band) in eq.bands.enumerated() where gains.indices.contains(i) { band.gain = gains[i] }
         eq.bypass = !sound.enabled
@@ -397,7 +466,8 @@ final class AudioPlayer: NSObject, ObservableObject {
         let wasRunning = engine.isRunning
         if wasRunning { engine.stop() }
         engine.connect(node, to: eq, format: format)
-        engine.connect(eq, to: engine.mainMixerNode, format: format)
+        engine.connect(eq, to: normalizer, format: format)
+        engine.connect(normalizer, to: engine.mainMixerNode, format: format)
         connectedFormat = format
         if wasRunning { startEngineIfNeeded() }
     }
@@ -446,6 +516,7 @@ final class AudioPlayer: NSObject, ObservableObject {
             lastFrame = -1
             duration = Double(fileLength) / sampleRate
             currentTime = 0
+            applyTrackGain()
             pausedFrame = 0
             onDurationLoaded?(track.id, duration)
             schedule(from: 0)
@@ -461,6 +532,7 @@ final class AudioPlayer: NSObject, ObservableObject {
                 stopTimer()
             }
             updateNowPlaying()
+            saveQueue()
         } catch {
             errorMessage = "„\(track.title)“ kann nicht abgespielt werden: \(error.localizedDescription)"
             generation += 1
@@ -589,6 +661,9 @@ final class AudioPlayer: NSObject, ObservableObject {
             applyVolume()
             return
         }
+        // Position alle 5 s merken
+        saveTicks += 1
+        if saveTicks >= 50 { saveTicks = 0; saveQueue() }
         // Hörzeit und „richtig gehört“
         listenedPending += delta
         heardSeconds += delta

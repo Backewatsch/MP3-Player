@@ -32,20 +32,27 @@ final class MP3PlayerUITests: XCTestCase {
         button.tap()
     }
 
+    /// Mediathek → ＋ → „Von Link herunterladen“
     private func openDownloads() {
-        tab("Lieder downloaden")
-        tapDownloadsButton()
+        tab("Mediathek")
+        let add = app.buttons["addMenu"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5), "＋-Menü fehlt")
+        add.tap()
+        let item = app.buttons["Von Link herunterladen"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "Menüpunkt „Von Link herunterladen“ fehlt")
+        item.tap()
+        XCTAssertTrue(app.buttons["closeDownloads"].waitForExistence(timeout: 5), "Download-Liste öffnet sich nicht")
     }
 
-    /// Download-Liste öffnen (bei Bedarf ein zweites Mal tippen, falls noch eine Animation lief)
-    private func tapDownloadsButton() {
-        let button = app.buttons["downloadsButton"]
-        XCTAssertTrue(button.waitForExistence(timeout: 5))
-        button.tap()
-        if !app.buttons["closeDownloads"].waitForExistence(timeout: 3) {
-            button.tap()
-            XCTAssertTrue(app.buttons["closeDownloads"].waitForExistence(timeout: 5), "Download-Liste öffnet sich nicht")
-        }
+    private func downloadTestSong(_ url: String) {
+        openDownloads()
+        let field = app.textFields["downloadLinkField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(url)
+        app.buttons["downloadStartButton"].tap()
+        waitForFinishedDownload(timeout: 120)
+        app.buttons["closeDownloads"].tap()
     }
 
     private func waitForFinishedDownload(timeout: TimeInterval) {
@@ -76,14 +83,11 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["newPlaylistButton"].exists, "Neue Playlist in der Mediathek")
         screenshot("01b-Mediathek-Playlists")
 
-        tab("Lieder downloaden")
-        XCTAssertTrue(app.textFields["addressField"].waitForExistence(timeout: 5))
-        let startPage = app.webViews.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "Internet Archive")).firstMatch
-        XCTAssertTrue(startPage.waitForExistence(timeout: 15), "Startseite des Browsers wird nicht angezeigt")
-        screenshot("03-Browser-Startseite")
+        tab("Bearbeiten")
+        XCTAssertTrue(app.staticTexts["Noch keine Musik"].waitForExistence(timeout: 5), "Tab „Bearbeiten“ fehlt")
+        screenshot("03-Bearbeiten-leer")
 
-        app.buttons["downloadsButton"].tap()
+        openDownloads()
         XCTAssertTrue(app.textFields["downloadLinkField"].waitForExistence(timeout: 5))
         screenshot("04-Downloads-leer")
         app.buttons["closeDownloads"].tap()
@@ -178,23 +182,30 @@ final class MP3PlayerUITests: XCTestCase {
         screenshot("16-Mediathek-Kurzwahl")
     }
 
-    func test4_DownloadThroughInternalBrowser() {
-        tab("Lieder downloaden")
-        let address = app.textFields["addressField"]
-        XCTAssertTrue(address.waitForExistence(timeout: 5))
-        address.tap()
-        address.typeText(mp3URL2 + "\n")
-        sleep(2)
-        screenshot("10-Browser-Download")
-
-        tapDownloadsButton()
-        waitForFinishedDownload(timeout: 120)
-        screenshot("11-Browser-Download-fertig")
-        app.buttons["closeDownloads"].tap()
-
-        tab("Mediathek")
-        if !app.staticTexts["1 Titel"].waitForExistence(timeout: 5) { app.swipeUp() }
-        XCTAssertTrue(app.staticTexts["1 Titel"].waitForExistence(timeout: 5))
+    /// Tab „Bearbeiten“: Ende wegschneiden und als neues Lied speichern
+    func test4_TrimSong() {
+        downloadTestSong(mp3URL1)
+        tab("Bearbeiten")
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "edit-")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "Lied fehlt im Tab „Bearbeiten“")
+        screenshot("10-Bearbeiten-Auswahl")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["trimSummary"].waitForExistence(timeout: 10), "Zuschneiden öffnet sich nicht")
+        let minus = app.buttons["trimEnd-minus"].firstMatch
+        XCTAssertTrue(minus.waitForExistence(timeout: 5))
+        minus.tap()
+        screenshot("11-Zuschneiden")
+        let save = app.buttons["trimSaveCopy"].firstMatch
+        if !save.isHittable { app.swipeUp() }
+        save.tap()
+        let ok = app.alerts.buttons["OK"].firstMatch
+        XCTAssertTrue(ok.waitForExistence(timeout: 15), "Speichern meldet sich nicht")
+        let text = app.alerts.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "gekürzt")).firstMatch
+        XCTAssertTrue(text.exists, "Zuschneiden fehlgeschlagen")
+        screenshot("12-Zuschneiden-fertig")
+        ok.tap()
+        let copy = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "(gekürzt)")).firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 10), "Gekürztes Lied fehlt in der Liste")
     }
 
     func test5_SettingsShowsVersionUpdatesAndConverter() {
@@ -217,27 +228,9 @@ final class MP3PlayerUITests: XCTestCase {
         app.buttons["Fertig"].firstMatch.tap()
     }
 
-    func test6_YouTubeShowsHint() {
-        tab("Lieder downloaden")
-        let address = app.textFields["addressField"]
-        XCTAssertTrue(address.waitForExistence(timeout: 5))
-        address.tap()
-        address.typeText("https://m.youtube.com\n")
-        let hint = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "YouTube werden nicht unterstützt")).firstMatch
-        XCTAssertTrue(hint.waitForExistence(timeout: 30))
-        screenshot("12-YouTube-Hinweis")
-    }
-
     /// Lieblingssongs, Sortieren, Mehrfachauswahl, Statistik, Klang und Schlafmodus
     func test7_NewFeatures() {
-        openDownloads()
-        let field = app.textFields["downloadLinkField"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
-        field.typeText(mp3URL1)
-        app.buttons["downloadStartButton"].tap()
-        waitForFinishedDownload(timeout: 120)
-        app.buttons["closeDownloads"].tap()
+        downloadTestSong(mp3URL1)
 
         // Player: Herz, Klang, Schlafmodus
         let mini = app.otherElements["miniPlayer"].firstMatch

@@ -43,14 +43,13 @@ struct PlaylistDetailView: View {
                     TrackListRow(track: track, playlist: playlist, selection: selection) {
                         player.play(tracks, startAt: index, playlistID: playlist.id)
                     }
-                    .cyberRow()
                 }
                 .onDelete { library.removeTracks(at: $0, from: playlist) }
                 .onMove { library.moveTracks(from: $0, to: $1, in: playlist) }
             } footer: {
                 if tracks.isEmpty {
                     Text(playlist.id == Library.downloadsPlaylistID
-                         ? "Titel, die du im Browser herunterlädst, erscheinen automatisch hier."
+                         ? "Titel, die du per Link herunterlädst, erscheinen automatisch hier."
                          : "Füge über ＋ Titel hinzu.")
                 } else {
                     Text("\(tracks.count) Titel · \(tracks.reduce(0) { $0 + $1.duration }.formattedTime)")
@@ -58,7 +57,6 @@ struct PlaylistDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .cyberList()
         .navigationTitle(playlist.name)
         .safeAreaInset(edge: .top) {
             if selection.active { SelectionBar(selection: selection, all: tracks, playlist: playlist) }

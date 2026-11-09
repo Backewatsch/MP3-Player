@@ -21,6 +21,17 @@ final class Library: ObservableObject {
     @Published private(set) var plays: [PlayEvent] = []
     /// Hörzeit in Sekunden je Monat
     @Published private(set) var listenedByMonth: [String: Double] = [:]
+    /// Lautstärke-Angleichung je Titel (dB)
+    @Published private(set) var gains: [UUID: Float] = [:]
+    /// Selbst eingetragene Songtexte
+    @Published private(set) var lyricsByID: [UUID: String] = [:]
+    /// Titel mit eigenem Cover (auch für die Cover-Anzeige ohne Zugriff auf die Bibliothek)
+    @Published private(set) var customCovers: [UUID] = [] {
+        didSet { Self.customCoverIDs = Set(customCovers) }
+    }
+    nonisolated(unsafe) static var customCoverIDs = Set<UUID>()
+    /// Zählt hoch, wenn sich ein Cover geändert hat (Anzeige lädt neu)
+    @Published private(set) var coverVersion = 0
     static let maxHistory = 300
     /// Fortschritt einer laufenden Umwandlung (für die Anzeige), sonst `nil`
     @Published private(set) var conversionStatus: String?
@@ -173,9 +184,121 @@ final class Library: ObservableObject {
     }
 
     var stateSnapshot: LibraryState {
-        LibraryState(tracks: tracks, playlists: playlists, pinned: pinnedIDs, favorites: favoriteIDs, playCounts: playCounts,
-                     history: historyEvents, plays: plays, listenedByMonth: listenedByMonth)
+        var s = LibraryState(tracks: tracks, playlists: playlists, pinned: pinnedIDs, favorites: favoriteIDs, playCounts: playCounts,
+                             history: historyEvents, plays: plays, listenedByMonth: listenedByMonth)
+        s.gains = gains
+        s.lyrics = lyricsByID
+        s.customCovers = customCovers
+        return s
     }
+
+    // MARK: Lautstärke, Songtexte, Cover, Doppelte, Mixe
+
+    func gain(of id: UUID) -> Float? { gains[id] }
+    var tracksWithoutGain: [Track] { tracks.filter { gains[$0.id] == nil } }
+
+    func setGain(_ id: UUID, _ db: Float) {
+        guard track(id: id) != nil else { return }
+        gains[id] = db
+        save()
+    }
+
+    func storedLyrics(_ track: Track) -> String? { lyricsByID[track.id] }
+
+    /// Songtext: selbst eingetragen oder aus der Datei
+    func lyrics(for track: Track) async -> String? {
+        if let s = lyricsByID[track.id] { return s }
+        let asset = AVURLAsset(url: track.fileURL)
+        let text = try? await asset.load(.lyrics)
+        return text?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
+    func setLyrics(_ track: Track, _ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        lyricsByID[track.id] = clean.isEmpty ? nil : clean
+        save()
+    }
+
+    func hasCustomCover(_ track: Track) -> Bool { customCovers.contains(track.id) }
+
+    func setCustomCover(_ track: Track, image: UIImage) {
+        let thumb = image.preparingThumbnail(of: CGSize(width: 800, height: 800)) ?? image
+        try? thumb.jpegData(compressionQuality: 0.85)?.write(to: track.artworkURL, options: .atomic)
+        ArtworkCache.shared.remove(track.id)
+        if !customCovers.contains(track.id) { customCovers.insert(track.id, at: 0) }
+        coverVersion += 1
+        save()
+    }
+
+    func removeCustomCover(_ track: Track) async {
+        try? FileManager.default.removeItem(at: track.artworkURL)
+        ArtworkCache.shared.remove(track.id)
+        // Eingebettetes Cover wiederherstellen
+        _ = await Self.makeTrack(for: track.fileURL, artworkTo: track.artworkURL)
+        customCovers.removeAll { $0 == track.id }
+        coverVersion += 1
+        save()
+    }
+
+    func playlistCoverURL(_ playlist: Playlist) -> URL { Storage.artwork.appendingPathComponent("playlist-\(playlist.id.uuidString).jpg") }
+
+    func setPlaylistCover(_ playlist: Playlist, image: UIImage) {
+        let thumb = image.preparingThumbnail(of: CGSize(width: 800, height: 800)) ?? image
+        try? thumb.jpegData(compressionQuality: 0.85)?.write(to: playlistCoverURL(playlist), options: .atomic)
+        coverVersion += 1
+    }
+
+    var duplicateGroups: [[Track]] { Duplicates.groups(tracks) }
+
+    private var analyzing = false
+
+    /// Lautheit aller noch nicht gemessenen Lieder im Hintergrund messen
+    func analyzeLoudness() async {
+        guard !analyzing else { return }
+        analyzing = true
+        defer { analyzing = false }
+        while let next = tracksWithoutGain.first {
+            let url = next.fileURL
+            let gain = await Task.detached(priority: .utility) { LoudnessAnalyzer.gain(of: url) }.value
+            setGain(next.id, gain ?? 0)
+            onGainMeasured?(next.id, gain ?? 0)
+        }
+    }
+
+    /// Meldet eine neu gemessene Verstärkung (für den laufenden Titel)
+    var onGainMeasured: ((UUID, Float) -> Void)?
+
+    /// Behält ein Lied der Gruppe, übernimmt Playlists, Herzen, Zähler und Verlauf der anderen und löscht diese
+    @discardableResult
+    func mergeDuplicates(_ group: [Track]) -> Track {
+        let keep = Duplicates.keeper(group, playCounts: playCounts,
+                                     playlistCount: { t in self.playlists.filter { $0.trackIDs.contains(t.id) }.count },
+                                     favorites: Set(favoriteIDs))
+        let others = group.filter { $0.id != keep.id }
+        guard !others.isEmpty else { return keep }
+        let gone = Set(others.map(\.id))
+        func swap(_ id: UUID) -> UUID { gone.contains(id) ? keep.id : id }
+        func unique(_ ids: [UUID]) -> [UUID] {
+            var seen = Set<UUID>(); var out: [UUID] = []
+            for id in ids where seen.insert(id).inserted { out.append(id) }
+            return out
+        }
+        for i in playlists.indices { playlists[i].trackIDs = unique(playlists[i].trackIDs.map(swap)) }
+        pinnedIDs = unique(pinnedIDs.map(swap))
+        favoriteIDs = unique(favoriteIDs.map(swap))
+        var total = 0
+        for t in group { total += playCounts[t.id] ?? 0 }
+        for id in gone { playCounts[id] = nil }
+        playCounts[keep.id] = total
+        historyEvents = historyEvents.map { PlayEvent(trackID: swap($0.trackID), at: $0.at) }
+        plays = plays.map { PlayEvent(trackID: swap($0.trackID), at: $0.at) }
+        if lyricsByID[keep.id] == nil, let text = others.compactMap({ lyricsByID[$0.id] }).first { lyricsByID[keep.id] = text }
+        save()
+        deleteAll(others)
+        return keep
+    }
+
+    func smartTracks(_ kind: SmartPlaylist) -> [Track] { kind.tracks(stateSnapshot) }
 
     var stats: StatsSummary { StatsSummary.make(stateSnapshot) }
 
@@ -379,7 +502,8 @@ final class Library: ObservableObject {
         for i in playlists.indices { playlists[i].trackIDs.removeAll { ids.contains($0) } }
         pinnedIDs.removeAll { ids.contains($0) }
         favoriteIDs.removeAll { ids.contains($0) }
-        for id in ids { playCounts[id] = nil }
+        for id in ids { playCounts[id] = nil; gains[id] = nil; lyricsByID[id] = nil }
+        customCovers.removeAll { ids.contains($0) }
         historyEvents.removeAll { ids.contains($0.trackID) }
         plays.removeAll { ids.contains($0.trackID) }
         save()
@@ -405,6 +529,13 @@ final class Library: ObservableObject {
         guard duration.isFinite, duration > 0,
               let i = tracks.firstIndex(where: { $0.id == trackID }),
               abs(tracks[i].duration - duration) > 1 else { return }
+        tracks[i].duration = duration
+        save()
+    }
+
+    /// Setzt die Dauer immer (z. B. nach dem Zuschneiden)
+    func setExactDuration(of trackID: UUID, to duration: Double) {
+        guard duration.isFinite, duration > 0, let i = tracks.firstIndex(where: { $0.id == trackID }) else { return }
         tracks[i].duration = duration
         save()
     }
@@ -515,6 +646,10 @@ final class Library: ObservableObject {
         historyEvents = state.history
         plays = state.plays
         listenedByMonth = state.listenedByMonth
+        gains = state.gains
+        lyricsByID = state.lyrics
+        customCovers = state.customCovers
+        Self.customCoverIDs = Set(state.customCovers)
         // Alben wurden ab Version 2 gespeichert
         needsMetadataUpgrade = state.version < 2
     }
@@ -564,7 +699,7 @@ final class Library: ObservableObject {
     }
 
     /// Liest ID3-/iTunes-Metadaten (Titel, Interpret, Dauer, Cover).
-    nonisolated static func makeTrack(for url: URL) async -> Track {
+    nonisolated static func makeTrack(for url: URL, artworkTo: URL? = nil) async -> Track {
         let asset = AVURLAsset(url: url)
         var title: String?
         var artist: String?
@@ -601,7 +736,7 @@ final class Library: ObservableObject {
         )
         if let artworkData, let image = UIImage(data: artworkData) {
             let thumb = image.preparingThumbnail(of: CGSize(width: 600, height: 600)) ?? image
-            try? thumb.jpegData(compressionQuality: 0.85)?.write(to: track.artworkURL, options: .atomic)
+            try? thumb.jpegData(compressionQuality: 0.85)?.write(to: artworkTo ?? track.artworkURL, options: .atomic)
         }
         return track
     }

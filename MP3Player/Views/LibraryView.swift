@@ -11,6 +11,8 @@ enum LibraryRoute: Hashable {
     case playlist(UUID)
     case favorites
     case stats
+    case smart(String)
+    case duplicates
 }
 
 /// Tab „Mediathek“: Kurzwahl, Titel/Alben/Interpreten und Playlists (inkl. neue Playlist erstellen).
@@ -23,8 +25,7 @@ struct MediathekView: View {
     @State private var path = NavigationPath()
     @State private var search = ""
     @State private var showImporter = false
-    @State private var showLinkPrompt = false
-    @State private var linkText = ""
+    @State private var showDownloads = false
     @State private var importError: String?
     @State private var showSettings = false
     @State private var showNewPlaylist = false
@@ -48,13 +49,11 @@ struct MediathekView: View {
                     Section {
                         ForEach(Array(results.enumerated()), id: \.element.id) { index, track in
                             TrackListRow(track: track) { player.play(results, startAt: index) }
-                                .cyberRow()
                         }
-                    } header: { CyberHeader(text: "\(results.count) Treffer") }
+                    } header: { SectionTitle(text: "\(results.count) Treffer") }
                 }
             }
             .listStyle(.insetGrouped)
-            .cyberList()
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     UpdateBanner { showSettings = true }
@@ -88,9 +87,10 @@ struct MediathekView: View {
                         Button { showImporter = true } label: {
                             Label("Aus Dateien importieren / Video umwandeln", systemImage: "folder")
                         }
-                        Button { linkText = UIPasteboard.general.string ?? ""; showLinkPrompt = true } label: {
+                        Button { showDownloads = true } label: {
                             Label("Von Link herunterladen", systemImage: "link")
                         }
+                        .accessibilityIdentifier("menuLink")
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -124,16 +124,6 @@ struct MediathekView: View {
                     path.append(LibraryRoute.playlist(playlist.id))
                 }
             }
-            .alert("Von Link herunterladen", isPresented: $showLinkPrompt) {
-                TextField("https://…/lied.mp3", text: $linkText)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Abbrechen", role: .cancel) {}
-                Button("Laden") { startLinkDownload() }
-            } message: {
-                Text("Direkter Link zu einer Audio- oder Videodatei (Videos werden umgewandelt).")
-            }
             .alert("Import fehlgeschlagen", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -141,6 +131,9 @@ struct MediathekView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showDownloads) {
+                DownloadsView(isSheet: true)
             }
         }
     }
@@ -155,7 +148,7 @@ struct MediathekView: View {
                         .font(.system(size: 40))
                         .foregroundStyle(.secondary)
                     Text("Noch keine Musik").font(.headline)
-                    Text("Lade im Tab „Lieder downloaden“ Musik aus dem Internet, importiere Dateien über ＋ oder kopiere sie per Finder/iTunes-Dateifreigabe aufs iPhone.")
+                    Text("Importiere Dateien über ＋ (Dateien-App oder Link), teile eine MP3 aus Safari mit der App oder kopiere Musik per Finder-Dateifreigabe aufs iPhone.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -163,7 +156,6 @@ struct MediathekView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
             }
-            .cyberRow()
         } else {
             Section {
                 HStack(spacing: 12) {
@@ -191,7 +183,15 @@ struct MediathekView: View {
                 PinnedStrip(tracks: library.pinnedTracks)
                     .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
                     .listRowBackground(Color.clear)
-            } header: { CyberHeader(text: "Kurzwahl") }
+            } header: { SectionTitle(text: "Kurzwahl") }
+        }
+
+        if !library.tracks.isEmpty {
+            Section {
+                SmartRow()
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+            } header: { SectionTitle(text: "Deine Mixe") }
         }
 
         Section {
@@ -199,29 +199,24 @@ struct MediathekView: View {
                 categoryRow("Lieblingssongs", "heart.fill", count: library.favoriteTracks.count)
             }
             .accessibilityIdentifier("category-Lieblingssongs")
-            .cyberRow()
             NavigationLink(value: LibraryRoute.allTracks) {
                 categoryRow("Titel", "music.note", count: library.tracks.count)
             }
             .accessibilityIdentifier("category-Titel")
-            .cyberRow()
             NavigationLink(value: LibraryRoute.albums) {
                 categoryRow("Alben", "square.stack", count: albumNames.count)
             }
             .accessibilityIdentifier("category-Alben")
-            .cyberRow()
             NavigationLink(value: LibraryRoute.artists) {
                 categoryRow("Interpreten", "music.mic", count: artistNames.count)
             }
             .accessibilityIdentifier("category-Interpreten")
-            .cyberRow()
             NavigationLink(value: LibraryRoute.stats) {
                 categoryRow("Statistik", "chart.bar.fill", count: nil)
             }
             .accessibilityIdentifier("category-Statistik")
-            .cyberRow()
         } header: {
-            CyberHeader(text: "Bibliothek")
+            SectionTitle(text: "Bibliothek")
         }
 
         Section {
@@ -238,21 +233,19 @@ struct MediathekView: View {
                 }
             }
             .accessibilityIdentifier("newPlaylistButton")
-            .cyberRow()
 
             ForEach(library.playlists) { playlist in
                 NavigationLink(value: LibraryRoute.playlist(playlist.id)) {
                     PlaylistRow(playlist: playlist)
                 }
                 .deleteDisabled(playlist.id == Library.downloadsPlaylistID)
-                .cyberRow()
             }
             .onDelete { offsets in
                 let doomed = offsets.compactMap { library.playlists.indices.contains($0) ? library.playlists[$0] : nil }
                 doomed.forEach(library.deletePlaylist)
             }
         } header: {
-            CyberHeader(text: "Playlists")
+            SectionTitle(text: "Playlists")
         }
     }
 
@@ -260,7 +253,7 @@ struct MediathekView: View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
                 .font(.title3)
-                .foregroundStyle(Color.cyberAccent)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 30)
             Text(title)
             Spacer()
@@ -306,16 +299,11 @@ struct MediathekView: View {
             FavoritesView()
         case .stats:
             StatsView()
+        case .smart(let name):
+            if let kind = SmartPlaylist(rawValue: name) { SmartPlaylistView(kind: kind) }
+        case .duplicates:
+            DuplicatesView()
         }
-    }
-
-    private func startLinkDownload() {
-        let text = linkText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: text), url.scheme?.hasPrefix("http") == true else {
-            importError = "Ungültiger Link."
-            return
-        }
-        downloads.download(from: url)
     }
 }
 
@@ -326,7 +314,7 @@ struct PlaylistRow: View {
     var body: some View {
         let tracks = library.tracks(in: playlist)
         HStack(spacing: 12) {
-            ArtworkView(track: tracks.first, size: 52, cornerRadius: 8)
+            PlaylistArtwork(playlist: playlist, first: tracks.first, size: 52)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     if playlist.id == Library.downloadsPlaylistID {
@@ -367,7 +355,6 @@ struct AllTracksView: View {
                     TrackListRow(track: track, selection: selection) {
                         player.play(tracks, startAt: index, allTracks: true)
                     }
-                    .cyberRow()
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { actions.requestDelete(track) } label: { Label("Entfernen", systemImage: "trash") }
                         Button { player.addToQueue(track) } label: { Label("Wiedergabeliste", systemImage: "text.append") }
@@ -375,7 +362,7 @@ struct AllTracksView: View {
                     }
                     .swipeActions(edge: .leading) {
                         Button { player.playNext(track) } label: { Label("Als Nächstes", systemImage: "text.line.first.and.arrowtriangle.forward") }
-                            .tint(Color.cyberAccent)
+                            .tint(Color.accentColor)
                         Button { library.toggleFavorite(track) } label: { Label("Herz", systemImage: library.isFavorite(track) ? "heart.slash" : "heart") }
                             .tint(.pink)
                     }
@@ -385,7 +372,6 @@ struct AllTracksView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .cyberList()
         .navigationTitle("Titel")
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
@@ -446,7 +432,6 @@ struct GroupListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .cyberList()
         .navigationTitle(title)
     }
 }
@@ -485,4 +470,24 @@ struct PinnedStrip: View {
 
 extension UTType {
     static let mp3Audio = UTType("public.mp3") ?? .audio
+}
+
+/// Cover einer Playlist: eigenes Bild, sonst das Cover des ersten Titels
+struct PlaylistArtwork: View {
+    @EnvironmentObject private var library: Library
+    let playlist: Playlist
+    let first: Track?
+    var size: CGFloat
+    var cornerRadius: CGFloat = 8
+
+    var body: some View {
+        let _ = library.coverVersion
+        if let image = UIImage(contentsOfFile: library.playlistCoverURL(playlist).path) {
+            Image(uiImage: image).resizable().scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            ArtworkView(track: first, size: size, cornerRadius: cornerRadius)
+        }
+    }
 }

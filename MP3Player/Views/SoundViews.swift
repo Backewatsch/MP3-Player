@@ -11,17 +11,17 @@ struct SoundView: View {
             List {
                 Section {
                     Toggle("Equalizer", isOn: $sound.enabled)
-                        .tint(Color.cyberAccent)
+                        .tint(Color.accentColor)
                         .accessibilityIdentifier("eqSwitch")
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(SoundPresets.all.map(\.name) + [SoundPresets.custom], id: \.self) { name in
                                 Button(name) { sound.choose(name) }
-                                    .font(.system(.footnote, design: .monospaced))
+                                    .font(.footnote)
                                     .padding(.horizontal, 12).padding(.vertical, 7)
-                                    .background(sound.preset == name ? Color.cyberAccent.opacity(0.22) : Color.cyberPanelHigh,
+                                    .background(sound.preset == name ? Color.accentColor.opacity(0.22) : Color(.tertiarySystemFill),
                                                 in: RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(sound.preset == name ? Color.cyberAccent : .primary)
+                                    .foregroundStyle(sound.preset == name ? Color.accentColor : .primary)
                                     .buttonStyle(.plain)
                                     .accessibilityIdentifier("preset-\(name)")
                             }
@@ -33,14 +33,25 @@ struct SoundView: View {
                             Text(hz >= 1000 ? "\(Int(hz / 1000)) kHz" : "\(Int(hz)) Hz")
                                 .font(.caption.monospacedDigit()).frame(width: 54, alignment: .leading)
                             Slider(value: Binding(get: { Double(gains[i]) }, set: { sound.setBand(i, Float($0)) }), in: -12...12)
-                                .tint(Color.cyberAccent)
+                                .tint(Color.accentColor)
                                 .disabled(!sound.enabled)
                             Text(String(format: "%+.0f dB", gains[i]))
-                                .font(.caption.monospacedDigit()).foregroundStyle(Color.neonCyan).frame(width: 50)
+                                .font(.caption.monospacedDigit()).foregroundStyle(Color.accentColor).frame(width: 50)
                         }
                     }
-                } header: { CyberHeader(text: "Equalizer") }
-                .cyberRow()
+                } header: { Text("Equalizer") }
+
+                Section {
+                    Toggle(isOn: $sound.normalize) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Lautstärke angleichen")
+                            Text("Alle Lieder klingen ähnlich laut").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(Color.accentColor)
+                    .accessibilityIdentifier("normalizeSwitch")
+                    .onChange(of: sound.normalize) { _ in player.applyTrackGain() }
+                } header: { Text("Lautstärke") }
 
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
@@ -48,13 +59,11 @@ struct SoundView: View {
                              : "Lieder werden am Ende \(Int(sound.crossfade)) s sanft aus- und am Anfang eingeblendet")
                             .font(.footnote).foregroundStyle(.secondary)
                             .accessibilityIdentifier("crossfadeText")
-                        Slider(value: $sound.crossfade, in: 0...12, step: 1).tint(Color.cyberAccent)
+                        Slider(value: $sound.crossfade, in: 0...12, step: 1).tint(Color.accentColor)
                             .accessibilityIdentifier("crossfadeSlider")
                     }
-                } header: { CyberHeader(text: "Überblenden") }
-                .cyberRow()
+                } header: { Text("Überblenden") }
             }
-            .cyberList()
             .navigationTitle("Klang")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } } }
@@ -83,13 +92,12 @@ struct SleepTimerView: View {
                     Section {
                         TimelineView(.periodic(from: .now, by: 1)) { _ in
                             Text("Läuft – Musik geht aus in \(Self.format(player.sleepRemaining ?? remaining))")
-                                .foregroundStyle(Color.cyberAccent)
+                                .foregroundStyle(Color.accentColor)
                                 .accessibilityIdentifier("sleepRemaining")
                         }
                         Button("Timer beenden", role: .destructive) { player.cancelSleepTimer(); dismiss() }
                             .accessibilityIdentifier("sleepCancel")
                     }
-                    .cyberRow()
                 }
                 Section {
                     TextField("Minuten", text: $text)
@@ -100,7 +108,7 @@ struct SleepTimerView: View {
                         ForEach([15, 30, 45, 60], id: \.self) { m in
                             Button("\(m)") { text = "\(m)" }
                                 .buttonStyle(.bordered)
-                                .tint(minutes == m ? Color.cyberAccent : .gray)
+                                .tint(minutes == m ? Color.accentColor : .gray)
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -112,9 +120,7 @@ struct SleepTimerView: View {
                 } footer: {
                     Text("In den letzten Sekunden wird die Musik sanft leiser.")
                 }
-                .cyberRow()
             }
-            .cyberList()
             .navigationTitle("Schlafmodus")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
