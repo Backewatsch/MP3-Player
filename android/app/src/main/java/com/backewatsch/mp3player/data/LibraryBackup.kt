@@ -18,7 +18,7 @@ import java.io.File
  * Titel+Interpret+Länge wiedererkannt; fehlende Titel kommen aus [musicFiles] (Dateiname → Datei), falls vorhanden.
  * Playlists werden über den Namen zusammengeführt, Herzen/Kurzwahl vereinigt, Zähler und Hörzeit übernommen.
  */
-suspend fun Library.restore(backup: LibraryState, musicFiles: Map<String, File>, artworkFiles: Map<String, File>): RestoreResult {
+suspend fun Library.restore(backup: LibraryState, musicFiles: Map<String, File>, artworkFiles: Map<String, File>): Library.RestoreResult {
     val idMap = mutableMapOf<String, String>()
     var added = 0
     var matched = 0
@@ -86,7 +86,7 @@ suspend fun Library.restore(backup: LibraryState, musicFiles: Map<String, File>,
             }
         }
         save()
-        return RestoreResult(added, matched, missing, backup.playlists.size)
+        return Library.RestoreResult(added, matched, missing, backup.playlists.size)
     } finally {
         mutex.withLock { importing -= reserved.toSet() }
     }
