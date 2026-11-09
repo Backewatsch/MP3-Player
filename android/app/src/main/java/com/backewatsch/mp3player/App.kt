@@ -54,6 +54,8 @@ class App : Application() {
         if (analyzing?.isActive == true) return
         analyzing = scope.launch {
             while (true) {
+                // Nur messen, solange keine Musik läuft – stört so nie das Abspielen
+                while (player.state.value.isPlaying) kotlinx.coroutines.delay(5_000)
                 val next = library.tracksWithoutGain().firstOrNull() ?: break
                 val gain = withContext(Dispatchers.Default) {
                     runCatching { com.backewatsch.mp3player.convert.LoudnessAnalyzer.gainDb(library.fileOf(next)) }.getOrNull()
