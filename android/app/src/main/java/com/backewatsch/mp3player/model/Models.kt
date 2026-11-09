@@ -13,6 +13,8 @@ data class Track(
     /** Dauer in Millisekunden */
     val durationMs: Long = 0,
     val addedAt: Long = System.currentTimeMillis(),
+    /** Genre (z. B. „Hip-Hop“), aus der Datei gelesen oder selbst eingetragen */
+    val genre: String = "",
     /** Herkunft (z. B. Pfad der Originaldatei bei Übernahme aus Samsung Music) – verhindert Doppelte */
     val source: String = "",
 )
@@ -50,6 +52,8 @@ data class LibraryState(
     val lyrics: Map<String, String> = emptyMap(),
     /** Titel mit selbst gewähltem Cover (wird immer angezeigt) */
     val customCovers: List<String> = emptyList(),
+    /** Genres der vorhandenen Titel wurden einmal aus den Dateien gelesen */
+    val genresScanned: Boolean = false,
 ) {
     companion object {
         const val CURRENT_VERSION = 4

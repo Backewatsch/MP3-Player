@@ -104,7 +104,7 @@ fun TrackActionsHost(state: TrackActionsState) {
                 hostContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }?.let { MetadataReader.shrinkArtwork(it, 800) }
             }
             if (jpeg != null) {
-                hostApp.library.setCustomCover(track, jpeg)
+                withContext(Dispatchers.IO) { hostApp.library.setCustomCover(track, jpeg) }
                 hostApp.player.refreshArtwork()
             } else Toast.makeText(hostContext, "Bild konnte nicht gelesen werden.", Toast.LENGTH_SHORT).show()
         }
@@ -354,19 +354,44 @@ private fun InfoLine(label: String, value: String) {
 @Composable
 private fun EditTrackDialog(track: Track, onDismiss: () -> Unit) {
     val app = LocalApp.current
+    val context = LocalContext.current
     var title by remember { mutableStateOf(track.title) }
     var artist by remember { mutableStateOf(track.artist) }
+    var album by remember { mutableStateOf(track.album) }
+    var genre by remember { mutableStateOf(track.genre) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Infos bearbeiten") },
         text = {
             Column {
-                OutlinedTextField(title, { title = it }, label = { Text("Titel") }, singleLine = true)
+                OutlinedTextField(title, { title = it }, label = { Text("Titel") }, singleLine = true,
+                    modifier = Modifier.testTag("editTitle"))
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(artist, { artist = it }, label = { Text("Interpret") }, singleLine = true)
+                OutlinedTextField(artist, { artist = it }, label = { Text("Interpret") }, singleLine = true,
+                    modifier = Modifier.testTag("editArtist"))
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(album, { album = it }, label = { Text("Album") }, singleLine = true,
+                    modifier = Modifier.testTag("editAlbum"))
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(genre, { genre = it }, label = { Text("Genre") }, singleLine = true,
+                    modifier = Modifier.testTag("editGenre"))
+                if (FileNames.isMp3(track.fileName)) {
+                    Text("Wird auch in der MP3-Datei gespeichert – andere Apps zeigen die Infos dann ebenfalls an.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
             }
         },
-        confirmButton = { TextButton(onClick = { app.library.rename(track, title, artist); onDismiss() }) { Text("Sichern") } },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                app.scope.launch {
+                    withContext(Dispatchers.IO) { app.library.editInfo(track, title, artist, album, genre) }
+                    app.player.refreshArtwork()
+                    Toast.makeText(context, "Gespeichert", Toast.LENGTH_SHORT).show()
+                }
+            }, modifier = Modifier.testTag("editSave")) { Text("Sichern") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
     )
 }

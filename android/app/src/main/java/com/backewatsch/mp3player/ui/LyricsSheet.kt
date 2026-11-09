@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.backewatsch.mp3player.model.Track
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Songtext groß zum Mitlesen – aus der MP3 oder selbst eingetragen */
@@ -93,7 +94,8 @@ fun LyricsSheet(track: Track, onDismiss: () -> Unit) {
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = { editing = false }) { Text("Abbrechen", color = Color.White) }
                     TextButton(onClick = {
-                        app.library.setLyrics(track, draft)
+                        val text = draft
+                        app.scope.launch(Dispatchers.IO) { app.library.setLyrics(track, text) }
                         lyrics = draft.trim().ifEmpty { null }
                         editing = false
                     }, modifier = Modifier.testTag("lyricsSave")) { Text("Sichern", color = Color.White, fontWeight = FontWeight.Bold) }

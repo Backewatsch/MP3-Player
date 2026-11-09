@@ -22,6 +22,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.BarChart
@@ -94,6 +100,8 @@ sealed interface LibRoute {
     data object Stats : LibRoute
     data class Smart(val name: String) : LibRoute
     data object Duplicates : LibRoute
+    data object Genres : LibRoute
+    data class Genre(val name: String) : LibRoute
 }
 
 @Composable
@@ -111,6 +119,8 @@ fun LibraryHost() {
         LibRoute.Stats -> StatsScreen()
         is LibRoute.Smart -> SmartPlaylistScreen(route.name)
         LibRoute.Duplicates -> DuplicatesScreen()
+        LibRoute.Genres -> GenresScreen()
+        is LibRoute.Genre -> CollectionScreen(route.name, "Genre")
     }
 }
 
@@ -153,6 +163,8 @@ fun MediathekRoot() {
     val conversion by app.library.conversionStatus.collectAsState()
     val update by app.updates.state.collectAsState()
     var search by remember { mutableStateOf("") }
+    var searchFocused by remember { mutableStateOf(false) }
+    val recentSearches by app.recentSearches.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
     var showNewPlaylist by remember { mutableStateOf(false) }
     var showLink by remember { mutableStateOf(false) }
@@ -186,9 +198,15 @@ fun MediathekRoot() {
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = search, onValueChange = { search = it }, singleLine = true,
-                        placeholder = { Text("Titel, Interpret oder Album") },
-                        modifier = Modifier.weight(1f).testTag("searchField"),
-                        shape = RoundedCornerShape(12.dp),
+                        placeholder = { Text("Lieder, Interpreten, Alben, Genres") },
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        trailingIcon = {
+                            if (search.isNotEmpty()) IconButton(onClick = { search = "" }, modifier = Modifier.testTag("searchClear")) {
+                                Icon(Icons.Default.Close, "Suche löschen")
+                            }
+                        },
+                        modifier = Modifier.weight(1f).onFocusChanged { searchFocused = it.isFocused }.testTag("searchField"),
+                        shape = RoundedCornerShape(24.dp),
                     )
                     IconButton(onClick = { nav.showSettings = true }, modifier = Modifier.testTag("settingsButton")) {
                         Icon(Icons.Default.Settings, "Info & Updates")
@@ -222,16 +240,69 @@ fun MediathekRoot() {
             }
 
             if (search.isNotBlank()) {
-                val q = search.trim()
-                val results = app.library.sortedTracks().filter {
-                    it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
+                val results = com.backewatsch.mp3player.data.Search.run(lib, search)
+                val saveQuery = { app.rememberSearch(search) }
+                if (results.isEmpty) {
+                    item { EmptyHint("Nichts gefunden", "Zu „${search.trim()}“ gibt es keine Treffer.") }
+                    return@LazyColumn
                 }
-                item { SectionHeader("${results.size} Treffer") }
-                itemsIndexed(results, key = { _, t -> "s-" + t.id }) { index, track ->
-                    TrackRow(track, player.currentId == track.id, player.isPlaying,
-                        onPlay = { app.player.play(results, index) }, onMore = { nav.actions.open(track) })
+                if (results.artists.isNotEmpty()) {
+                    item { SectionHeader("Interpreten") }
+                    item {
+                        LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            items(results.artists, key = { "a-$it" }) { artist ->
+                                Column(Modifier.width(96.dp).clickable { saveQuery(); nav.push(LibRoute.Artist(artist)) }.testTag("result-artist-$artist"),
+                                    horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(Modifier.clip(androidx.compose.foundation.shape.CircleShape)) {
+                                        Artwork(app.library.tracksByArtist(artist).firstOrNull(), 88.dp, 44.dp)
+                                    }
+                                    Text(artist, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 6.dp))
+                                }
+                            }
+                        }
+                    }
                 }
+                if (results.albums.isNotEmpty() || results.genres.isNotEmpty() || results.playlists.isNotEmpty()) {
+                    item { SectionHeader("Alben, Genres & Playlists") }
+                    items(results.albums, key = { "al-$it" }) { album ->
+                        ResultRow(album, "Album", Icons.Default.Album, "result-album-$album") { saveQuery(); nav.push(LibRoute.Album(album)) }
+                    }
+                    items(results.genres, key = { "g-$it" }) { genre ->
+                        ResultRow(genre, "Genre", Icons.Default.Category, "result-genre-$genre") { saveQuery(); nav.push(LibRoute.Genre(genre)) }
+                    }
+                    items(results.playlists, key = { "pl-" + it.id }) { pl ->
+                        ResultRow(pl.name, "Playlist · ${pl.trackIds.size} Titel", Icons.AutoMirrored.Filled.QueueMusic, "result-playlist-${pl.name}") {
+                            saveQuery(); nav.push(LibRoute.PlaylistDetail(pl.id))
+                        }
+                    }
+                }
+                if (results.tracks.isNotEmpty()) {
+                    item { SectionHeader("Lieder (${results.tracks.size})") }
+                    itemsIndexed(results.tracks, key = { _, t -> "s-" + t.id }) { index, track ->
+                        TrackRow(track, player.currentId == track.id, player.isPlaying,
+                            onPlay = { saveQuery(); app.player.play(results.tracks, index) }, onMore = { nav.actions.open(track) })
+                    }
+                }
+                item { Spacer(Modifier.height(24.dp)) }
                 return@LazyColumn
+            }
+
+            // Fokus im leeren Suchfeld: letzte Suchen
+            if (searchFocused && recentSearches.isNotEmpty()) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SectionHeader("Letzte Suchen")
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { app.clearSearches() }, modifier = Modifier.padding(end = 8.dp, top = 16.dp)) {
+                            Text("Löschen", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                items(recentSearches, key = { "r-$it" }) { q ->
+                    ResultRow(q, "Letzte Suche", Icons.Default.History, "recent-$q") { search = q }
+                }
             }
 
             if (lib.tracks.isEmpty()) {
@@ -290,6 +361,8 @@ fun MediathekRoot() {
                     CategoryRow("Alben", Icons.Default.Album, app.library.albumNames().size, "category-Alben") { nav.push(LibRoute.Albums) }
                     HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Interpreten", Icons.Default.Mic, app.library.artistNames().size, "category-Interpreten") { nav.push(LibRoute.Artists) }
+                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    CategoryRow("Genres", Icons.Default.Category, app.library.genreNames().size, "category-Genres") { nav.push(LibRoute.Genres) }
                     HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Statistik", Icons.Default.BarChart, null, "category-Statistik") { nav.push(LibRoute.Stats) }
                 }
@@ -490,7 +563,13 @@ fun CollectionScreen(name: String, kind: String) {
     val nav = LocalNav.current
     val lib by app.library.state.collectAsState()
     val player by app.player.state.collectAsState()
-    val tracks = remember(lib, name) { if (kind == "Album") app.library.tracksInAlbum(name) else app.library.tracksByArtist(name) }
+    val tracks = remember(lib, name) {
+        when (kind) {
+            "Album" -> app.library.tracksInAlbum(name)
+            "Genre" -> app.library.tracksInGenre(name)
+            else -> app.library.tracksByArtist(name)
+        }
+    }
     val selection = rememberSelection()
     val color = rememberArtworkColor(tracks.firstOrNull())
     Column(Modifier.fillMaxSize()) {
@@ -670,4 +749,59 @@ fun TextInputDialog(title: String, placeholder: String, initial: String, confirm
         confirmButton = { TextButton(onClick = { onDismiss(); onConfirm(text) }, modifier = Modifier.testTag("dialogConfirm")) { Text(confirm) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
     )
+}
+
+
+@Composable
+private fun ResultRow(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tag: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp).testTag(tag),
+        verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(CyberPanelHigh), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = Accent)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Alle Genres als farbige Kacheln */
+@Composable
+fun GenresScreen() {
+    val app = LocalApp.current
+    val nav = LocalNav.current
+    val lib by app.library.state.collectAsState()
+    val genres = remember(lib) { app.library.genreNames() }
+    val palette = listOf(Color(0xFF2F6F9F), Color(0xFF7A2F5A), Color(0xFF2F6B4F), Color(0xFF6B5A2F), Color(0xFF4A3A8A), Color(0xFF8A3A3A),
+        Color(0xFF2F7A7A), Color(0xFF7A5A2F))
+    Column(Modifier.fillMaxSize()) {
+        ScreenTopBar("Genres", onBack = { nav.pop() })
+        if (genres.isEmpty()) {
+            EmptyHint("Keine Genres", "In deinen Musikdateien ist kein Genre eingetragen. Du kannst es unter „Infos bearbeiten“ selbst setzen.")
+            return@Column
+        }
+        LazyColumn(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(genres.chunked(2), key = { it.joinToString() }) { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    pair.forEach { g ->
+                        val color = palette[(g.lowercase().hashCode() and 0x7fffffff) % palette.size]
+                        Box(
+                            Modifier.weight(1f).height(96.dp).clip(RoundedCornerShape(10.dp))
+                                .background(Brush.linearGradient(listOf(color, color.copy(alpha = 0.6f))))
+                                .clickable { nav.push(LibRoute.Genre(g)) }.padding(12.dp).testTag("genre-$g"),
+                        ) {
+                            Text(g, color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+                            Text("${app.library.tracksInGenre(g).size} Titel", color = Color.White.copy(alpha = 0.8f),
+                                style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.BottomStart))
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
 }

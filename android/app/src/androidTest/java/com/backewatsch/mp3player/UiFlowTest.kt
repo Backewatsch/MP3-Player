@@ -399,4 +399,41 @@ class UiFlowTest {
         rule.waitUntil(5_000) { app.library.duplicateGroups().isEmpty() }
         org.junit.Assert.assertEquals(2, app.library.tracks.size)
     }
+
+    /** Suche nach Kategorien, letzte Suchen und Genres */
+    @Test fun t7_searchAndGenres() {
+        val app = instrumentation.targetContext.app
+        val dir = File(instrumentation.targetContext.cacheDir, "ui-search").apply { mkdirs() }
+        listOf("Bella Ciao" to "Pop", "Sommernacht" to "Hip-Hop", "Regenlied" to "Rock").forEach { (name, genre) ->
+            val f = File(dir, "$name.mp3")
+            instrumentation.context.assets.open("untagged.mp3").use { i -> f.outputStream().use { i.copyTo(it) } }
+            val t = kotlinx.coroutines.runBlocking { app.library.import(f, move = true) }
+            app.library.editInfo(t, name, if (name == "Sommernacht") "Bella" else "Band", "Album $genre", genre)
+        }
+        app.clearSearches()
+
+        rule.onNodeWithTag("tab-library").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("searchField"), 5_000)
+        rule.onNodeWithTag("searchField").performTextInput("bella")
+        rule.waitUntilAtLeastOneExists(hasTestTag("result-artist-Bella"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasTestTag("track-Bella Ciao"), 5_000)
+        screenshot("a32-Suche")
+        rule.onNodeWithTag("track-Bella Ciao").performClick()
+        rule.waitUntil(5_000) { app.recentSearches.value == listOf("bella") }
+
+        // Letzte Suchen erscheinen beim leeren Suchfeld
+        rule.onNodeWithTag("searchClear").performClick()
+        rule.onNodeWithTag("searchField").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("recent-bella"), 5_000)
+        screenshot("a33-Letzte-Suchen")
+
+        // Genres
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasTestTag("category-Genres"))
+        rule.onNodeWithTag("category-Genres").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("genre-Hip-Hop"), 5_000)
+        screenshot("a34-Genres")
+        rule.onNodeWithTag("genre-Hip-Hop").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("track-Sommernacht"), 5_000)
+        screenshot("a35-Genre-HipHop")
+    }
 }

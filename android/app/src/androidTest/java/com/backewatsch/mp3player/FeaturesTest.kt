@@ -316,6 +316,43 @@ class MoreFeaturesTest {
         assertTrue("Lautheit messbar", gain != null && gain in -12f..6f)
     }
 
+    @Test fun editInfoWritesIntoMp3() {
+        val a = add("Bearbeiten", "tagged.mp3")
+        app.library.editInfo(a, "Neuer Titel", "Neue Band", "Neues Album", "hip hop")
+        val t = app.library.track(a.id)!!
+        assertEquals("Hip-Hop", t.genre)
+        val info = com.backewatsch.mp3player.data.MetadataReader.read(app.library.fileOf(t))
+        assertEquals("Neuer Titel", info.title)
+        assertEquals("Neue Band", info.artist)
+        assertEquals("Neues Album", info.album)
+        assertEquals("Hip-Hop", com.backewatsch.mp3player.data.Genres.normalize(info.genre))
+        assertTrue("Datei spielt noch", info.durationMs > 1000)
+        assertEquals(listOf("Hip-Hop"), app.library.genreNames())
+        assertEquals(listOf(a.id), app.library.tracksInGenre("hip-hop").map { it.id })
+
+        // Cover und Songtext landen ebenfalls in der Datei
+        val jpeg = java.io.ByteArrayOutputStream().also {
+            android.graphics.Bitmap.createBitmap(40, 40, android.graphics.Bitmap.Config.ARGB_8888).compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it)
+        }.toByteArray()
+        app.library.setCustomCover(t, jpeg)
+        app.library.setLyrics(t, "La la la")
+        val after = com.backewatsch.mp3player.data.MetadataReader.read(app.library.fileOf(t))
+        assertTrue("Cover in der MP3", after.artwork != null)
+        assertEquals("La la la", com.backewatsch.mp3player.data.Id3Lyrics.read(app.library.fileOf(t)))
+        // Mediathek erkennt die Datei weiterhin (keine Doppelten nach dem Neuschreiben)
+        kotlinx.coroutines.runBlocking { app.library.rescan() }
+        assertEquals(1, app.library.tracks.size)
+    }
+
+    @Test fun readsGenreOnImport() {
+        val f = File(context.cacheDir, "genre-test.mp3")
+        instrumentation.context.assets.open("untagged.mp3").use { i -> f.outputStream().use { i.copyTo(it) } }
+        com.backewatsch.mp3player.data.Id3Writer.write(f, com.backewatsch.mp3player.data.Id3Writer.Update(title = "Mit Genre", genre = "(17)"))
+        val t = runBlocking { app.library.import(f, move = true) }
+        assertEquals("Rock", t.genre)
+        assertEquals("Mit Genre", t.title)
+    }
+
     @Test fun androidAutoCanBrowseLibrary() {
         val a = add("Auto1"); add("Auto2")
         app.library.toggleFavorite(a)

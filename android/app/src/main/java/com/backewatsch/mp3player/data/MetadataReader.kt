@@ -14,6 +14,7 @@ object MetadataReader {
         val album: String?,
         val durationMs: Long,
         val artwork: ByteArray?,
+        val genre: String? = null,
     )
 
     fun read(file: File): Info {
@@ -27,6 +28,7 @@ object MetadataReader {
                 album = r.extract(MediaMetadataRetriever.METADATA_KEY_ALBUM),
                 durationMs = r.extract(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0,
                 artwork = r.embeddedPicture,
+                genre = r.extract(MediaMetadataRetriever.METADATA_KEY_GENRE),
             )
         } catch (e: Exception) {
             Info(null, null, null, 0, null)

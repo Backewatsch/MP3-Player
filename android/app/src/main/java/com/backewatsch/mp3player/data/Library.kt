@@ -74,6 +74,8 @@ class Library(
     fun tracksByArtist(artist: String) = sortedTracks().filter { it.artist.equals(artist, ignoreCase = true) }
     fun tracksInAlbum(album: String) = sortedTracks().filter { it.album.equals(album, ignoreCase = true) }
     fun albumNames() = groupNames(tracks.map { it.album })
+    fun genreNames() = groupNames(tracks.map { it.genre })
+    fun tracksInGenre(genre: String) = sortedTracks().filter { it.genre.equals(genre, ignoreCase = true) }
     fun artistNames() = groupNames(tracks.map { it.artist })
     fun convertibleTracks() = tracks.filter { !FileNames.isMp3(it.fileName) }
     fun fileOf(track: Track) = storage.fileFor(track.fileName)
@@ -193,6 +195,7 @@ class Library(
             artist = info.artist.orEmpty(),
             album = info.album.orEmpty(),
             durationMs = info.durationMs,
+            genre = Genres.normalize(info.genre),
         )
         MetadataReader.shrinkArtwork(info.artwork)?.let { storage.artworkFor(track.id).writeBytes(it) }
         return track
@@ -309,6 +312,7 @@ class Library(
         val clean = text.trim()
         _state.update { s -> s.copy(lyrics = if (clean.isEmpty()) s.lyrics - track.id else s.lyrics + (track.id to clean)) }
         save()
+        writeTags(track, Id3Writer.Update(lyrics = clean))
     }
 
     fun hasCustomCover(track: Track) = track.id in _state.value.customCovers
@@ -319,12 +323,14 @@ class Library(
         _state.update { s -> s.copy(customCovers = (listOf(track.id) + s.customCovers).distinct()) }
         coverVersion.value++
         save()
+        // Auch in die MP3 schreiben – dann sehen andere Apps das Cover ebenfalls
+        writeTags(track, Id3Writer.Update(cover = jpeg))
     }
 
     fun removeCustomCover(track: Track) {
         storage.artworkFor(track.id).delete()
-        // Eingebettetes Cover wiederherstellen
-        MetadataReader.shrinkArtwork(MetadataReader.read(fileOf(track)).artwork)?.let { storage.artworkFor(track.id).writeBytes(it) }
+        // Das eigene Cover steckt auch in der MP3 → dort ebenfalls entfernen
+        writeTags(track, Id3Writer.Update(cover = ByteArray(0)))
         _state.update { s -> s.copy(customCovers = s.customCovers - track.id) }
         coverVersion.value++
         save()
@@ -385,6 +391,42 @@ class Library(
     /** Mehrere Titel als Lieblingssongs markieren */
     fun addFavorites(list: List<Track>) {
         _state.update { s -> s.copy(favorites = (list.map { it.id }.filter { it !in s.favorites } + s.favorites)) }
+        save()
+    }
+
+    /**
+     * Infos ändern und – bei MP3s – auch in die Datei schreiben (Titel, Interpret, Album, Genre).
+     * Blockiert kurz (Datei schreiben) → im Hintergrund aufrufen.
+     */
+    fun editInfo(track: Track, title: String, artist: String, album: String, genre: String) {
+        val t = title.trim().ifEmpty { track.title }
+        val g = Genres.normalize(genre).ifEmpty { genre.trim() }
+        _state.update { s ->
+            s.copy(tracks = s.tracks.map {
+                if (it.id == track.id) it.copy(title = t, artist = artist.trim(), album = album.trim(), genre = g) else it
+            })
+        }
+        save()
+        writeTags(track, Id3Writer.Update(title = t, artist = artist.trim(), album = album.trim(), genre = g))
+    }
+
+    /** Änderungen in die MP3 schreiben (Fehler ändern nichts an der Mediathek) */
+    private fun writeTags(track: Track, update: Id3Writer.Update) {
+        val file = fileOf(track)
+        if (!FileNames.isMp3(file.name) || !file.exists()) return
+        // Die Datei ist dabei immer vorhanden (neue Fassung wird erst fertig geschrieben, dann ausgetauscht)
+        runCatching { Id3Writer.write(file, update) }
+    }
+
+    /** Genres aller Titel einmalig aus den Dateien lesen (ältere Mediatheken kannten noch keine Genres) */
+    suspend fun scanGenresOnce() {
+        if (_state.value.genresScanned) return
+        val found = withContext(Dispatchers.IO) {
+            tracks.filter { it.genre.isBlank() }.associate { it.id to Genres.normalize(MetadataReader.read(fileOf(it)).genre) }
+        }.filterValues { it.isNotEmpty() }
+        _state.update { s ->
+            s.copy(tracks = s.tracks.map { t -> found[t.id]?.let { t.copy(genre = it) } ?: t }, genresScanned = true)
+        }
         save()
     }
 

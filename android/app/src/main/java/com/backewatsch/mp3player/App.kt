@@ -85,6 +85,20 @@ class App : Application() {
         }, android.os.Handler(mainLooper))
     }
 
+    /** Letzte Suchen in der Mediathek */
+    val recentSearches by lazy {
+        kotlinx.coroutines.flow.MutableStateFlow(settings.getString("recentSearches", "").orEmpty().split('\n').filter { it.isNotBlank() })
+    }
+    fun rememberSearch(query: String) {
+        val list = com.backewatsch.mp3player.data.Search.remember(recentSearches.value, query)
+        recentSearches.value = list
+        settings.edit().putString("recentSearches", list.joinToString("\n")).apply()
+    }
+    fun clearSearches() {
+        recentSearches.value = emptyList()
+        settings.edit().remove("recentSearches").apply()
+    }
+
     /** Sortierung der Titelliste (bleibt gespeichert) */
     val trackSort by lazy {
         kotlinx.coroutines.flow.MutableStateFlow(com.backewatsch.mp3player.data.TrackSort.fromName(settings.getString("trackSort", null)))
@@ -113,6 +127,7 @@ class App : Application() {
         scope.launch { library.state.collect { player.libraryChanged(it.tracks) } }
         scope.launch {
             library.rescan()
+            library.scanGenresOnce()
             analyzeLoudness()
         }
         watchBluetooth()
