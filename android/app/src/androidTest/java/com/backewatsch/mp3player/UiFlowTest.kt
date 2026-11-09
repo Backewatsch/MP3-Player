@@ -276,7 +276,7 @@ class UiFlowTest {
         rule.waitForIdle()
         screenshot("a11-Zuschneiden")
         rule.onNodeWithTag("trimSaveCopy").performScrollTo().performClick()
-        rule.waitUntil(15_000) { app.library.tracks.size == 2 }
+        rule.waitUntil(15_000) { app.library.tracks.any { it.title.endsWith("(gekürzt)") } }
         val copy = app.library.tracks.first { it.id != track.id }
         check(copy.title == track.title + " (gekürzt)") { "Titel der Kopie: ${copy.title}" }
         check(kotlin.math.abs(copy.durationMs - (before - 1_000)) < 150) { "Länge der Kopie: ${copy.durationMs}, vorher $before" }
