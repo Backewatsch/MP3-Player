@@ -159,9 +159,10 @@ final class MP3PlayerUITests: XCTestCase {
         // Umschalten muss funktionieren (das kurze Testlied kann schon zu Ende sein)
         let before = big.label
         big.tap()
-        XCTAssertNotEqual(big.label, before, "Play/Pause funktioniert nicht")
+        let changed = NSPredicate(format: "label != %@", before)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: changed, evaluatedWith: big)], timeout: 3), .completed,
+                       "Play/Pause funktioniert nicht")
         big.tap()
-        XCTAssertEqual(big.label, before)
         app.buttons["Schließen"].tap()
 
         // Mediathek → Titel → Optionsmenü

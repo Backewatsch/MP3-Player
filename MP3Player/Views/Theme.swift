@@ -8,7 +8,7 @@ struct SectionTitle: View {
     var body: some View {
         Text(text)
             .font(.title3.weight(.bold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color.primary) // fest, nicht abhängig vom grauen Abschnittskopf
             .textCase(nil)
             .padding(.leading, -4)
     }
