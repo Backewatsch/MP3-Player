@@ -143,30 +143,89 @@ fun MainScreen() {
     }
 }
 
-/** Fenster beim Öffnen der App, wenn eine neue Version bereitsteht */
+/** Fenster beim Öffnen der App, wenn eine neue Version bereitsteht – bleibt offen und zeigt Fortschritt und Fehler */
 @androidx.compose.runtime.Composable
 private fun UpdatePrompt() {
     val app = LocalApp.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val update by app.updates.state.collectAsState()
-    val available = (update as? com.backewatsch.mp3player.update.UpdateChecker.State.Available)?.release ?: return
-    var hidden by androidx.compose.runtime.remember(available.build) { mutableStateOf(!app.updates.shouldPrompt(available)) }
-    if (hidden) return
+    val install by app.updates.install.collectAsState()
+    val installing = install !is com.backewatsch.mp3player.update.UpdateChecker.Install.Idle
+    val available = (update as? com.backewatsch.mp3player.update.UpdateChecker.State.Available)?.release
+    var hidden by androidx.compose.runtime.remember(available?.build) {
+        mutableStateOf(available == null || !app.updates.shouldPrompt(available))
+    }
+    if (!installing && (available == null || hidden)) return
+
+    val release = when (val s = install) {
+        is com.backewatsch.mp3player.update.UpdateChecker.Install.NeedsPermission -> s.release
+        is com.backewatsch.mp3player.update.UpdateChecker.Install.Downloading -> s.release
+        is com.backewatsch.mp3player.update.UpdateChecker.Install.Installing -> s.release
+        is com.backewatsch.mp3player.update.UpdateChecker.Install.Failed -> s.release
+        else -> available
+    } ?: return
+    fun close() { hidden = true; app.updates.clearInstallState() }
+
     androidx.compose.material3.AlertDialog(
-        onDismissRequest = { hidden = true },
-        title = { Text("Update verfügbar") },
+        onDismissRequest = {
+            if (install is com.backewatsch.mp3player.update.UpdateChecker.Install.Downloading) return@AlertDialog
+            close()
+        },
+        title = { Text(if (install is com.backewatsch.mp3player.update.UpdateChecker.Install.Failed) "Update fehlgeschlagen" else "Update verfügbar") },
         text = {
-            Text("Version ${available.version} von ILLEGAL FREEDOM MUSIC ist da" +
-                (if (available.notes.isNotBlank()) ":\n\n" + available.notes.take(300) else ".") +
-                "\n\nDeine Musik und Playlists bleiben erhalten.")
+            androidx.compose.foundation.layout.Column {
+                when (val s = install) {
+                    is com.backewatsch.mp3player.update.UpdateChecker.Install.NeedsPermission ->
+                        Text("Einmalig nötig: Erlaube ILLEGAL FREEDOM MUSIC, Apps zu installieren.\n\nTippe auf „Erlauben“, schalte „Aus dieser Quelle zulassen“ ein und komm zurück – das Update startet dann automatisch.",
+                            modifier = Modifier.testTag("updateNeedsPermission"))
+                    is com.backewatsch.mp3player.update.UpdateChecker.Install.Downloading -> {
+                        Text("Version ${release.version} wird geladen … ${(s.progress * 100).toInt()} %")
+                        androidx.compose.material3.LinearProgressIndicator(progress = { s.progress },
+                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp), color = Accent)
+                    }
+                    is com.backewatsch.mp3player.update.UpdateChecker.Install.Installing ->
+                        Text("Android installiert das Update – bitte im nächsten Fenster „Aktualisieren“ bzw. „Installieren“ tippen. Die App startet danach neu.")
+                    is com.backewatsch.mp3player.update.UpdateChecker.Install.Failed ->
+                        Text(s.message, modifier = Modifier.testTag("updateError"))
+                    else -> Text("Version ${release.version} von ILLEGAL FREEDOM MUSIC ist da" +
+                        (if (release.notes.isNotBlank()) ":\n\n" + release.notes.take(300) else ".") +
+                        "\n\nDeine Musik und Playlists bleiben erhalten.")
+                }
+            }
         },
         confirmButton = {
-            androidx.compose.material3.TextButton(
-                onClick = { hidden = true; app.scope.launch { app.updates.install(available) } },
-                modifier = Modifier.testTag("updateInstall"),
-            ) { Text("Jetzt installieren", color = Accent) }
+            when (install) {
+                is com.backewatsch.mp3player.update.UpdateChecker.Install.NeedsPermission ->
+                    androidx.compose.material3.TextButton(onClick = { app.updates.openInstallPermissionSettings() },
+                        modifier = Modifier.testTag("updateAllow")) { Text("Erlauben", color = Accent) }
+                is com.backewatsch.mp3player.update.UpdateChecker.Install.Downloading,
+                is com.backewatsch.mp3player.update.UpdateChecker.Install.Installing -> Unit
+                is com.backewatsch.mp3player.update.UpdateChecker.Install.Failed ->
+                    androidx.compose.material3.TextButton(onClick = { app.scope.launch { app.updates.install(release) } },
+                        modifier = Modifier.testTag("updateRetry")) { Text("Nochmal versuchen", color = Accent) }
+                else -> androidx.compose.material3.TextButton(
+                    onClick = { app.scope.launch { app.updates.install(release) } },
+                    modifier = Modifier.testTag("updateInstall"),
+                ) { Text("Jetzt installieren", color = Accent) }
+            }
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = { app.updates.dismiss(available); hidden = true }) { Text("Später") }
+            androidx.compose.foundation.layout.Row {
+                if (install is com.backewatsch.mp3player.update.UpdateChecker.Install.Failed && release.apkUrl != null) {
+                    // Notlösung: im Browser laden und von Hand installieren
+                    androidx.compose.material3.TextButton(onClick = {
+                        runCatching {
+                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(release.apkUrl)))
+                        }
+                    }) { Text("Im Browser laden") }
+                }
+                if (install !is com.backewatsch.mp3player.update.UpdateChecker.Install.Downloading) {
+                    androidx.compose.material3.TextButton(onClick = {
+                        if (install is com.backewatsch.mp3player.update.UpdateChecker.Install.Idle) app.updates.dismiss(release)
+                        close()
+                    }) { Text(if (install is com.backewatsch.mp3player.update.UpdateChecker.Install.Idle) "Später" else "Schließen") }
+                }
+            }
         },
     )
 }

@@ -26,7 +26,6 @@ class UpdateChecker(private val context: Context, val currentVersion: String, va
         data object Checking : State
         data object UpToDate : State
         data class Available(val release: Release) : State
-        data class Downloading(val progress: Float) : State
         data object NoReleases : State
         data class Failed(val message: String) : State
     }
@@ -78,44 +77,151 @@ class UpdateChecker(private val context: Context, val currentVersion: String, va
         }
     }
 
-    /** Lädt die neue APK und öffnet den Android-Installationsdialog. */
+    // region Installieren
+
+    /** Ablauf einer Installation (getrennt von der Update-Suche, damit nichts verschwindet) */
+    sealed interface Install {
+        data object Idle : Install
+        /** Android muss erst erlauben, dass diese App Apps installieren darf */
+        data class NeedsPermission(val release: Release) : Install
+        data class Downloading(val release: Release, val progress: Float) : Install
+        data class Installing(val release: Release) : Install
+        data class Failed(val release: Release, val message: String) : Install
+    }
+
+    private val _install = MutableStateFlow<Install>(Install.Idle)
+    val install: StateFlow<Install> = _install.asStateFlow()
+
+    /** Darf diese App Updates installieren („Unbekannte Apps installieren“)? */
+    fun canInstall(): Boolean =
+        android.os.Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()
+
+    /** Öffnet die Android-Einstellung „Unbekannte Apps installieren“ für diese App */
+    fun openInstallPermissionSettings() {
+        val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            android.net.Uri.parse("package:" + context.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+    }
+
+    /** Zurück in der App: Erlaubnis inzwischen erteilt → Installation automatisch fortsetzen */
+    suspend fun resumeAfterPermission() {
+        val pending = _install.value as? Install.NeedsPermission ?: return
+        if (canInstall()) install(pending.release)
+    }
+
+    fun clearInstallState() { _install.value = Install.Idle }
+
+    /** Lädt die neue APK, prüft sie und installiert sie über den Paket-Installer von Android. */
     suspend fun install(release: Release) {
-        val apkUrl = release.apkUrl ?: return
+        val apkUrl = release.apkUrl ?: run {
+            _install.value = Install.Failed(release, "In dieser Version fehlt die Android-Datei.")
+            return
+        }
+        if (!canInstall()) {
+            _install.value = Install.NeedsPermission(release)
+            return
+        }
+        _install.value = Install.Downloading(release, 0f)
+        val file = File(context.cacheDir, "update.apk")
         try {
-            val file = withContext(Dispatchers.IO) {
-                val target = File(context.cacheDir, "update.apk")
-                val c = URL(apkUrl).openConnection() as HttpURLConnection
-                c.instanceFollowRedirects = true
+            withContext(Dispatchers.IO) { download(apkUrl, file) { p -> _install.value = Install.Downloading(release, p) } }
+        } catch (e: Exception) {
+            file.delete()
+            _install.value = Install.Failed(release, e.message ?: "Download fehlgeschlagen.")
+            return
+        }
+        _install.value = Install.Installing(release)
+        try {
+            withContext(Dispatchers.IO) { InstallResultReceiver.startSession(context, file) }
+            // Ergebnis kommt über InstallResultReceiver (Bestätigung durch den Nutzer, Erfolg oder Fehler)
+        } catch (e: Exception) {
+            _install.value = Install.Failed(release, "Installation konnte nicht gestartet werden: ${e.message}")
+        }
+    }
+
+    /** Rückmeldung des Paket-Installers */
+    fun onInstallResult(status: Int, message: String?) {
+        val release = when (val s = _install.value) {
+            is Install.Installing -> s.release
+            is Install.Downloading -> s.release
+            is Install.Failed -> s.release
+            is Install.NeedsPermission -> s.release
+            Install.Idle -> null
+        } ?: return
+        _install.value = if (status == android.content.pm.PackageInstaller.STATUS_SUCCESS) Install.Idle
+        else Install.Failed(release, installErrorText(status, message))
+    }
+
+    /**
+     * Lädt mit bis zu 3 Versuchen und prüft, dass wirklich eine APK angekommen ist
+     * (GitHub liefert bei Störungen manchmal eine Fehlerseite statt der Datei).
+     */
+    fun download(url: String, target: File, onProgress: (Float) -> Unit = {}) {
+        var lastError: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                val c = (URL(url).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    connectTimeout = 20_000; readTimeout = 30_000
+                }
+                val code = c.responseCode
+                if (code !in 200..299) throw java.io.IOException("Server antwortet mit Fehler $code")
                 val total = c.contentLengthLong
+                var done = 0L
                 c.inputStream.use { input ->
                     target.outputStream().use { out ->
                         val buf = ByteArray(64 * 1024)
-                        var done = 0L
                         while (true) {
                             val n = input.read(buf); if (n < 0) break
                             out.write(buf, 0, n); done += n
-                            if (total > 0) _state.value = State.Downloading(done.toFloat() / total)
+                            if (total > 0) onProgress(done.toFloat() / total)
                         }
                     }
                 }
-                target
+                if (total > 0 && done != total) throw java.io.IOException("Download unvollständig ($done von $total Bytes)")
+                if (!isApk(target)) throw java.io.IOException("Die geladene Datei ist keine gültige Android-App")
+                return
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < 2) Thread.sleep(1_500L * (attempt + 1))
             }
-            val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
-            _state.value = State.Available(release)
-        } catch (e: Exception) {
-            _state.value = State.Failed("Update-Download fehlgeschlagen: ${e.message}")
         }
+        val reason = lastError?.message ?: "unbekannter Fehler"
+        throw java.io.IOException(
+            if (lastError is java.net.UnknownHostException) "Keine Internetverbindung – Update kann nicht geladen werden."
+            else "Update-Download fehlgeschlagen: $reason"
+        )
     }
+
+    // endregion
 
     companion object {
         const val REPOSITORY = "Backewatsch/MP3-Player"
         const val API_URL = "https://api.github.com/repos/$REPOSITORY/releases/latest"
         const val RELEASES_PAGE = "https://github.com/$REPOSITORY/releases/latest"
+
+        /** APK = ZIP-Datei mit AndroidManifest.xml */
+        fun isApk(file: File): Boolean = try {
+            file.length() > 1024 && java.util.zip.ZipFile(file).use { it.getEntry("AndroidManifest.xml") != null }
+        } catch (e: Exception) {
+            false
+        }
+
+        /** Verständliche Fehlermeldung zum Ergebnis des Paket-Installers */
+        fun installErrorText(status: Int, message: String?): String {
+            val detail = message?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+            return when (status) {
+                android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> "Installation abgebrochen."
+                android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED ->
+                    "Android hat die Installation blockiert. Bei Samsung: Einstellungen › Sicherheit und Datenschutz › Auto Blocker ausschalten, dann nochmal versuchen.$detail"
+                android.content.pm.PackageInstaller.STATUS_FAILURE_CONFLICT ->
+                    "Konflikt mit der installierten Version (andere Signatur). Erstelle eine Sicherung, deinstalliere die App einmal und installiere die neue Version.$detail"
+                android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "Die neue Version passt nicht zu diesem Handy.$detail"
+                android.content.pm.PackageInstaller.STATUS_FAILURE_INVALID -> "Die Update-Datei ist beschädigt – bitte nochmal versuchen.$detail"
+                android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE -> "Zu wenig Speicherplatz für das Update.$detail"
+                else -> "Installation fehlgeschlagen$detail."
+            }
+        }
 
         /** `v1.0.42` → 42 */
         fun buildNumber(tag: String): Int? = tag.substringAfterLast('.').toIntOrNull()

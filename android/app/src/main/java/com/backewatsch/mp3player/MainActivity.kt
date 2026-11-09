@@ -45,6 +45,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         lifecycleScope.launch {
+            // Zurück aus „Apps installieren erlauben“ → Update automatisch fortsetzen
+            app.updates.resumeAfterPermission()
             app.library.rescan()
             app.updates.checkIfDue()
         }

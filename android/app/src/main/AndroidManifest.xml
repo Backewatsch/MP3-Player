@@ -62,6 +62,11 @@
             </intent-filter>
         </service>
 
+        <!-- Ergebnis des Paket-Installers beim Update -->
+        <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false" />
+
         <!-- Widget für den Startbildschirm -->
         <receiver
             android:name=".widget.PlayerWidget"

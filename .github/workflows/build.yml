@@ -181,6 +181,8 @@ jobs:
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk MP3Player.apk
           ls -la MP3Player.apk
+          # Für den Update-Test im Emulator über den lokalen Testserver bereitstellen
+          cp MP3Player.apk MP3PlayerTests/Fixtures/test-update.apk
 
       - uses: actions/upload-artifact@v4
         with:

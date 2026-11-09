@@ -126,18 +126,31 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                     UpdateChecker.State.UpToDate -> InfoRow("Du hast die neueste Version.", Icons.Default.CheckCircle, Color(0xFF34C759))
                     UpdateChecker.State.NoReleases -> InfoRow("Noch keine Version veröffentlicht.", null)
                     is UpdateChecker.State.Failed -> InfoRow(s.message, Icons.Default.Warning, Color(0xFFFF9500))
-                    is UpdateChecker.State.Downloading -> Column(Modifier.padding(16.dp)) {
-                        Text("Update wird geladen … ${(s.progress * 100).toInt()} %")
-                        LinearProgressIndicator(progress = { s.progress }, Modifier.fillMaxWidth().padding(top = 8.dp), color = Accent)
-                    }
                     is UpdateChecker.State.Available -> {
                         InfoRow("Update verfügbar: Version ${s.release.version}", Icons.Default.AutoAwesome, Accent)
                         if (s.release.notes.isNotBlank()) {
                             Text(s.release.notes.take(500), style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
                         }
-                        if (s.release.apkUrl != null) {
+                        val install by app.updates.install.collectAsState()
+                        when (val i = install) {
+                            is UpdateChecker.Install.Downloading -> Column(Modifier.padding(16.dp)) {
+                                Text("Update wird geladen … ${(i.progress * 100).toInt()} %")
+                                LinearProgressIndicator(progress = { i.progress }, Modifier.fillMaxWidth().padding(top = 8.dp), color = Accent)
+                            }
+                            is UpdateChecker.Install.Installing -> InfoRow("Android installiert das Update …", Icons.Default.Download, Accent)
+                            is UpdateChecker.Install.NeedsPermission -> {
+                                InfoRow("Einmalig erlauben: „Apps installieren“ für diese App.", Icons.Default.Warning, Color(0xFFFF9500))
+                                ActionLine("Erlauben", Icons.Default.OpenInBrowser, "allowInstall") { app.updates.openInstallPermissionSettings() }
+                            }
+                            is UpdateChecker.Install.Failed -> InfoRow(i.message, Icons.Default.Warning, Color(0xFFFF9500))
+                            UpdateChecker.Install.Idle -> Unit
+                        }
+                        if (s.release.apkUrl != null && install !is UpdateChecker.Install.Downloading && install !is UpdateChecker.Install.Installing) {
                             ActionLine("Jetzt installieren", Icons.Default.Download, "installUpdate") { app.scope.launch { app.updates.install(s.release) } }
+                            ActionLine("APK im Browser laden (Notlösung)", Icons.Default.OpenInBrowser) {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.release.apkUrl)))
+                            }
                         }
                         ActionLine("Release auf GitHub ansehen", Icons.Default.OpenInBrowser) {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s.release.pageUrl)))

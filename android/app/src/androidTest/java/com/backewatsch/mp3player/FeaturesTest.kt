@@ -196,3 +196,34 @@ class FeaturesTest {
         }
     }
 }
+
+/** Update-Download: echte APK wird angenommen, Fehlerseiten und Nicht-APKs werden erkannt */
+@RunWith(AndroidJUnit4::class)
+class UpdateDownloadTest {
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val updates get() = context.app.updates
+    private val target = File(context.cacheDir, "update-test.apk")
+
+    @Test fun acceptsRealApk() {
+        updates.download("http://10.0.2.2:8765/test-update.apk", target)
+        assertTrue(com.backewatsch.mp3player.update.UpdateChecker.isApk(target))
+        assertTrue(target.length() > 1_000_000)
+    }
+
+    @Test fun rejectsNonApk() {
+        val error = runCatching { updates.download("http://10.0.2.2:8765/tagged.mp3", target) }.exceptionOrNull()
+        assertTrue(error?.message.orEmpty(), error?.message.orEmpty().contains("keine gültige Android-App"))
+    }
+
+    @Test fun rejectsErrorPage() {
+        val error = runCatching { updates.download("http://10.0.2.2:8765/gibt-es-nicht.apk", target) }.exceptionOrNull()
+        assertTrue(error?.message.orEmpty(), error?.message.orEmpty().contains("404"))
+    }
+
+    @Test fun explainsInstallErrors() {
+        val blocked = com.backewatsch.mp3player.update.UpdateChecker.installErrorText(android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED, null)
+        assertTrue(blocked.contains("Auto Blocker"))
+        val aborted = com.backewatsch.mp3player.update.UpdateChecker.installErrorText(android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED, null)
+        assertEquals("Installation abgebrochen.", aborted)
+    }
+}
