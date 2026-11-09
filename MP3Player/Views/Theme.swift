@@ -13,3 +13,16 @@ struct SectionTitle: View {
             .padding(.leading, -4)
     }
 }
+
+/// Erscheinungsbild der App: wie das iPhone, immer hell oder immer dunkel (Standard: dunkel)
+enum Appearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    static let key = "appearance"
+    var id: String { rawValue }
+    var label: String {
+        switch self { case .system: return "Automatisch"; case .light: return "Hell"; case .dark: return "Dunkel" }
+    }
+    var colorScheme: ColorScheme? {
+        switch self { case .system: return nil; case .light: return .light; case .dark: return .dark }
+    }
+}

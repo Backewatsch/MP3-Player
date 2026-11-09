@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     @State private var copied = false
     @AppStorage("showOwnCovers") private var showOwnCovers = true
+    @AppStorage(Appearance.key) private var appearance = Appearance.dark.rawValue
     @AppStorage("autoplayBluetooth") private var autoplayBluetooth = false
     @State private var showDuplicates = false
     @State private var showSound = false
@@ -78,6 +79,11 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("Erscheinungsbild", selection: $appearance) {
+                        ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("appearancePicker")
                     Toggle("Eigene Cover der Lieder anzeigen", isOn: $showOwnCovers)
                         .tint(Color.accentColor)
                         .accessibilityIdentifier("ownCoversSwitch")

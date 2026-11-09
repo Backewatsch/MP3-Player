@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var tab = Tab.start
     @State private var showNowPlaying = false
     @State private var editorPath = NavigationPath()
+    @AppStorage(Appearance.key) private var appearance = Appearance.dark.rawValue
 
     enum Tab: Hashable { case start, library, editor }
 
@@ -35,6 +36,7 @@ struct ContentView: View {
                 .trackActionsHost()
                 .presentationDragIndicator(.visible)
         }
+        .preferredColorScheme((Appearance(rawValue: appearance) ?? .dark).colorScheme)
         .onReceive(NotificationCenter.default.publisher(for: .openTrimEditor)) { note in
             // „Zuschneiden“ aus dem Menü eines Liedes
             guard let id = note.object as? UUID else { return }
