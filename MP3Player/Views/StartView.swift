@@ -7,10 +7,19 @@ struct StartView: View {
     @Binding var showNowPlaying: Bool
     @State private var confirmClear = false
     @State private var showAllHistory = false
+    @State private var recapYear: RecapYear?
 
     var body: some View {
         NavigationStack {
             List {
+                if let year = library.recapDefaultYear {
+                    Section {
+                        RecapBanner(year: year) { recapYear = RecapYear(id: year) }
+                            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                            .listRowBackground(Color.clear)
+                    }
+                }
+
                 if library.tracks.isEmpty {
                     Section {
                         EmptyStateView(title: "Willkommen!", systemImage: "music.note",
@@ -32,6 +41,7 @@ struct StartView: View {
                 default: EmptyView()
                 }
             }
+            .fullScreenCover(item: $recapYear) { RecapView(year: $0.id) }
             .confirmationDialog("Verlauf löschen?", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("Löschen", role: .destructive) { library.clearHistory() }
             } message: {
@@ -293,6 +303,7 @@ struct PlayShuffleRow: View {
 struct StatsView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: AudioPlayer
+    @State private var recapYear: RecapYear?
     @State private var confirmClear = false
 
     private var month: String {
@@ -305,6 +316,13 @@ struct StatsView: View {
     var body: some View {
         let stats = library.stats
         List {
+            ForEach(library.recapYears, id: \.self) { year in
+                Section {
+                    RecapBanner(year: year) { recapYear = RecapYear(id: year) }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+            }
             Section {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     tile("Hörzeit im \(month)", StatsSummary.formatListening(stats.listenedThisMonth), id: "stat-month")
@@ -352,6 +370,7 @@ struct StatsView: View {
             }
         }
         .navigationTitle("Statistik")
+        .fullScreenCover(item: $recapYear) { RecapView(year: $0.id) }
         .confirmationDialog("Statistik zurücksetzen?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Zurücksetzen", role: .destructive) { library.clearStats() }
         } message: {

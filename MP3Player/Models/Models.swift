@@ -225,7 +225,7 @@ struct StatsSummary {
     var libraryDuration: Double
     var favoriteCount: Int
 
-    static let maxPlays = 5000
+    static let maxPlays = 15000
 
     static func monthKey(_ date: Date, calendar: Calendar = .current) -> String {
         let c = calendar.dateComponents([.year, .month], from: date)

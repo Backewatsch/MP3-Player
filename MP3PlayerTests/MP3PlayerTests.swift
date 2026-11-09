@@ -1053,3 +1053,75 @@ final class Mp3TrimmerTests: XCTestCase {
         XCTAssertEqual(original, before, accuracy: 0.01)
     }
 }
+
+// MARK: - Jahresrückblick
+
+final class RecapTests: XCTestCase {
+    private var calendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Europe/Berlin")!
+        return c
+    }()
+
+    private func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 12) -> Date {
+        calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h))!
+    }
+
+    private func track(_ title: String, _ artist: String, album: String = "", added: Date? = nil) -> Track {
+        var t = Track(id: UUID(), fileName: "\(title).mp3", title: title, artist: artist, duration: 180, addedAt: added ?? at(2025, 6, 1))
+        t.album = album
+        return t
+    }
+
+    func testBuildsTheYear() {
+        let a = track("Nachtfahrt", "Luna", album: "Neon")
+        let b = track("Sonnenweg", "Luna", album: "Neon", added: at(2026, 2, 1))
+        let c = track("Bassline", "Kopfnicker")
+        let plays = [
+            PlayEvent(trackID: a.id, at: at(2026, 3, 1, 23)), PlayEvent(trackID: a.id, at: at(2026, 3, 2, 23)),
+            PlayEvent(trackID: a.id, at: at(2026, 3, 3, 1)), PlayEvent(trackID: a.id, at: at(2026, 3, 3, 2)),
+            PlayEvent(trackID: a.id, at: at(2026, 3, 3, 3)),
+            PlayEvent(trackID: b.id, at: at(2026, 7, 10, 8)), PlayEvent(trackID: c.id, at: at(2026, 7, 11, 18)),
+            PlayEvent(trackID: c.id, at: at(2025, 12, 31, 18)), // Vorjahr zählt nicht
+            PlayEvent(trackID: UUID(), at: at(2026, 5, 5)),       // Lied gibt es nicht mehr
+        ]
+        let state = LibraryState(tracks: [a, b, c], playlists: [], pinned: [], plays: plays.reversed(),
+                                 listenedByMonth: ["2026-03": 1800, "2026-07": 600, "2025-12": 5940])
+        let r = Recap.build(state, year: 2026, calendar: calendar)
+        XCTAssertEqual(r.plays, 7)
+        XCTAssertEqual(r.listenedSeconds, 2400)
+        XCTAssertEqual(r.topTracks.map(\.0.title), ["Nachtfahrt", "Bassline", "Sonnenweg"])
+        XCTAssertEqual(r.topTracks.first?.1, 5)
+        XCTAssertEqual(r.topArtists.first?.0, "Luna")
+        XCTAssertEqual(r.topArtists.first?.1, 6)
+        XCTAssertEqual(r.topAlbum?.0, "Neon")
+        XCTAssertEqual(r.topMonth, 3)
+        XCTAssertEqual(r.listenerType, .night)
+        XCTAssertEqual(r.longestStreak, 3)
+        XCTAssertEqual(r.daysListened, 5)
+        XCTAssertEqual(r.firstTrack?.title, "Nachtfahrt")
+        XCTAssertEqual(r.obsession?.track.id, a.id)
+        XCTAssertEqual(r.obsession?.count, 3)
+        XCTAssertEqual(r.obsession?.day.day, 3)
+        XCTAssertEqual(r.newTracks, 1)
+        XCTAssertEqual(r.distinctTracks, 3)
+        XCTAssertEqual(r.distinctArtists, 2)
+        XCTAssertEqual(r.topWeekday, 3) // 3. März 2026 ist ein Dienstag
+        XCTAssertTrue(r.hasData)
+    }
+
+    func testPicksTheRightYear() {
+        let a = track("A", "X"), b = track("B", "Y")
+        var plays = (1...5).map { PlayEvent(trackID: a.id, at: at(2025, 11, $0)) }
+        plays.append(PlayEvent(trackID: b.id, at: at(2026, 1, 2)))
+        let state = LibraryState(tracks: [a, b], playlists: [], pinned: [], plays: plays)
+        XCTAssertEqual(Recap.availableYears(state, calendar: calendar), [2025])
+        XCTAssertEqual(Recap.defaultYear(state, now: at(2026, 1, 10), calendar: calendar), 2025)
+        XCTAssertNil(Recap.defaultYear(LibraryState(tracks: [], playlists: [], pinned: []), now: at(2026, 11, 9), calendar: calendar))
+        let r = Recap.build(LibraryState(tracks: [a, b], playlists: [], pinned: [], plays: [PlayEvent(trackID: a.id, at: at(2026, 1, 5))]),
+                            year: 2026, calendar: calendar)
+        XCTAssertEqual(r.listenedSeconds, 180, "ohne Hörzeit: aus Liedlänge geschätzt")
+        XCTAssertFalse(r.hasData)
+        XCTAssertEqual(Recap.number(12_345), "12.345")
+    }
+}
