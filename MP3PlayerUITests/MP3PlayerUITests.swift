@@ -55,6 +55,16 @@ final class MP3PlayerUITests: XCTestCase {
         app.buttons["closeDownloads"].tap()
     }
 
+    /// Nach oben wischen, bis das Element sichtbar ist (Listen laden Zeilen erst beim Scrollen)
+    @discardableResult
+    private func reveal(_ element: XCUIElement, swipes: Int = 8) -> Bool {
+        for _ in 0..<swipes {
+            if element.exists && element.isHittable { return true }
+            app.swipeUp()
+        }
+        return element.exists
+    }
+
     private func waitForFinishedDownload(timeout: TimeInterval) {
         let finished = app.staticTexts["In der Playlist „Heruntergeladen“"].firstMatch
         if !finished.waitForExistence(timeout: timeout) {
@@ -130,8 +140,10 @@ final class MP3PlayerUITests: XCTestCase {
 
         // Playlist „Heruntergeladen“ in der Mediathek
         tab("Mediathek")
-        XCTAssertTrue(app.staticTexts["1 Titel"].waitForExistence(timeout: 5), "Playlist zählt den neuen Titel nicht")
-        app.staticTexts["Heruntergeladen"].firstMatch.tap()
+        let downloadsRow = app.staticTexts["Heruntergeladen"].firstMatch
+        XCTAssertTrue(reveal(downloadsRow), "Playlist „Heruntergeladen“ fehlt")
+        XCTAssertTrue(app.staticTexts["1 Titel"].exists, "Playlist zählt den neuen Titel nicht")
+        downloadsRow.tap()
         let play = app.buttons["playAllButton"].firstMatch
         XCTAssertTrue(play.waitForExistence(timeout: 5))
         play.tap()
@@ -285,7 +297,9 @@ final class MP3PlayerUITests: XCTestCase {
 
         // Start-Tab zeigt Lieblingssongs und Statistik
         tab("Start")
-        XCTAssertTrue(app.buttons["startStats"].waitForExistence(timeout: 5) || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Diesen Monat")).firstMatch.exists)
+        let stats = app.buttons["startStats"].firstMatch
+        XCTAssertTrue(reveal(stats) || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Diesen Monat")).firstMatch.exists,
+                      "Statistik fehlt auf der Startseite")
         screenshot("27-Start")
     }
 }
