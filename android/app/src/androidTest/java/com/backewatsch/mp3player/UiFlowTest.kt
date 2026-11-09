@@ -350,7 +350,8 @@ class UiFlowTest {
 
         // Startseite zeigt Lieblingssongs und Statistik
         rule.onNodeWithTag("tab-start").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("startStats"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasTestTag("startScreen"), 5_000)
+        rule.onNodeWithTag("startScreen").performScrollToNode(hasTestTag("startStats"))
         screenshot("a24-Start-Favoriten")
 
         // Player: Herz und Klang
@@ -482,8 +483,8 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("recapBanner-$year"), 10_000)
         screenshot("a40-Rueckblick-Karte")
         rule.onNodeWithTag("recapBanner-$year").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("recap-intro"), 5_000)
-        Thread.sleep(800)
+        // Der Test spult Animationen vor – die Folien laufen daher evtl. schon automatisch weiter
+        rule.waitUntilAtLeastOneExists(hasTestTag("recapStory"), 5_000)
         screenshot("a41-Rueckblick-Start")
 
         var n = 0
@@ -501,7 +502,7 @@ class UiFlowTest {
 
         // Nochmal von vorn, dann schließen
         rule.onNodeWithTag("recapReplay").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("recap-intro"), 5_000)
+        rule.waitUntilAtLeastOneExists(hasTestTag("recapStory"), 5_000)
         rule.onNodeWithTag("recapClose").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTag("recapStory").fetchSemanticsNodes().isEmpty() }
 
