@@ -464,10 +464,22 @@ class Library(
     @Synchronized
     private fun writeNow() {
         dirty = false
-        val text = json.encodeToString(LibraryState.serializer(), _state.value.copy(version = LibraryState.CURRENT_VERSION))
-        val tmp = File(storage.indexFile.parentFile, storage.indexFile.name + ".tmp")
-        tmp.writeText(text)
-        tmp.renameTo(storage.indexFile)
+        val folder = storage.indexFile.parentFile ?: return
+        // Ordner weg (z. B. Test-Ordner schon gelöscht) → nichts zu speichern, aber auch kein Absturz
+        if (!folder.isDirectory) return
+        try {
+            val text = json.encodeToString(LibraryState.serializer(), _state.value.copy(version = LibraryState.CURRENT_VERSION))
+            val tmp = File(folder, storage.indexFile.name + ".tmp")
+            tmp.writeText(text)
+            if (!tmp.renameTo(storage.indexFile)) {
+                storage.indexFile.writeText(text)
+                tmp.delete()
+            }
+        } catch (e: Exception) {
+            // z. B. Speicher voll: beim nächsten Speichern erneut versuchen, die App läuft weiter
+            dirty = true
+            android.util.Log.w("Library", "Speichern fehlgeschlagen: ${e.message}")
+        }
     }
 
     /** Nur für automatische Tests: leere Bibliothek */
