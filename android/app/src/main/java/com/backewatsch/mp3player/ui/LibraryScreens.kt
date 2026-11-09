@@ -181,7 +181,7 @@ fun MediathekRoot() {
                 }
             }
         })
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize().testTag("libraryList")) {
             item {
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(

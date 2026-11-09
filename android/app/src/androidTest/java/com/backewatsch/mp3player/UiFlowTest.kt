@@ -107,6 +107,7 @@ class UiFlowTest {
         saveAppIcon()
         rule.onNodeWithTag("tab-library").performClick()
         rule.waitUntilAtLeastOneExists(hasText("Noch keine Musik", ignoreCase = true), 10_000)
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasText("Heruntergeladen"))
         rule.onNodeWithText("Heruntergeladen").assertExists()
         screenshot("a01-Mediathek-leer")
 
@@ -169,6 +170,7 @@ class UiFlowTest {
 
         rule.onNodeWithTag("tab-library").performClick()
         rule.waitUntilAtLeastOneExists(hasText("1 Titel"), 10_000)
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasText("Heruntergeladen"))
         rule.onNodeWithText("Heruntergeladen").performClick()
         rule.onNodeWithTag("playAllButton").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("miniPlayPause"), 5_000)

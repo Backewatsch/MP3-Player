@@ -61,8 +61,8 @@ fun SmartTile(kind: SmartPlaylist, size: androidx.compose.ui.unit.Dp, count: Int
                 .background(Brush.linearGradient(kind.colors())),
             contentAlignment = Alignment.BottomStart,
         ) {
-            Text(kind.title, color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(10.dp))
+            Text(kind.title, color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleSmall,
+                maxLines = 2, softWrap = true, modifier = Modifier.padding(10.dp))
         }
         Text(kind.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
