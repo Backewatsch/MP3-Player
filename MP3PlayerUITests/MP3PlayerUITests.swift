@@ -29,7 +29,12 @@ final class MP3PlayerUITests: XCTestCase {
     private func tab(_ name: String) {
         let button = app.tabBars.buttons[name].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 10), "Tab \(name) fehlt")
-        button.tap()
+        // Direkt nach dem Start geht ein Tippen im Simulator manchmal verloren – dann noch einmal
+        for _ in 0..<3 {
+            button.tap()
+            if button.isSelected { break }
+            Thread.sleep(forTimeInterval: 1)
+        }
     }
 
     /// Mediathek → ＋ → „Von Link herunterladen“
