@@ -154,6 +154,8 @@ fun ScreenTopBar(title: String, onBack: (() -> Unit)? = null, actions: @Composab
             }
         },
         actions = { actions() },
+        // Der Abstand zur Statusleiste kommt schon vom Rahmen der App – sonst wäre er doppelt
+        windowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             scrolledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
