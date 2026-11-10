@@ -3,6 +3,8 @@ package com.backewatsch.mp3player.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.selection.selectable
@@ -156,7 +158,7 @@ fun MainScreen() {
     }
 }
 
-/** Schwebende Leiste unten: der gewählte Tab wird zur farbigen Pille mit Beschriftung */
+/** Schwebende Leiste unten: alle Tabs mit Beschriftung, der gewählte als farbige Pille */
 @Composable
 private fun FloatingNavBar(nav: AppNavigation) {
     androidx.compose.foundation.layout.Row(
@@ -185,21 +187,16 @@ private fun NavPill(label: String, icon: androidx.compose.ui.graphics.vector.Ima
     val bg by androidx.compose.animation.animateColorAsState(if (selected) Accent else androidx.compose.ui.graphics.Color.Transparent, label = "navBg")
     val fg by androidx.compose.animation.animateColorAsState(
         if (selected) androidx.compose.ui.graphics.Color(0xFF04202E) else MaterialTheme.colorScheme.onSurfaceVariant, label = "navFg")
-    androidx.compose.foundation.layout.Row(
-        Modifier.height(50.dp).clip(CircleShape).background(bg)
+    Column(
+        Modifier.width(88.dp).height(56.dp).clip(CircleShape).background(bg)
             .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.Tab, onClick = onClick)
-            .padding(horizontal = 20.dp).testTag(tag),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            .testTag(tag),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
     ) {
-        Icon(icon, if (selected) null else label, tint = fg)
-        androidx.compose.animation.AnimatedVisibility(
-            visible = selected,
-            enter = androidx.compose.animation.expandHorizontally() + androidx.compose.animation.fadeIn(),
-            exit = androidx.compose.animation.shrinkHorizontally() + androidx.compose.animation.fadeOut(),
-        ) {
-            Text(label, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1,
-                modifier = Modifier.padding(start = 8.dp))
-        }
+        Icon(icon, null, tint = fg, modifier = Modifier.size(22.dp))
+        Text(label, color = fg, maxLines = 1, style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium)
     }
 }
 

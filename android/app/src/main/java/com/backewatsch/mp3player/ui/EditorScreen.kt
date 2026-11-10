@@ -19,6 +19,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -98,13 +103,8 @@ private fun EditorPicker(tracks: List<Track>, onPick: (Track) -> Unit) {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             }
             item {
-                OutlinedTextField(
-                    value = query, onValueChange = { query = it }, singleLine = true,
-                    placeholder = { Text("Lied suchen") }, leadingIcon = { Icon(Icons.Default.Search, null) },
-                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Suche löschen") } },
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth().padding(16.dp, 8.dp).testTag("editorSearch"),
-                )
+                SearchPill(query, { query = it }, "Lied suchen",
+                    Modifier.fillMaxWidth().padding(16.dp, 8.dp).testTag("editorSearch"), clearTag = "editorSearchClear")
             }
             if (tracks.isEmpty()) {
                 item { EmptyHint("Noch keine Musik", "Sobald Lieder in der Mediathek sind, kannst du sie hier bearbeiten.") }
@@ -204,7 +204,7 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
         ScreenTopBar("Zuschneiden", onBack = onClose)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Artwork(track, 64.dp, 8.dp)
+                Artwork(track, 64.dp, 16.dp)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(track.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -226,79 +226,80 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
                 return@Column
             }
 
+            Panel("Ausschnitt") {
+                // Übersicht: was bleibt (hell), was wegfällt (dunkel)
+                Row(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp))) {
+                    val cutA = start.toFloat() / duration
+                    val keep = (end - start).toFloat() / duration
+                    val cutB = (duration - end).toFloat() / duration
+                    if (cutA > 0) Spacer(Modifier.weight(cutA).fillMaxSize().background(Color.White.copy(alpha = 0.10f)))
+                    Spacer(Modifier.weight(keep.coerceAtLeast(0.001f)).fillMaxSize().background(Accent))
+                    if (cutB > 0) Spacer(Modifier.weight(cutB).fillMaxSize().background(Color.White.copy(alpha = 0.10f)))
+                }
+                RangeSlider(
+                    value = start.toFloat()..end.toFloat(),
+                    onValueChange = { r -> setStart(r.start.toLong()); setEnd(r.endInclusive.toLong()) },
+                    valueRange = 0f..duration.toFloat(),
+                    colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
+                    modifier = Modifier.fillMaxWidth().testTag("trimSlider"),
+                )
+                Text(
+                    "Bleibt: ${formatPrecise(start)} – ${formatPrecise(end)}  (${formatTime(end - start)})",
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("trimSummary"),
+                )
+                val cutText = buildList {
+                    if (start > 0) add("Anfang ${formatPrecise(start)}")
+                    if (end < duration) add("Ende ${formatPrecise(duration - end)}")
+                }
+                Text(if (cutText.isEmpty()) "Noch nichts weggeschnitten" else "Wird weggeschnitten: " + cutText.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Panel("Schnell wegschneiden") {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(5, 10, 30).forEach { s ->
+                        Pill("Letzte $s s", end == duration - s * 1000L, "trim-last$s") { setEnd(duration - s * 1000L) }
+                    }
+                }
+                Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(5, 10).forEach { s ->
+                        Pill("Erste $s s", start == s * 1000L, "trim-first$s") { setStart(s * 1000L) }
+                    }
+                    Pill("Zurücksetzen", false, "trimReset") { start = 0; end = duration }
+                }
+            }
+
+            Panel("Genau einstellen") {
+                FineTuneRow("Anfang", start, "trimStart", onMinus = { setStart(start - step) }, onPlus = { setStart(start + step) },
+                    onListen = { preview(start, start + 5_000) })
+                FineTuneRow("Ende", end, "trimEnd", onMinus = { setEnd(end - step) }, onPlus = { setEnd(end + step) },
+                    onListen = { preview(end - 5_000, end) })
+                val previewing = previewUntil != null && player.isPlaying && player.currentId == track.id
+                if (previewing) {
+                    TextButton(onClick = { app.player.togglePlayPause(); previewUntil = null }) {
+                        Icon(Icons.Default.Pause, null, tint = Accent); Spacer(Modifier.width(6.dp)); Text("Vorhören stoppen", color = Accent)
+                    }
+                }
+            }
+
+            Panel("Sanft ein- und ausblenden") {
+                FadeRow("Anfang", fadeIn, "fadeIn") { fadeIn = it }
+                Spacer(Modifier.height(8.dp))
+                FadeRow("Ende", fadeOut, "fadeOut") { fadeOut = it }
+            }
+
             Spacer(Modifier.height(20.dp))
-            // Übersicht: was bleibt (hell), was wegfällt (dunkel)
-            Row(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp))) {
-                val cutA = start.toFloat() / duration
-                val keep = (end - start).toFloat() / duration
-                val cutB = (duration - end).toFloat() / duration
-                if (cutA > 0) Spacer(Modifier.weight(cutA).fillMaxSize().background(Color.White.copy(alpha = 0.10f)))
-                Spacer(Modifier.weight(keep.coerceAtLeast(0.001f)).fillMaxSize().background(Accent))
-                if (cutB > 0) Spacer(Modifier.weight(cutB).fillMaxSize().background(Color.White.copy(alpha = 0.10f)))
-            }
-            RangeSlider(
-                value = start.toFloat()..end.toFloat(),
-                onValueChange = { r -> setStart(r.start.toLong()); setEnd(r.endInclusive.toLong()) },
-                valueRange = 0f..duration.toFloat(),
-                colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
-                modifier = Modifier.fillMaxWidth().testTag("trimSlider"),
-            )
-            Text(
-                "Bleibt: ${formatPrecise(start)} – ${formatPrecise(end)}  (${formatTime(end - start)})",
-                fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("trimSummary"),
-            )
-            val cutText = buildList {
-                if (start > 0) add("Anfang ${formatPrecise(start)}")
-                if (end < duration) add("Ende ${formatPrecise(duration - end)}")
-            }
-            Text(if (cutText.isEmpty()) "Noch nichts weggeschnitten" else "Wird weggeschnitten: " + cutText.joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-            SectionLabelSmall("Schnell wegschneiden")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(5, 10, 30).forEach { s ->
-                    FilterChip(selected = end == duration - s * 1000L, onClick = { setEnd(duration - s * 1000L) },
-                        label = { Text("Letzte $s s") }, modifier = Modifier.testTag("trim-last$s"))
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(5, 10).forEach { s ->
-                    FilterChip(selected = start == s * 1000L, onClick = { setStart(s * 1000L) },
-                        label = { Text("Erste $s s") }, modifier = Modifier.testTag("trim-first$s"))
-                }
-                FilterChip(selected = false, onClick = { start = 0; end = duration },
-                    label = { Text("Zurücksetzen") }, modifier = Modifier.testTag("trimReset"))
-            }
-
-            SectionLabelSmall("Sanft ein- und ausblenden")
-            FadeRow("Anfang", fadeIn, "fadeIn") { fadeIn = it }
-            FadeRow("Ende", fadeOut, "fadeOut") { fadeOut = it }
-
-            SectionLabelSmall("Genau einstellen")
-            FineTuneRow("Anfang", start, "trimStart", onMinus = { setStart(start - step) }, onPlus = { setStart(start + step) },
-                onListen = { preview(start, start + 5_000) })
-            FineTuneRow("Ende", end, "trimEnd", onMinus = { setEnd(end - step) }, onPlus = { setEnd(end + step) },
-                onListen = { preview(end - 5_000, end) })
-            val previewing = previewUntil != null && player.isPlaying && player.currentId == track.id
-            if (previewing) {
-                TextButton(onClick = { app.player.togglePlayPause(); previewUntil = null }) {
-                    Icon(Icons.Default.Pause, null, tint = Accent); Spacer(Modifier.width(6.dp)); Text("Vorhören stoppen", color = Accent)
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
             Button(
                 onClick = { save(asCopy = true) }, enabled = changed && !busy,
-                colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.Black),
-                modifier = Modifier.fillMaxWidth().testTag("trimSaveCopy"),
+                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("trimSaveCopy"),
             ) {
-                Icon(Icons.Default.ContentCut, null); Spacer(Modifier.width(8.dp)); Text("Als neues Lied speichern")
+                Icon(Icons.Default.ContentCut, null); Spacer(Modifier.width(8.dp)); Text("Als neues Lied speichern", fontWeight = FontWeight.Bold)
             }
-            OutlinedButton(
+            androidx.compose.material3.FilledTonalButton(
                 onClick = { if (app.library.canModifyFile(track)) confirmReplace = true else needAccess = true },
                 enabled = changed && !busy,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("trimSaveReplace"),
-            ) { Text("Original kürzen") }
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(52.dp).testTag("trimSaveReplace"),
+            ) { Text("Original kürzen", fontWeight = FontWeight.Bold) }
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp), color = Accent)
             Text(if (fadeIn > 0 || fadeOut > 0) "Mit Ein-/Ausblenden wird der Ton neu umgewandelt (192 kbit/s) – das dauert einen Moment. Titel, Cover und Songtext bleiben erhalten."
                 else "Verlustfrei: Die Tonqualität bleibt gleich, Titel, Cover und Songtext bleiben erhalten.",
@@ -331,28 +332,48 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
 @Composable
 private fun FadeRow(label: String, value: Int, tag: String, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, Modifier.width(64.dp))
+        Text(label, Modifier.width(60.dp))
         listOf(0, 1, 3, 5).forEach { s ->
-            FilterChip(selected = value == s, onClick = { onChange(s) },
-                label = { Text(if (s == 0) "Aus" else "$s s") }, modifier = Modifier.testTag("$tag-$s"))
+            Pill(if (s == 0) "Aus" else "$s s", value == s, "$tag-$s") { onChange(s) }
         }
     }
 }
 
+/** Abschnitt als ruhige, abgerundete Fläche mit Überschrift */
 @Composable
-private fun SectionLabelSmall(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 20.dp, bottom = 6.dp))
+private fun Panel(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp).clip(RoundedCornerShape(24.dp)).background(CyberPanelHigh).padding(16.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 10.dp))
+        content()
+    }
+}
+
+/** Runder Auswahl-Knopf ohne Rahmen: gewählt = Babyblau */
+@Composable
+private fun Pill(text: String, selected: Boolean, tag: String, onClick: () -> Unit) {
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) Accent else CyberPanelHighest, label = "pill")
+    Text(text, color = if (selected) Color(0xFF04202E) else MaterialTheme.colorScheme.onSurface,
+        fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+        modifier = Modifier.clip(CircleShape).background(bg).clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp).testTag(tag))
 }
 
 @Composable
 private fun FineTuneRow(label: String, value: Long, tag: String, onMinus: () -> Unit, onPlus: () -> Unit, onListen: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(64.dp))
-        OutlinedButton(onClick = onMinus, modifier = Modifier.testTag("$tag-minus")) { Text("−1 s") }
-        Text(formatPrecise(value), Modifier.weight(1f).testTag("$tag-value"), fontWeight = FontWeight.SemiBold,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        OutlinedButton(onClick = onPlus, modifier = Modifier.testTag("$tag-plus")) { Text("+1 s") }
-        IconButton(onClick = onListen, modifier = Modifier.testTag("$tag-listen")) { Icon(Icons.Default.PlayArrow, "$label anhören", tint = Accent) }
+        Text(label, Modifier.width(60.dp))
+        androidx.compose.material3.FilledTonalIconButton(onClick = onMinus, modifier = Modifier.testTag("$tag-minus")) {
+            Icon(Icons.Default.Remove, "$label 1 Sekunde früher")
+        }
+        Text(formatPrecise(value), Modifier.weight(1f).testTag("$tag-value"), fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        androidx.compose.material3.FilledTonalIconButton(onClick = onPlus, modifier = Modifier.testTag("$tag-plus")) {
+            Icon(Icons.Default.Add, "$label 1 Sekunde später")
+        }
+        Spacer(Modifier.width(8.dp))
+        androidx.compose.material3.FilledIconButton(onClick = onListen, modifier = Modifier.testTag("$tag-listen")) {
+            Icon(Icons.Default.PlayArrow, "$label anhören")
+        }
     }
 }

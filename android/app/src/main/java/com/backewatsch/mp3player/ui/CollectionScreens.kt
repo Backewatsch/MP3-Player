@@ -292,7 +292,10 @@ fun PlaylistScreen(id: String) {
     Column(Modifier.fillMaxSize()) {
         if (selection.active) SelectionBar(selection, shown, playlist)
         else ScreenTopBar("", onBack = { nav.pop() }) {
-            TextButton(onClick = { editing = !editing }) { Text(if (editing) "Fertig" else "Bearbeiten") }
+            if (editing) androidx.compose.material3.FilledIconButton(onClick = { editing = false },
+                modifier = Modifier.padding(end = 12.dp).testTag("playlistEditDone")) { Icon(Icons.Default.Check, "Fertig") }
+            else androidx.compose.material3.FilledTonalIconButton(onClick = { editing = true },
+                modifier = Modifier.padding(end = 12.dp).testTag("playlistEdit")) { Icon(Icons.Default.Edit, "Playlist bearbeiten") }
         }
         LazyColumn {
             item {

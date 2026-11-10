@@ -136,8 +136,7 @@ fun StatsScreen() {
 @Composable
 private fun StatTile(label: String, value: String, modifier: Modifier, tag: String) {
     Column(
-        modifier.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(CyberPanelHigh, CyberPanel)),
-            androidx.compose.foundation.shape.CutCornerShape(topStart = 12.dp, bottomEnd = 12.dp)).padding(14.dp).testTag(tag),
+        modifier.background(CyberPanelHigh, androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).padding(16.dp).testTag(tag),
     ) {
         Text(value, style = MaterialTheme.typography.titleLarge, color = Accent, fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
