@@ -16,3 +16,6 @@ android/app/.cxx/
 android/local.properties
 *.apk
 MP3PlayerWidget/Info.plist
+
+# Python
+__pycache__/
