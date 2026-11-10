@@ -207,7 +207,8 @@ final class Library: ObservableObject {
 
     /// Songtext: selbst eingetragen oder aus der Datei
     func lyrics(for track: Track) async -> String? {
-        if let s = lyricsByID[track.id] { return s }
+        // Leer gespeichert = bewusst gelöscht (nicht aus der Datei nachlesen, die evtl. noch geändert wird)
+        if let s = lyricsByID[track.id] { return s.isEmpty ? nil : s }
         let asset = AVURLAsset(url: track.fileURL)
         let text = try? await asset.load(.lyrics)
         return text?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -215,7 +216,7 @@ final class Library: ObservableObject {
 
     func setLyrics(_ track: Track, _ text: String) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        lyricsByID[track.id] = clean.isEmpty ? nil : clean
+        lyricsByID[track.id] = clean
         save()
         writeTags(track, Id3Writer.Update(lyrics: clean))
     }

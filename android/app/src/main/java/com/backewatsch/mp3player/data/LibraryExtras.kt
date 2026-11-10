@@ -23,12 +23,15 @@ fun Library.setGain(trackId: String, gainDb: Float) {
 }
 
 /** Songtext: selbst eingetragen oder aus der MP3 (USLT) gelesen */
-fun Library.lyricsOf(track: Track): String? =
-    _state.value.lyrics[track.id] ?: Id3Lyrics.read(fileOf(track))
+fun Library.lyricsOf(track: Track): String? {
+    // Leer gespeichert = bewusst gelöscht (nicht aus der Datei nachlesen, die evtl. noch geändert wird)
+    _state.value.lyrics[track.id]?.let { return it.ifEmpty { null } }
+    return Id3Lyrics.read(fileOf(track))
+}
 
 fun Library.setLyrics(track: Track, text: String) {
     val clean = text.trim()
-    _state.update { s -> s.copy(lyrics = if (clean.isEmpty()) s.lyrics - track.id else s.lyrics + (track.id to clean)) }
+    _state.update { s -> s.copy(lyrics = s.lyrics + (track.id to clean)) }
     save()
     writeTags(track, Id3Writer.Update(lyrics = clean))
 }
@@ -112,7 +115,7 @@ fun Library.mergeDuplicates(group: List<Track>): Track {
             history = s.history.map { it.copy(trackId = swap(it.trackId)) },
             plays = s.plays.map { it.copy(trackId = swap(it.trackId)) },
             lyrics = run {
-                val text = s.lyrics[keep.id] ?: others.firstNotNullOfOrNull { s.lyrics[it.id] }
+                val text = s.lyrics[keep.id]?.takeIf { it.isNotEmpty() } ?: others.firstNotNullOfOrNull { s.lyrics[it.id]?.takeIf { t -> t.isNotEmpty() } }
                 (s.lyrics - gone - keep.id) + (if (text != null) mapOf(keep.id to text) else emptyMap())
             },
         )
