@@ -3,10 +3,11 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:pathData="M0,0 L108,0 L108,108 L0,108 Z">
+    <path android:pathData="M0.00,0.00 L108.00,0.00 L108.00,108.00 L0.00,108.00 Z">
         <aapt:attr name="android:fillColor">
-            <gradient android:type="radial" android:centerX="54" android:centerY="48" android:gradientRadius="80"
-                android:startColor="#FF4C0422" android:endColor="#FF060008" />
+            <gradient android:type="linear" android:startX="0" android:startY="6" android:endX="0" android:endY="70"
+                android:startColor="#FF0A0826" android:endColor="#FFE8482E" />
         </aapt:attr>
     </path>
+    <path android:fillColor="#CCFFFFFF" android:pathData="M12.45,10.00 L12.32,10.32 L12.00,10.45 L11.68,10.32 L11.55,10.00 L11.68,9.68 L12.00,9.55 L12.32,9.68 Z M25.45,19.00 L25.32,19.32 L25.00,19.45 L24.68,19.32 L24.55,19.00 L24.68,18.68 L25.00,18.55 L25.32,18.68 Z M38.45,7.00 L38.32,7.32 L38.00,7.45 L37.68,7.32 L37.55,7.00 L37.68,6.68 L38.00,6.55 L38.32,6.68 Z M70.45,11.00 L70.32,11.32 L70.00,11.45 L69.68,11.32 L69.55,11.00 L69.68,10.68 L70.00,10.55 L70.32,10.68 Z M84.45,20.00 L84.32,20.32 L84.00,20.45 L83.68,20.32 L83.55,20.00 L83.68,19.68 L84.00,19.55 L84.32,19.68 Z M96.45,8.00 L96.32,8.32 L96.00,8.45 L95.68,8.32 L95.55,8.00 L95.68,7.68 L96.00,7.55 L96.32,7.68 Z M18.45,30.00 L18.32,30.32 L18.00,30.45 L17.68,30.32 L17.55,30.00 L17.68,29.68 L18.00,29.55 L18.32,29.68 Z M92.45,33.00 L92.32,33.32 L92.00,33.45 L91.68,33.32 L91.55,33.00 L91.68,32.68 L92.00,32.55 L92.32,32.68 Z M60.45,4.00 L60.32,4.32 L60.00,4.45 L59.68,4.32 L59.55,4.00 L59.68,3.68 L60.00,3.55 L60.32,3.68 Z" />
 </vector>
