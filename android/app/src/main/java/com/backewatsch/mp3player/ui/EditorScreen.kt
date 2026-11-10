@@ -182,12 +182,11 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
         scope.launch(kotlinx.coroutines.Dispatchers.Main) {
             try {
                 val result = app.library.trim(track, start, end, asCopy, fadeIn * 1000L, fadeOut * 1000L)
-                Toast.makeText(context,
-                    if (asCopy) "„${result.title}“ gespeichert (${formatTime(result.durationMs)})"
-                    else "„${result.title}“ gekürzt auf ${formatTime(result.durationMs)}", Toast.LENGTH_LONG).show()
+                Notice.show(context, if (asCopy) "„${result.title}“ gespeichert (${formatTime(result.durationMs)})"
+                    else "„${result.title}“ gekürzt auf ${formatTime(result.durationMs)}")
                 onClose()
             } catch (e: Exception) {
-                Toast.makeText(context, "Zuschneiden fehlgeschlagen: ${e.message}", Toast.LENGTH_LONG).show()
+                Notice.show(context, "Zuschneiden fehlgeschlagen: ${e.message}")
             } finally {
                 busy = false
             }

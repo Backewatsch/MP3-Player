@@ -3,6 +3,7 @@ package com.backewatsch.mp3player.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.animation.togetherWith
@@ -57,6 +58,8 @@ val LocalFavorites = androidx.compose.runtime.compositionLocalOf<Set<String>> { 
 const val TAB_START = 0
 const val TAB_LIBRARY = 1
 const val TAB_EDITOR = 2
+/** Suche – kein eigener Tab, liegt über dem gewählten */
+const val TAB_SEARCH = -1
 
 class AppNavigation {
     var tab by mutableStateOf(0)
@@ -73,12 +76,15 @@ class AppNavigation {
 
     fun openEditor(track: com.backewatsch.mp3player.model.Track) {
         showNowPlaying = false
+        leaveSearch()
         editTrackId = track.id
         tab = TAB_EDITOR
     }
     val actions = TrackActionsState()
 
     fun push(route: LibRoute) {
+        // Treffer aus der Suche geöffnet → „Zurück“ führt später wieder in die Suche
+        if (showSearch) { searchDepth = libraryStack.size; showSearch = false }
         tab = TAB_LIBRARY
         showNowPlaying = false
         libraryStack.add(route)
@@ -86,23 +92,37 @@ class AppNavigation {
 
     fun pop(): Boolean {
         if (libraryStack.size <= 1) return false
-        val closed = libraryStack.removeAt(libraryStack.lastIndex)
-        // Suche vom Start-Tab aus geöffnet → „Zurück“ führt wieder dorthin
-        if (closed == LibRoute.Search && searchFromStart) { searchFromStart = false; tab = TAB_START }
+        libraryStack.removeAt(libraryStack.lastIndex)
+        if (searchDepth != null && libraryStack.size == searchDepth) { searchDepth = null; showSearch = true }
         return true
     }
 
+    /** Suche liegt über dem Tab, von dem aus sie geöffnet wurde */
+    var showSearch by mutableStateOf(false)
     /** Text im Suchfeld – bleibt erhalten, wenn man aus einem Treffer zurückkommt */
     var searchQuery by mutableStateOf("")
-    private var searchFromStart = false
+    private var searchOriginTab by mutableStateOf(TAB_START)
+    private var searchDepth: Int? = null
+    /** Tab, der unten als gewählt erscheint */
+    val shownTab: Int get() = if (showSearch) searchOriginTab else tab
 
     /** Suche öffnen (rundes Lupen-Symbol auf Start und Mediathek) */
     fun openSearch() {
-        searchFromStart = tab == TAB_START
+        searchOriginTab = tab
         searchQuery = ""
-        libraryStack.retainAll(listOf(LibRoute.Root))
-        push(LibRoute.Search)
+        searchDepth = null
+        showSearch = true
     }
+
+    /** Suche schließen: zurück auf den Tab, von dem aus sie geöffnet wurde */
+    fun closeSearch() {
+        showSearch = false
+        searchDepth = null
+        tab = searchOriginTab
+    }
+
+    /** Suche verlassen, weil woanders hin gewechselt wird */
+    fun leaveSearch() { showSearch = false; searchDepth = null }
 }
 
 @Composable
@@ -114,6 +134,34 @@ fun MainScreen() {
     }
     CompositionLocalProvider(LocalApp provides app, LocalNav provides nav, LocalFavorites provides favoriteIds) {
         BackHandler(enabled = nav.tab == TAB_LIBRARY && nav.libraryStack.size > 1) { nav.pop() }
+        BackHandler(enabled = nav.showSearch) { nav.closeSearch() }
+
+        // Hinweise erscheinen in der App, solange kein Blatt über der Hauptseite liegt
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            Notice.blocked = { nav.showNowPlaying || nav.showSettings || nav.showDownloads || nav.showTransfer || nav.showSound || nav.recapYear != null }
+            onDispose { Notice.blocked = { true } }
+        }
+
+        // Navigation blendet beim Herunterscrollen aus und kommt beim Hochscrollen wieder
+        var navVisible by remember { mutableStateOf(true) }
+        val hideAfter = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+        val scrollWatcher = remember(hideAfter) {
+            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                var down = 0f
+                override fun onPostScroll(
+                    consumed: androidx.compose.ui.geometry.Offset,
+                    available: androidx.compose.ui.geometry.Offset,
+                    source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+                ): androidx.compose.ui.geometry.Offset {
+                    if (consumed.y > 0f) { down = 0f; navVisible = true }
+                    else if (consumed.y < 0f) { down -= consumed.y; if (down > hideAfter) navVisible = false }
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+            }
+        }
+        androidx.compose.runtime.LaunchedEffect(nav.tab, nav.libraryStack.size, nav.showSearch, nav.editTrackId) {
+            scrollWatcher.down = 0f; navVisible = true
+        }
 
         Scaffold(
             modifier = Modifier.cyberBackground(),
@@ -123,14 +171,20 @@ fun MainScreen() {
             bottomBar = {
                 Column {
                     MiniPlayer(onOpen = { nav.showNowPlaying = true })
-                    FloatingNavBar(nav)
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = navVisible,
+                        enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                        exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
+                    ) { FloatingNavBar(nav) }
+                    // Ohne Leiste bleibt der Mini-Player über der Gestenleiste des Handys
+                    if (!navVisible) androidx.compose.foundation.layout.Spacer(Modifier.navigationBarsPadding().height(6.dp))
                 }
             },
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            Box(Modifier.fillMaxSize().padding(padding).nestedScroll(scrollWatcher)) {
                 // Tabs blenden weich ineinander über
                 androidx.compose.animation.AnimatedContent(
-                    targetState = nav.tab,
+                    targetState = if (nav.showSearch) TAB_SEARCH else nav.tab,
                     transitionSpec = {
                         (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
                             androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(220), initialScale = 0.97f))
@@ -139,11 +193,13 @@ fun MainScreen() {
                     label = "tabs",
                 ) { tab ->
                     when (tab) {
+                        TAB_SEARCH -> SearchScreen()
                         TAB_START -> StartScreen()
                         TAB_LIBRARY -> LibraryHost()
                         else -> EditorScreen()
                     }
                 }
+                NoticeHost(Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 8.dp))
             }
         }
 
@@ -171,11 +227,14 @@ private fun FloatingNavBar(nav: AppNavigation) {
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-            NavPill("Start", Icons.Default.Home, nav.tab == TAB_START, "tab-start") { nav.tab = TAB_START }
-            NavPill("Mediathek", Icons.Default.LibraryMusic, nav.tab == TAB_LIBRARY, "tab-library") {
-                if (nav.tab == TAB_LIBRARY) nav.libraryStack.retainAll(listOf(LibRoute.Root)); nav.tab = TAB_LIBRARY
+            NavPill("Start", Icons.Default.Home, nav.shownTab == TAB_START, "tab-start") { nav.leaveSearch(); nav.tab = TAB_START }
+            NavPill("Mediathek", Icons.Default.LibraryMusic, nav.shownTab == TAB_LIBRARY, "tab-library") {
+                val wasSearching = nav.showSearch
+                nav.leaveSearch()
+                if (nav.tab == TAB_LIBRARY && !wasSearching) nav.libraryStack.retainAll(listOf(LibRoute.Root)); nav.tab = TAB_LIBRARY
             }
-            NavPill("Bearbeiten", Icons.Default.ContentCut, nav.tab == TAB_EDITOR, "tab-editor") {
+            NavPill("Bearbeiten", Icons.Default.ContentCut, nav.shownTab == TAB_EDITOR, "tab-editor") {
+                nav.leaveSearch()
                 if (nav.tab == TAB_EDITOR) nav.editTrackId = null; nav.tab = TAB_EDITOR
             }
         }

@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.graphics.graphicsLayer
@@ -191,6 +194,40 @@ fun androidx.compose.foundation.lazy.LazyListScope.listSearch(query: String, onC
     }
     if (query.isNotBlank() && found == 0) item(key = "listSearchEmpty") {
         EmptyHint("Nichts gefunden", "Zu „${query.trim()}“ gibt es in dieser Liste keine Treffer.")
+    }
+}
+
+/**
+ * Griff zum Umsortieren: Ziehen verschiebt die Zeile Schritt für Schritt nach oben oder unten.
+ * [onState] meldet die Zeile, die gerade gezogen wird, und ihren Versatz (null = losgelassen).
+ */
+@Composable
+fun ReorderHandle(index: Int, range: IntRange, rowHeight: Dp, onState: (Int?, Float) -> Unit, onMove: (Int, Int) -> Unit) {
+    val start by androidx.compose.runtime.rememberUpdatedState(index)
+    val bounds by androidx.compose.runtime.rememberUpdatedState(range)
+    val state by androidx.compose.runtime.rememberUpdatedState(onState)
+    val move by androidx.compose.runtime.rememberUpdatedState(onMove)
+    val rowPx = with(androidx.compose.ui.platform.LocalDensity.current) { rowHeight.toPx() }
+    val haptic = LocalHapticFeedback.current
+    Box(
+        Modifier.size(48.dp).pointerInput(rowPx) {
+            var at = 0
+            var offset = 0f
+            detectDragGestures(
+                onDragStart = { at = start; offset = 0f; haptic.performHapticFeedback(HapticFeedbackType.LongPress); state(at, 0f) },
+                onDragEnd = { state(null, 0f) },
+                onDragCancel = { state(null, 0f) },
+            ) { change, amount ->
+                change.consume()
+                offset += amount.y
+                if (offset > rowPx / 2 && at < bounds.last) { move(at, at + 1); at += 1; offset -= rowPx }
+                else if (offset < -rowPx / 2 && at > bounds.first) { move(at, at - 1); at -= 1; offset += rowPx }
+                state(at, offset)
+            }
+        }.testTag("dragHandle"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Default.DragHandle, "Ziehen zum Verschieben", tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

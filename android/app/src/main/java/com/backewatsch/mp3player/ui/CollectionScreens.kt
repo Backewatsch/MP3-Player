@@ -79,6 +79,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
@@ -273,6 +275,9 @@ fun PlaylistScreen(id: String) {
     }
     val tracks = app.library.tracksIn(playlist)
     var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    // Zeile, die gerade gezogen wird, und ihr Versatz
+    var dragIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     // Beim Umsortieren immer die ganze Playlist zeigen
     val shown = if (editing) tracks else com.backewatsch.mp3player.data.Search.filter(tracks, query)
     val isDownloads = playlist.id == DOWNLOADS_PLAYLIST_ID
@@ -316,13 +321,21 @@ fun PlaylistScreen(id: String) {
             if (tracks.isNotEmpty() && !editing) listSearch(query, { query = it }, shown.size)
             itemsIndexed(shown, key = { _, t -> t.id }) { index, track ->
                 if (editing) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val dragging = dragIndex == index
+                    Row(
+                        Modifier.fillMaxWidth().height(60.dp)
+                            .then(if (dragging) Modifier.zIndex(1f).graphicsLayer { translationY = dragOffset }
+                                .background(CyberPanelHighest, RoundedCornerShape(16.dp)) else Modifier.animateItem())
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         IconButton(onClick = { app.library.remove(track, playlist) }) { Icon(Icons.Default.Delete, "Entfernen", tint = MaterialTheme.colorScheme.error) }
                         Artwork(track, 40.dp, 10.dp)
                         Spacer(Modifier.width(10.dp))
-                        Text(track.title, Modifier.weight(1f), maxLines = 1)
-                        IconButton(onClick = { app.library.move(playlist, index, index - 1) }, enabled = index > 0) { Icon(Icons.Default.KeyboardArrowUp, "Nach oben") }
-                        IconButton(onClick = { app.library.move(playlist, index, index + 1) }, enabled = index < tracks.lastIndex) { Icon(Icons.Default.KeyboardArrowDown, "Nach unten") }
+                        Text(track.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        ReorderHandle(index, 0..tracks.lastIndex, 60.dp, onState = { i, off -> dragIndex = i; dragOffset = off }) { from, to ->
+                            app.library.move(playlist, from, to)
+                        }
                     }
                 } else {
                     TrackRow(track, player.currentId == track.id, player.isPlaying,

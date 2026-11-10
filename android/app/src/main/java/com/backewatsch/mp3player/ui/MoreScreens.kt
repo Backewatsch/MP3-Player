@@ -154,7 +154,7 @@ fun DuplicatesScreen() {
                     FilledTonalButton(onClick = {
                         val n = groups.sumOf { it.size - 1 }
                         groups.forEach { app.library.mergeDuplicates(it) }
-                        Toast.makeText(context, "$n doppelte Dateien entfernt", Toast.LENGTH_SHORT).show()
+                        Notice.show(context, "$n doppelte Dateien entfernt")
                     }, modifier = Modifier.padding(top = 12.dp).fillMaxWidth().testTag("mergeAll")) {
                         Icon(Icons.Default.CleaningServices, null, tint = Accent); Spacer(Modifier.width(8.dp))
                         Text("Alle aufräumen", color = Accent)

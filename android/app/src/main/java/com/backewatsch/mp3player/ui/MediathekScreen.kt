@@ -107,9 +107,9 @@ fun MediathekRoot() {
 
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) scope.launch {
-            Toast.makeText(context, "Wird übernommen und in MP3 umgewandelt …", Toast.LENGTH_SHORT).show()
+            Notice.show(context, "Wird übernommen und in MP3 umgewandelt …")
             val errors = app.importUris(uris)
-            if (errors.isNotEmpty()) Toast.makeText(context, errors.joinToString("\n"), Toast.LENGTH_LONG).show()
+            if (errors.isNotEmpty()) Notice.show(context, errors.joinToString("\n"))
         }
     }
 

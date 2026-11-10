@@ -58,7 +58,7 @@ fun SearchScreen() {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalIconButton(onClick = { nav.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") }
+            FilledTonalIconButton(onClick = { nav.closeSearch() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") }
             Spacer(Modifier.width(8.dp))
             SearchPill(search, { nav.searchQuery = it }, "Was willst du hören?",
                 Modifier.weight(1f).focusRequester(focus).testTag("searchField"))

@@ -171,7 +171,7 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Tile("Als Nächstes abspielen", Icons.Default.SkipNext, Modifier.weight(1f)) {
                     app.player.playNext(current)
-                    Toast.makeText(context, "„${current.title}“ kommt als Nächstes", Toast.LENGTH_SHORT).show()
+                    Notice.show(context, "„${current.title}“ kommt als Nächstes")
                     close()
                 }
                 Tile("Zu Playlist hinzufügen", Icons.AutoMirrored.Filled.PlaylistAdd, Modifier.weight(1f)) {
@@ -195,13 +195,13 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
             ActionRow(if (favorite) "Aus Lieblingssongs entfernen" else "Zu Lieblingssongs hinzufügen",
                 if (favorite) Icons.Default.HeartBroken else Icons.Default.Favorite) {
                 app.library.toggleFavorite(current)
-                Toast.makeText(context, if (favorite) "Aus Lieblingssongs entfernt" else "♥ Zu Lieblingssongs hinzugefügt", Toast.LENGTH_SHORT).show()
+                Notice.show(context, if (favorite) "Aus Lieblingssongs entfernt" else "♥ Zu Lieblingssongs hinzugefügt")
                 close()
             }
             ActionRow("Mix starten", Icons.Default.Radio) { app.player.startMix(current, app.library.tracks); close() }
             ActionRow("In die Wiedergabeliste", Icons.AutoMirrored.Filled.QueueMusic) {
                 app.player.addToQueue(current)
-                Toast.makeText(context, "„${current.title}“ ans Ende der Wiedergabeliste", Toast.LENGTH_SHORT).show()
+                Notice.show(context, "„${current.title}“ ans Ende der Wiedergabeliste")
                 close()
             }
             if (current.album.isNotBlank()) ActionRow("Album anzeigen", Icons.Default.Album) { close(); nav.push(LibRoute.Album(current.album)) }

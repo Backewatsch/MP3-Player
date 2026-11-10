@@ -87,13 +87,13 @@ fun SelectionBar(selection: SelectionState, all: List<Track>, playlist: Playlist
         Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             SelAction("Als Nächstes", Icons.Default.SkipNext, "sel-next") {
                 chosen.forEach { app.player.playNext(it) }
-                Toast.makeText(context, "${chosen.size} Titel kommen als Nächstes", Toast.LENGTH_SHORT).show()
+                Notice.show(context, "${chosen.size} Titel kommen als Nächstes")
                 selection.clear()
             }
             SelAction("Zu Playlist", Icons.AutoMirrored.Filled.PlaylistAdd, "sel-playlist") { addTo = chosen }
             SelAction("Herz", Icons.Default.Favorite, "sel-fav") {
                 app.library.addFavorites(chosen)
-                Toast.makeText(context, "${chosen.size} Titel zu Lieblingssongs", Toast.LENGTH_SHORT).show()
+                Notice.show(context, "${chosen.size} Titel zu Lieblingssongs")
                 selection.clear()
             }
             if (playlist != null) {
@@ -156,7 +156,7 @@ fun AddManyToPlaylistSheet(tracks: List<Track>, onDismiss: () -> Unit, onDone: (
     var showNew by remember { mutableStateOf(false) }
     fun done(playlist: Playlist) {
         app.library.addAll(tracks, playlist)
-        Toast.makeText(context, "${tracks.size} Titel zu „${playlist.name}“ hinzugefügt", Toast.LENGTH_SHORT).show()
+        Notice.show(context, "${tracks.size} Titel zu „${playlist.name}“ hinzugefügt")
         onDismiss(); onDone()
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {

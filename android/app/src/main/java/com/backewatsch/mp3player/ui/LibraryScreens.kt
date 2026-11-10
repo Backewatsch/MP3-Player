@@ -103,7 +103,6 @@ sealed interface LibRoute {
     data object Duplicates : LibRoute
     data object Genres : LibRoute
     data class Genre(val name: String) : LibRoute
-    data object Search : LibRoute
 }
 
 @Composable
@@ -135,7 +134,6 @@ fun LibraryHost() {
             LibRoute.Duplicates -> DuplicatesScreen()
             LibRoute.Genres -> GenresScreen()
             is LibRoute.Genre -> CollectionScreen(route.name, "Genre")
-            LibRoute.Search -> SearchScreen()
         }
     }
 }

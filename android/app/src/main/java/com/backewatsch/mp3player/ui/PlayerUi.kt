@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -322,9 +323,11 @@ fun QueueSheet(onDismiss: () -> Unit) {
     val lib by app.library.state.collectAsState()
     val byId = lib.tracks.associateBy { it.id }
     val current = state.currentIndex
+    var dragIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Text("Wiedergabeliste", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, bottom = 4.dp))
-        Text(if (state.shuffle) "Zufallswiedergabe an" else "In dieser Reihenfolge", style = MaterialTheme.typography.bodySmall,
+        Text(if (state.shuffle) "Zufallswiedergabe an · am Griff ziehen zum Umsortieren" else "Am Griff ziehen zum Umsortieren", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
         LazyColumn(Modifier.fillMaxWidth().testTag("queueList")) {
             itemsIndexed(state.queueIds) { index, id ->
@@ -335,7 +338,10 @@ fun QueueSheet(onDismiss: () -> Unit) {
                 }
                 if (index < current) return@itemsIndexed // bereits gespielt → ausblenden
                 Row(
-                    Modifier.fillMaxWidth().clickable { app.player.playQueueIndex(index) }.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                    Modifier.fillMaxWidth()
+                        .then(if (dragIndex == index) Modifier.zIndex(1f).graphicsLayer { translationY = dragOffset }
+                            .background(CyberPanelHighest, RoundedCornerShape(16.dp)) else Modifier)
+                        .clickable { app.player.playQueueIndex(index) }.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
                         .semantics { contentDescription = "Wiedergabeliste ${index - current}: ${track.title}" }
                         .testTag("queue-${index - current}-${track.title}"),
                     verticalAlignment = Alignment.CenterVertically,
@@ -349,12 +355,8 @@ fun QueueSheet(onDismiss: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
                     if (index > current) {
-                        IconButton(onClick = { app.player.moveInQueue(index, index - 1) }, enabled = index > current + 1) {
-                            Icon(Icons.Default.KeyboardArrowUp, "Nach oben")
-                        }
-                        IconButton(onClick = { app.player.moveInQueue(index, index + 1) }, enabled = index < state.queueIds.lastIndex) {
-                            Icon(Icons.Default.KeyboardArrowDown, "Nach unten")
-                        }
+                        ReorderHandle(index, (current + 1)..state.queueIds.lastIndex, 48.dp,
+                            onState = { i, off -> dragIndex = i; dragOffset = off }) { from, to -> app.player.moveInQueue(from, to) }
                         IconButton(onClick = { app.player.removeFromQueue(index) }) { Icon(Icons.Default.Close, "Entfernen") }
                     }
                 }
