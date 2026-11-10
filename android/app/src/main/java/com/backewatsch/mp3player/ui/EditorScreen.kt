@@ -143,6 +143,7 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
     var fadeOut by remember(track.id) { mutableStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var confirmReplace by remember { mutableStateOf(false) }
+    var needAccess by remember { mutableStateOf(false) }
     /** Vorhören bis zu dieser Stelle, dann Pause */
     var previewUntil by remember { mutableStateOf<Long?>(null) }
 
@@ -293,12 +294,9 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
             ) {
                 Icon(Icons.Default.ContentCut, null); Spacer(Modifier.width(8.dp)); Text("Als neues Lied speichern")
             }
-            if (track.isLinked) {
-                Text("Verknüpftes Lied: Die Originaldatei bleibt unverändert – gespeichert wird ein neues Lied.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp))
-            } else OutlinedButton(
-                onClick = { confirmReplace = true }, enabled = changed && !busy,
+            OutlinedButton(
+                onClick = { if (app.library.canModifyFile(track)) confirmReplace = true else needAccess = true },
+                enabled = changed && !busy,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("trimSaveReplace"),
             ) { Text("Original kürzen") }
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp), color = Accent)
@@ -309,11 +307,16 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
         }
     }
 
+    if (needAccess) FileAccessDialog("„${track.title}“", onDismiss = { needAccess = false })
     if (confirmReplace) {
         AlertDialog(
             onDismissRequest = { confirmReplace = false },
             title = { Text("Original kürzen?") },
-            text = { Text("„${track.title}“ wird dauerhaft auf ${formatTime(end - start)} gekürzt. Das Weggeschnittene lässt sich nicht wiederherstellen.") },
+            text = {
+                Text("„${track.title}“ wird dauerhaft auf ${formatTime(end - start)} gekürzt" +
+                    (if (track.isLinked) " – die Originaldatei auf dem Handy, also auch in Samsung Music." else ".") +
+                    " Das Weggeschnittene lässt sich nicht wiederherstellen.")
+            },
             confirmButton = {
                 TextButton(onClick = { confirmReplace = false; save(asCopy = false) }, modifier = Modifier.testTag("trimConfirm")) {
                     Text("Kürzen", color = Accent)

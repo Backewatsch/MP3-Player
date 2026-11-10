@@ -149,6 +149,7 @@ class DownloadWatcher(
             val rel = if (Build.VERSION.SDK_INT >= 29) c.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1
             while (c.moveToNext()) {
                 val fileName = c.getString(name) ?: continue
+                if (fileName.startsWith(".")) continue // versteckte Zwischendateien (z. B. beim Zuschneiden)
                 val relative = if (rel >= 0) c.getString(rel).orEmpty() else ""
                 val path = (if (data >= 0) c.getString(data) else null) ?: "media:${c.getLong(id)}:$fileName"
                 if (!isInDownloads(relative, path) || !FileNames.isImportable(fileName)) continue

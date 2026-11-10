@@ -90,6 +90,12 @@ class Library(
     fun artistNames() = groupNames(tracks.map { it.artist })
     /** Nicht-MP3 im eigenen Ordner (verknüpfte Originale werden nie umgewandelt – sie bleiben, wie sie sind) */
     fun convertibleTracks() = tracks.filter { !it.isLinked && !FileNames.isMp3(it.fileName) }
+    /**
+     * Darf die App die Datei dieses Titels ändern oder löschen? Eigene Dateien immer; verknüpfte Originale nur mit
+     * „Zugriff auf alle Dateien“ (oder wenn die App sie selbst angelegt hat).
+     */
+    fun canModifyFile(track: Track): Boolean = !track.isLinked || fileOf(track).let { it.exists() && it.canWrite() }
+
     /** Datei eines Titels: verknüpftes Original oder Datei im Musikordner der App */
     fun fileOf(track: Track) = if (track.isLinked) File(track.path) else storage.fileFor(track.fileName)
     fun artworkOf(track: Track) = storage.artworkFor(track.id).takeIf { it.exists() }
@@ -353,8 +359,10 @@ class Library(
         if (list.isEmpty()) return
         val ids = list.map { it.id }.toSet()
         list.forEach {
-            // Verknüpfte Originale bleiben auf dem Handy – nur die eigene Kopie wird gelöscht
+            // Überall löschen – auch verknüpfte Originale (Samsung Music, Download), sofern die App das darf.
+            // Ohne Zugriff wird ein verknüpftes Lied nur aus der Mediathek entfernt.
             if (!it.isLinked) fileOf(it).delete()
+            else if (canModifyFile(it) && fileOf(it).delete()) storage.notifyMediaChanged(it.path)
             storage.artworkFor(it.id).delete(); storage.originalCoverFor(it.id).delete()
         }
         _state.update { s ->
@@ -424,12 +432,16 @@ class Library(
 
     /** Änderungen in die MP3 schreiben (Fehler ändern nichts an der Mediathek) */
     internal fun writeTags(track: Track, update: Id3Writer.Update) {
-        // Verknüpfte Originale gehören anderen Apps → Änderungen nur in der Mediathek, die Datei bleibt unberührt
-        if (track(track.id)?.isLinked ?: track.isLinked) return
-        val file = fileOf(track)
+        // Verknüpfte Originale nur mit Zugriff ändern – sonst bleiben die Änderungen in der Mediathek
+        val current = track(track.id) ?: track
+        if (!canModifyFile(current)) return
+        val file = fileOf(current)
         if (!FileNames.isMp3(file.name)) return
         // Die Datei bleibt dabei immer vollständig (neue Fassung wird erst fertig geschrieben, dann ausgetauscht)
-        runOnFiles { if (file.exists()) Id3Writer.write(file, update) }
+        runOnFiles {
+            if (file.exists()) Id3Writer.write(file, update)
+            if (current.isLinked) storage.notifyMediaChanged(current.path)
+        }
     }
 
     /** Genres aller Titel einmalig aus den Dateien lesen (ältere Mediatheken kannten noch keine Genres) */

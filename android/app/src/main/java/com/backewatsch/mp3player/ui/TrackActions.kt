@@ -123,16 +123,21 @@ fun TrackActionsHost(state: TrackActionsState) {
     state.edit?.let { EditTrackDialog(it) { state.edit = null } }
     state.confirmDelete?.let { track ->
         val app = LocalApp.current
+        if (!app.library.canModifyFile(track)) {
+            // Verknüpftes Original, App darf es (noch) nicht löschen
+            FileAccessDialog("„${track.title}“", onDismiss = { state.confirmDelete = null }) { app.library.delete(track) }
+            return@let
+        }
         AlertDialog(
             onDismissRequest = { state.confirmDelete = null },
-            title = { Text("Aus Mediathek entfernen?") },
+            title = { Text("Lied löschen?") },
             text = {
-                Text(if (track.isLinked) "„${track.title}“ wird aus der Mediathek und allen Playlists entfernt. Die Originaldatei bleibt auf dem Handy."
+                Text(if (track.isLinked) "„${track.title}“ wird vom Handy gelöscht – auch aus Samsung Music bzw. dem Download-Ordner – und aus allen Playlists entfernt."
                     else "„${track.title}“ wird vom Gerät gelöscht und aus allen Playlists entfernt.")
             },
             confirmButton = {
                 TextButton(onClick = { app.library.delete(track); state.confirmDelete = null }) {
-                    Text("Entfernen", color = MaterialTheme.colorScheme.error)
+                    Text("Löschen", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = { TextButton(onClick = { state.confirmDelete = null }) { Text("Abbrechen") } },

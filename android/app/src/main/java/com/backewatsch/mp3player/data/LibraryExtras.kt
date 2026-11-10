@@ -45,12 +45,13 @@ fun Library.setCustomCover(track: Track, jpeg: ByteArray) {
     // Auch in die MP3 schreiben – dann sehen andere Apps das Cover ebenfalls.
     // Vorher das Original-Cover sichern, damit „Eigenes Cover entfernen“ es zurückholen kann.
     val file = fileOf(track)
-    // Verknüpfte Originale bleiben unberührt (Cover nur in der App)
-    if (!FileNames.isMp3(file.name) || track.isLinked) return
+    // Verknüpfte Originale ohne Zugriff bleiben unberührt (Cover dann nur in der App)
+    if (!FileNames.isMp3(file.name) || !canModifyFile(track)) return
     val backup = storage.originalCoverFor(track.id)
     runOnFiles {
         if (firstTime && !backup.exists()) MetadataReader.read(file).artwork?.let { backup.writeBytes(it) }
         Id3Writer.write(file, Id3Writer.Update(cover = jpeg))
+        if (track.isLinked) storage.notifyMediaChanged(track.path)
     }
 }
 
@@ -62,8 +63,8 @@ fun Library.removeCustomCover(track: Track) {
     save()
     val file = fileOf(track)
     val thumb = storage.artworkFor(track.id)
-    if (track.isLinked) {
-        // Verknüpft: Vorschaubild wieder aus dem Cover der Originaldatei erzeugen
+    if (track.isLinked && !canModifyFile(track)) {
+        // Verknüpft ohne Zugriff: Vorschaubild wieder aus dem Cover der Originaldatei erzeugen
         runOnFiles {
             MetadataReader.shrinkArtwork(MetadataReader.read(file).artwork)?.let { thumb.writeBytes(it) }
             coverVersion.value++
@@ -77,6 +78,7 @@ fun Library.removeCustomCover(track: Track) {
         Id3Writer.write(file, Id3Writer.Update(cover = original ?: ByteArray(0)))
         original?.let { MetadataReader.shrinkArtwork(it)?.let { small -> thumb.writeBytes(small) } }
         backup.delete()
+        if (track.isLinked) storage.notifyMediaChanged(track.path)
         coverVersion.value++
     }
 }

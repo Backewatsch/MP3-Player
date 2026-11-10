@@ -110,11 +110,17 @@ fun SelectionBar(selection: SelectionState, all: List<Track>, playlist: Playlist
         AddManyToPlaylistSheet(list, onDismiss = { addTo = null }) { selection.clear() }
     }
     confirmDelete?.let { list ->
+        if (list.any { !app.library.canModifyFile(it) }) {
+            FileAccessDialog("Mindestens ein Lied", onDismiss = { confirmDelete = null }) {
+                app.library.deleteAll(list); selection.clear()
+            }
+            return@let
+        }
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("${list.size} Titel löschen?") },
             text = {
-                Text(if (list.any { it.isLinked }) "Die Titel werden aus der Mediathek und allen Playlists entfernt. Eigene Kopien werden gelöscht, verknüpfte Originaldateien bleiben auf dem Handy."
+                Text(if (list.any { it.isLinked }) "Die Titel werden vom Handy gelöscht – auch aus Samsung Music bzw. dem Download-Ordner – und aus allen Playlists entfernt."
                     else "Die Titel werden vom Gerät gelöscht und aus allen Playlists entfernt.")
             },
             confirmButton = {

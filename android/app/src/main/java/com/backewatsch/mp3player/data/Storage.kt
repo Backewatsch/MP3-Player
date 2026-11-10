@@ -12,6 +12,11 @@ import java.util.UUID
 class Storage(context: Context, testRoot: File? = null) {
     private val appContext = context.applicationContext
 
+    /** Andere Apps (Samsung Music, „Eigene Dateien“) über eine geänderte oder gelöschte Datei informieren */
+    fun notifyMediaChanged(path: String) {
+        runCatching { android.media.MediaScannerConnection.scanFile(appContext, arrayOf(path), null, null) }
+    }
+
     /** Darf die App Musikdateien außerhalb ihres Ordners lesen (für verknüpfte Lieder)? */
     fun canReadSharedMusic(): Boolean {
         val permission = if (android.os.Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_AUDIO

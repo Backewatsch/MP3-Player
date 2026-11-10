@@ -60,7 +60,8 @@ object Id3Writer {
         val tag = "ID3".toByteArray() + byteArrayOf(version.toByte(), 0, 0) + synchsafe(body.size()) + body.toByteArray()
 
         // Neue Datei schreiben und dann austauschen (die alte bleibt bei Fehlern unangetastet)
-        val tmp = File(file.parentFile, ".${file.name}.tag")
+        // Endung .mp3: in Musik-/Download-Ordnern erlaubt Android nur Audiodateien
+        val tmp = File(file.parentFile, ".${file.nameWithoutExtension}.tag.mp3")
         tmp.outputStream().use { o ->
             o.write(tag)
             RandomAccessFile(file, "r").use { r ->

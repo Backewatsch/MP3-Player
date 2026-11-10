@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Folder
 
 import android.content.Intent
 import android.widget.Toast
@@ -354,15 +355,36 @@ private fun LinkCopiesCard() {
     var busy by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
     LaunchedEffect(lib.tracks.size) { candidates = app.library.linkableCopies() }
-    if (candidates.isEmpty()) return
+    val hasLinked = lib.tracks.any { it.isLinked }
+    if (candidates.isEmpty() && !hasLinked) return
     val bytes = remember(candidates) { candidates.sumOf { app.library.fileOf(it).length() } }
+    val requestAccess = rememberFileAccessRequest()
+    // Nach der Rückkehr aus den Einstellungen neu prüfen
+    var accessGranted by remember { mutableStateOf(FileAccess.granted(context)) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) accessGranted = FileAccess.granted(context)
+        }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
     SectionHeader("Speicher")
     Card {
+        if (hasLinked) {
+            ActionLine(if (accessGranted) "Originaldateien: Löschen und Zuschneiden erlaubt ✓" else "Originaldateien löschen/zuschneiden erlauben",
+                Icons.Default.Folder, "fileAccessSetting") { requestAccess() }
+            Text("Lieder aus Samsung Music und dem Download-Ordner sind nur verknüpft. Mit „Zugriff auf alle Dateien“ löscht und kürzt die App sie auch dort.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
+        }
+        if (candidates.isNotEmpty()) {
         ActionLine("Doppelte Dateien freigeben (${candidates.size} Lieder, ${"%.0f".format(bytes / 1_048_576.0)} MB)",
             Icons.Default.CleaningServices, "linkCopies") { if (!busy) confirm = true }
         Text("Diese Lieder liegen noch als Kopie in der App, obwohl das Original auf dem Handy ist. Danach spielt die App das Original ab – Playlists, Herzen und Statistik bleiben.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
+        }
     }
     if (confirm) {
         AlertDialog(

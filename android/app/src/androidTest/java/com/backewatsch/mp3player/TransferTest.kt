@@ -10,6 +10,8 @@ import androidx.test.rule.GrantPermissionRule
 import com.backewatsch.mp3player.data.DeviceMusicImporter
 import com.backewatsch.mp3player.data.Library
 import com.backewatsch.mp3player.data.Storage
+import com.backewatsch.mp3player.data.exactDurationMs
+import com.backewatsch.mp3player.data.trim
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -107,8 +109,8 @@ class TransferTest {
         assertEquals(1, library.playlists.first { it.name == "Lieblingslieder" }.trackIds.size)
     }
 
-    /** Verknüpfte Lieder: Löschen in der App lässt das Original stehen; verschwindet das Original, verschwindet das Lied */
-    @Test fun linkedSongsFollowTheOriginal() = runBlocking {
+    /** Verknüpfte Lieder: Zuschneiden kürzt das Original, Löschen löscht es überall; verschwindet es, verschwindet das Lied */
+    @Test fun linkedSongsChangeTheOriginal() = runBlocking {
         var songs = importer.scanSongs()
         repeat(10) { if (songs.none { it.displayName == songName }) { Thread.sleep(500); songs = importer.scanSongs() } }
         val song = songs.first { it.displayName == songName }
@@ -120,12 +122,29 @@ class TransferTest {
         library.rescan()
         assertEquals(1, library.tracks.size)
 
-        // Löschen in der App: Original bleibt
-        library.delete(track)
-        assertTrue("Original bleibt auf dem Handy", original.exists())
-        assertEquals(0, library.tracks.size)
+        // Das Testlied hat die App selbst angelegt → sie darf es ändern (sonst: „Zugriff auf alle Dateien“)
+        assertTrue(library.canModifyFile(track))
+        val before = library.exactDurationMs(track)
+        val sizeBefore = original.length()
+        library.trim(track, 0, before - 1_000, asCopy = false)
+        assertTrue("Original gekürzt", original.length() < sizeBefore)
+        assertTrue(kotlin.math.abs(library.exactDurationMs(library.track(track.id)!!) - (before - 1_000)) < 100)
+        assertTrue("Original weiterhin verknüpft", library.track(track.id)!!.isLinked)
+        // Keine Zwischendateien im Ordner des Originals
+        assertTrue(original.parentFile!!.listFiles().orEmpty().none { it.name.startsWith(".") })
 
-        // Wieder übernehmen, dann Original löschen → Lied verschwindet beim nächsten Einlesen
+        // Löschen in der App löscht auch das Original
+        library.delete(library.track(track.id)!!)
+        assertEquals(0, library.tracks.size)
+        assertTrue("Original gelöscht", !original.exists())
+        inserted.clear()
+    }
+
+    /** Verschwindet ein verknüpftes Original (z. B. in Samsung Music gelöscht), verschwindet das Lied beim Einlesen */
+    @Test fun linkedSongDisappearsWithItsOriginal() = runBlocking {
+        var songs = importer.scanSongs()
+        repeat(10) { if (songs.none { it.displayName == songName }) { Thread.sleep(500); songs = importer.scanSongs() } }
+        val song = songs.first { it.displayName == songName }
         importer.importSongs(listOf(song))
         assertEquals(1, library.tracks.size)
         inserted.forEach { context.contentResolver.delete(it, null, null) }

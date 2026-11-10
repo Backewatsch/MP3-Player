@@ -25,9 +25,8 @@ suspend fun Library.trim(
     track: Track, startMs: Long, endMs: Long, asCopy: Boolean, fadeInMs: Long = 0, fadeOutMs: Long = 0,
 ): Track {
     if (!canTrim(track)) throw Mp3Trimmer.Mp3Exception("Nur MP3-Dateien können zugeschnitten werden.")
-    if (!asCopy && (track(track.id)?.isLinked ?: track.isLinked)) {
-        throw Mp3Trimmer.Mp3Exception("Verknüpfte Lieder bleiben unverändert – bitte „Als neues Lied speichern“.")
-    }
+    val current = track(track.id) ?: track
+    if (!asCopy && !canModifyFile(current)) throw Mp3Trimmer.Mp3Exception(Mp3Trimmer.NEEDS_ACCESS)
     val original = fileOf(track)
 
     /** Schneidet zu und blendet bei Bedarf ein/aus (dann wird der Ton neu kodiert; die Tags bleiben) */
@@ -63,7 +62,8 @@ suspend fun Library.trim(
         // Dateiänderungen nacheinander, damit nichts verloren geht. Erst komplett schreiben, dann austauschen.
         val newDuration = withContext(fileDispatcher) {
             val trimmed = cut()
-            val tmp = File(original.parentFile, ".trim-${track.id}.tmp")
+            // Endung .mp3: in Musik-/Download-Ordnern erlaubt Android nur Audiodateien
+            val tmp = File(original.parentFile, ".trim-${track.id}.mp3")
             tmp.writeBytes(trimmed)
             if (!tmp.renameTo(original)) {
                 tmp.copyTo(original, overwrite = true); tmp.delete()
@@ -72,6 +72,7 @@ suspend fun Library.trim(
         }
         _state.update { s -> s.copy(tracks = s.tracks.map { if (it.id == track.id) it.copy(durationMs = newDuration) else it }) }
         save()
+        if (current.isLinked) storage.notifyMediaChanged(current.path)
         return track(track.id) ?: track
     }
 

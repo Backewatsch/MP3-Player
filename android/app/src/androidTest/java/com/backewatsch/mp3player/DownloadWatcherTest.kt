@@ -91,9 +91,9 @@ class DownloadWatcherTest {
 
         assertTrue("verknüpft, nicht kopiert", track.isLinked)
 
-        // In der App gelöscht → kommt nicht wieder, die Datei im Download-Ordner bleibt
+        // In der App gelöscht → auch im Download-Ordner gelöscht und kommt nicht wieder
         library.delete(track)
-        assertTrue(library.fileOf(track).exists())
+        assertTrue("Datei im Download-Ordner gelöscht", !library.fileOf(track).exists())
         assertEquals(0, runBlocking { watcher.check() })
         assertEquals(0, library.tracks.size)
     }

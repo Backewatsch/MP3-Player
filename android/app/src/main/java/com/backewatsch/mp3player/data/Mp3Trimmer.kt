@@ -12,6 +12,7 @@ object Mp3Trimmer {
     class Mp3Exception(message: String) : Exception(message)
 
     const val TOO_LARGE = "Diese Datei ist zu groß zum Zuschneiden."
+    const val NEEDS_ACCESS = "Für die Originaldatei braucht die App den Zugriff auf alle Dateien."
 
     data class Frame(val offset: Int, val length: Int, val samples: Int, val sampleRate: Int) {
         val durationUs: Long get() = samples * 1_000_000L / sampleRate
