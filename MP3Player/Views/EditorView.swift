@@ -63,6 +63,8 @@ struct TrimView: View {
     @State private var confirmReplace = false
     @State private var message: String?
     @State private var previewTask: Task<Void, Never>?
+    /// Wiedergabeliste von vor dem Probehören (wird beim Verlassen wiederhergestellt)
+    @State private var savedQueue: AudioPlayer.SavedQueue?
 
     private var ready: Bool { duration > 0 }
     private var changed: Bool { ready && (start > 0.05 || end < duration - 0.05 || fadeIn > 0 || fadeOut > 0) }
@@ -107,7 +109,10 @@ struct TrimView: View {
             start = 0
             end = d
         }
-        .onDisappear { previewTask?.cancel() }
+        .onDisappear {
+            previewTask?.cancel()
+            if let saved = savedQueue { player.restoreQueue(saved); savedQueue = nil }
+        }
         .confirmationDialog("Original kürzen?", isPresented: $confirmReplace, titleVisibility: .visible) {
             Button("Kürzen", role: .destructive) { save(asCopy: false) }
                 .accessibilityIdentifier("trimConfirm")
@@ -289,7 +294,10 @@ struct TrimView: View {
 
     private func preview(from: Double, until: Double) {
         previewTask?.cancel()
-        if player.current?.id != track.id { player.play([track], startAt: 0) }
+        if player.current?.id != track.id {
+            if savedQueue == nil { savedQueue = player.saveQueue() }
+            player.play([track], startAt: 0)
+        }
         else if !player.isPlaying { player.resume() }
         player.seek(to: max(0, from))
         previewTask = Task { @MainActor in

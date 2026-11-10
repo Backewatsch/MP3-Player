@@ -159,9 +159,18 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
         previewUntil = null
     }
 
+    // Probehören ersetzt kurz die Wiedergabeliste → vorher merken und beim Verlassen wiederherstellen
+    val savedQueue = remember(track.id) { mutableStateOf<com.backewatsch.mp3player.player.PlayerConnection.SavedQueue?>(null) }
+    androidx.compose.runtime.DisposableEffect(track.id) {
+        onDispose { savedQueue.value?.let { app.player.restoreQueue(it) } }
+    }
+
     fun preview(from: Long, until: Long?) {
         val playing = app.player.state.value
-        if (playing.currentId != track.id) app.player.play(listOf(track), 0)
+        if (playing.currentId != track.id) {
+            if (savedQueue.value == null) savedQueue.value = app.player.saveQueue()
+            app.player.play(listOf(track), 0)
+        }
         app.player.seekTo(from.coerceAtLeast(0))
         if (playing.currentId == track.id && !playing.isPlaying) app.player.resumeOrStart()
         previewUntil = until

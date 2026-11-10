@@ -408,6 +408,39 @@ class PlayerConnection(
         play(listOf(seed) + same + rest, 0)
     }
 
+    /** Gemerkte Wiedergabeliste (z. B. vor dem Probehören im Zuschneider) */
+    class SavedQueue internal constructor(
+        internal val ids: List<String>, internal val index: Int, internal val positionMs: Long, internal val playing: Boolean,
+        internal val original: List<String>, internal val shuffled: Boolean,
+    )
+
+    fun saveQueue(): SavedQueue {
+        val s = _state.value
+        return SavedQueue(s.queueIds, s.currentIndex, s.positionMs, s.isPlaying, originalOrder, shuffled)
+    }
+
+    /** Stellt eine gemerkte Wiedergabeliste wieder her – an derselben Stelle, spielend oder pausiert wie vorher */
+    fun restoreQueue(saved: SavedQueue) = withController { c ->
+        val byId = library.tracks.associateBy { it.id }
+        val tracks = saved.ids.mapNotNull { byId[it] }
+        nextUpCount = 0
+        if (tracks.isEmpty()) {
+            // Vorher lief nichts → Wiedergabeliste wieder schließen
+            c.stop(); c.clearMediaItems()
+            originalOrder = emptyList(); shuffled = false
+        } else {
+            val currentId = saved.ids.getOrNull(saved.index)
+            val index = tracks.indexOfFirst { it.id == currentId }
+            c.shuffleModeEnabled = false
+            c.setMediaItems(tracks.map(::item), index.coerceAtLeast(0), if (index >= 0) saved.positionMs else 0)
+            originalOrder = saved.original.filter { it in byId }
+            shuffled = saved.shuffled
+            c.prepare()
+            if (saved.playing) c.play() else c.pause()
+        }
+        refresh()
+    }
+
     /** „Wiedergabeliste schließen“ */
     fun stop() = withController {
         it.stop(); it.clearMediaItems()

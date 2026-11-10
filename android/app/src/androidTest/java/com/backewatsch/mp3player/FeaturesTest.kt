@@ -313,6 +313,29 @@ class MoreFeaturesTest {
         waitFor("nach Schließen gelöscht") { prefs.getString("queue", null) == null }
     }
 
+    /** Probehören im Zuschneider: Wiedergabeliste wird gemerkt und danach wiederhergestellt */
+    @Test fun restoresQueueAfterPreview() {
+        val a = add("Liste1"); val b = add("Liste2"); val c = add("Probe")
+        instrumentation.runOnMainSync { app.player.play(listOf(a, b), 1) }
+        waitFor("Wiedergabe startet") { app.player.state.value.currentId == b.id }
+        var saved: com.backewatsch.mp3player.player.PlayerConnection.SavedQueue? = null
+        instrumentation.runOnMainSync { saved = app.player.saveQueue(); app.player.play(listOf(c), 0) }
+        waitFor("Probehören läuft") { app.player.state.value.currentId == c.id }
+        instrumentation.runOnMainSync { app.player.restoreQueue(saved!!) }
+        waitFor("Liste wiederhergestellt") {
+            val s = app.player.state.value
+            s.currentId == b.id && s.queueIds == listOf(a.id, b.id) && s.isPlaying
+        }
+
+        // Vorher lief nichts → danach ist die Wiedergabeliste wieder leer
+        instrumentation.runOnMainSync { app.player.stop() }
+        waitFor("geschlossen") { app.player.state.value.queueIds.isEmpty() }
+        instrumentation.runOnMainSync { saved = app.player.saveQueue(); app.player.play(listOf(c), 0) }
+        waitFor("Probehören läuft") { app.player.state.value.currentId == c.id }
+        instrumentation.runOnMainSync { app.player.restoreQueue(saved!!) }
+        waitFor("wieder leer") { app.player.state.value.queueIds.isEmpty() && app.player.state.value.currentId == null }
+    }
+
     @Test fun measuresLoudnessOfTracks() {
         val a = add("Laut", "tagged.mp3")
         val gain = com.backewatsch.mp3player.convert.LoudnessAnalyzer.gainDb(app.library.fileOf(a))

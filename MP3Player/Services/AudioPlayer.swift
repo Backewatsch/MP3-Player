@@ -409,6 +409,38 @@ final class AudioPlayer: NSObject, ObservableObject {
 
     private var restoringShuffle = false
 
+    // MARK: Wiedergabeliste merken (Probehören im Zuschneider)
+
+    struct SavedQueue {
+        fileprivate let queue: [Track]
+        fileprivate let originalOrder: [Track]
+        fileprivate let currentID: UUID?
+        fileprivate let time: TimeInterval
+        fileprivate let playing: Bool
+        fileprivate let playlistID: UUID?
+        fileprivate let allTracks: Bool
+    }
+
+    func saveQueue() -> SavedQueue {
+        SavedQueue(queue: queue, originalOrder: originalOrder, currentID: current?.id, time: currentTime, playing: isPlaying,
+                   playlistID: sourcePlaylistID, allTracks: queueIsAllTracks)
+    }
+
+    /// Stellt eine gemerkte Wiedergabeliste wieder her – an derselben Stelle, spielend oder pausiert wie vorher
+    func restoreQueue(_ saved: SavedQueue) {
+        let restored = saved.queue.filter { FileManager.default.fileExists(atPath: $0.fileURL.path) }
+        guard !restored.isEmpty else { stop(); return } // vorher lief nichts → wieder schließen
+        queue = restored
+        originalOrder = saved.originalOrder.filter { t in restored.contains { $0.id == t.id } }
+        if originalOrder.isEmpty { originalOrder = restored }
+        history = []
+        sourcePlaylistID = saved.playlistID
+        queueIsAllTracks = saved.allTracks
+        let i = restored.firstIndex { $0.id == saved.currentID }
+        load(index: i ?? 0, autoplay: saved.playing)
+        if i != nil { seek(to: saved.time) }
+    }
+
     // MARK: Schlafmodus
 
     func startSleepTimer(minutes: Int) { startSleepTimer(seconds: Double(minutes) * 60) }

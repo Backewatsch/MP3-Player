@@ -597,6 +597,27 @@ final class AudioPlayerTests: XCTestCase {
         XCTAssertTrue(player.isPlaying)
     }
 
+    /// Probehören im Zuschneider: Wiedergabeliste wird gemerkt und danach wiederhergestellt
+    func testRestoresQueueAfterPreview() {
+        player.play(Array(tracks.prefix(2)), startAt: 1)
+        player.pause()
+        let saved = player.saveQueue()
+        player.play([tracks[2]], startAt: 0)
+        XCTAssertEqual(player.current?.id, tracks[2].id)
+        player.restoreQueue(saved)
+        XCTAssertEqual(player.queue.map(\.id), [tracks[0].id, tracks[1].id])
+        XCTAssertEqual(player.current?.id, tracks[1].id)
+        XCTAssertFalse(player.isPlaying, "war pausiert und bleibt pausiert")
+
+        // Vorher lief nichts → danach ist die Wiedergabeliste wieder leer
+        player.stop()
+        let empty = player.saveQueue()
+        player.play([tracks[2]], startAt: 0)
+        player.restoreQueue(empty)
+        XCTAssertTrue(player.queue.isEmpty)
+        XCTAssertNil(player.current)
+    }
+
     func testEndOfQueueStopsWithoutRepeat() async {
         player.repeatMode = .off
         player.play(tracks, startAt: 2)
