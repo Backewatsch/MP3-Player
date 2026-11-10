@@ -149,6 +149,27 @@ object Mp3Trimmer {
         return out.toByteArray()
     }
 
+    /**
+     * Ersetzt den Ton von [tagged] durch den Ton von [encoded] (z. B. neu kodiert mit Ein-/Ausblenden).
+     * Tags vorn (ID3v2) und hinten (ID3v1) bleiben die von [tagged].
+     */
+    fun replaceAudio(tagged: ByteArray, encoded: ByteArray): ByteArray {
+        val t = parse(tagged)
+        val e = parse(encoded)
+        var frames = e.frames
+        // LAME schreibt vorn einen leeren Platzhalter-Frame (nur Nullen) → weglassen
+        val first = frames.first()
+        if (frames.size > 1 && (first.offset + 4 until first.offset + first.length).all { encoded[it] == 0.toByte() }) {
+            frames = frames.drop(1)
+        }
+        val from = frames.first().offset
+        val out = ByteArrayOutputStream(t.headerEnd + (e.tailStart - from) + (tagged.size - t.tailStart))
+        out.write(tagged, 0, t.headerEnd)
+        out.write(encoded, from, e.tailStart - from)
+        out.write(tagged, t.tailStart, tagged.size - t.tailStart)
+        return out.toByteArray()
+    }
+
     /** Xing/Info-Frame mit neuer Frame-Anzahl, Größe und Sprungtabelle */
     private fun updatedXing(p: Parsed, kept: List<Frame>, cutStart: Boolean, cutEnd: Boolean): ByteArray {
         val info = p.infoFrame!!

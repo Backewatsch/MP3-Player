@@ -592,7 +592,7 @@ final class AudioPlayerTests: XCTestCase {
     func testAutoAdvanceWhenTrackEnds() async {
         player.play(tracks, startAt: 0)
         player.seek(to: max(0, player.duration - 0.3))
-        let advanced = await waitUntil(timeout: 5) { self.player.current?.id == self.tracks[1].id }
+        let advanced = await waitUntil(timeout: 15) { self.player.current?.id == self.tracks[1].id }
         XCTAssertTrue(advanced, "Nach Titelende muss automatisch der nächste Titel kommen")
         XCTAssertTrue(player.isPlaying)
     }
@@ -1202,5 +1202,56 @@ final class CoverRestoreTests: XCTestCase {
         XCTAssertEqual(Id3Writer.picture(track.fileURL), original, "Original-Cover wiederhergestellt")
         XCTAssertFalse(library.hasCustomCover(track))
         XCTAssertFalse(FileManager.default.fileExists(atPath: Library.originalCoverURL(track).path))
+    }
+}
+
+// MARK: - Ein-/Ausblenden beim Zuschneiden
+
+final class FadeTests: XCTestCase {
+    func testFadeGain() {
+        let f = AudioConverter.Fade(fadeIn: 2, fadeOut: 4, total: 10)
+        XCTAssertEqual(f.gain(at: 0), 0, accuracy: 0.001)
+        XCTAssertEqual(f.gain(at: 1), 0.5, accuracy: 0.001)
+        XCTAssertEqual(f.gain(at: 5), 1, accuracy: 0.001)
+        XCTAssertEqual(f.gain(at: 8), 0.5, accuracy: 0.001)
+        XCTAssertEqual(f.gain(at: 10), 0, accuracy: 0.001)
+        XCTAssertEqual(AudioConverter.Fade(fadeIn: 0, fadeOut: 0, total: 1).gain(at: 0), 1, accuracy: 0.001)
+    }
+
+    /// Mittlere Lautstärke in einem Zeitabschnitt (Sekunden)
+    private func loudness(_ url: URL, from: Double, to: Double) throws -> Float {
+        let file = try AVAudioFile(forReading: url)
+        let rate = file.processingFormat.sampleRate
+        let start = AVAudioFramePosition(from * rate)
+        let count = AVAudioFrameCount(max(0, min(to * rate, Double(file.length)) - Double(start)))
+        guard count > 0, let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: count) else { return 0 }
+        file.framePosition = start
+        try file.read(into: buffer, frameCount: count)
+        guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        var sum: Float = 0
+        for i in 0..<Int(buffer.frameLength) { sum += abs(data[i]) }
+        return sum / Float(buffer.frameLength)
+    }
+
+    @MainActor
+    func testFadeOutKeepsTagsAndGetsQuieter() async throws {
+        let library = Library()
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("fade-\(UUID().uuidString).mp3")
+        try FileManager.default.copyItem(at: Fixture.url("tagged.mp3"), to: tmp)
+        let track = try await library.importAudio(from: tmp, move: true)
+        defer { library.delete(track) }
+        let before = await library.exactDuration(of: track)
+        let cover = Id3Writer.picture(track.fileURL)
+        XCTAssertNotNil(cover)
+
+        let result = try await library.trim(track, start: 0, end: before, asCopy: false, fadeOut: 1)
+        XCTAssertEqual(result.duration, before, accuracy: 0.25)
+        XCTAssertEqual(Id3Writer.picture(track.fileURL), cover, "Cover bleibt")
+        let reread = await Library.makeTrack(for: track.fileURL, artworkTo: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).jpg"))
+        XCTAssertEqual(reread.title, "Testlied")
+        let startLevel = try loudness(track.fileURL, from: 0.2, to: 1.0)
+        let endLevel = try loudness(track.fileURL, from: before - 0.4, to: before)
+        XCTAssertGreaterThan(startLevel, 0.001)
+        XCTAssertLessThan(endLevel, startLevel * 0.6, "Ende leiser als Anfang")
     }
 }

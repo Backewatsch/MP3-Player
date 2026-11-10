@@ -65,4 +65,54 @@ class TrimTest {
         // Original unverändert
         assertEquals(before, library.exactDurationMs(library.track(track.id)!!))
     }
+
+    /** Ausblenden: Ton wird neu kodiert, am Ende leiser, Tags und Cover bleiben */
+    @Test fun fadesOutAndKeepsTags() = runBlocking {
+        val track = importTagged()
+        val before = library.exactDurationMs(track)
+        val result = library.trim(track, 0, before, asCopy = false, fadeInMs = 0, fadeOutMs = 1_000)
+        val file = library.fileOf(result)
+        val info = MetadataReader.read(file)
+        assertEquals("Testlied", info.title)
+        assertTrue("Cover bleibt", info.artwork != null)
+        assertTrue("Länge bleibt etwa gleich: ${info.durationMs} statt $before", abs(info.durationMs - before) < 250)
+        assertTrue(abs(result.durationMs - before) < 250)
+        // Lautstärke: letzte halbe Sekunde deutlich leiser als die erste Sekunde
+        val (start, end) = loudness(file, before)
+        assertTrue("Ende leiser als Anfang (Anfang $start, Ende $end)", end < start * 0.6)
+    }
+
+    /** Mittlere Lautstärke der ersten Sekunde und der letzten 400 ms */
+    private fun loudness(file: File, totalMs: Long): Pair<Double, Double> {
+        val extractor = android.media.MediaExtractor().apply { setDataSource(file.absolutePath); selectTrack(0) }
+        val format = extractor.getTrackFormat(0)
+        val codec = android.media.MediaCodec.createDecoderByType(format.getString(android.media.MediaFormat.KEY_MIME)!!)
+        codec.configure(format, null, null, 0); codec.start()
+        val info = android.media.MediaCodec.BufferInfo()
+        var sumStart = 0.0; var nStart = 0L; var sumEnd = 0.0; var nEnd = 0L
+        var inputDone = false
+        while (true) {
+            if (!inputDone) {
+                val i = codec.dequeueInputBuffer(10_000)
+                if (i >= 0) {
+                    val size = extractor.readSampleData(codec.getInputBuffer(i)!!, 0)
+                    if (size < 0) { codec.queueInputBuffer(i, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM); inputDone = true }
+                    else { codec.queueInputBuffer(i, 0, size, extractor.sampleTime, 0); extractor.advance() }
+                }
+            }
+            val o = codec.dequeueOutputBuffer(info, 10_000)
+            if (o >= 0) {
+                val ms = info.presentationTimeUs / 1000
+                val sb = codec.getOutputBuffer(o)!!.order(java.nio.ByteOrder.nativeOrder()).asShortBuffer()
+                while (sb.hasRemaining()) {
+                    val v = abs(sb.get().toInt()).toDouble()
+                    if (ms in 100..1000) { sumStart += v; nStart++ } else if (ms >= totalMs - 400) { sumEnd += v; nEnd++ }
+                }
+                codec.releaseOutputBuffer(o, false)
+                if (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+            }
+        }
+        codec.stop(); codec.release(); extractor.release()
+        return (sumStart / maxOf(1, nStart)) to (sumEnd / maxOf(1, nEnd))
+    }
 }

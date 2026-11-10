@@ -135,6 +135,26 @@ enum Mp3Trimmer {
         return out
     }
 
+    /// Ersetzt den Ton von `tagged` durch den Ton von `encoded` (z. B. neu kodiert mit Ein-/Ausblenden).
+    /// Tags vorn (ID3v2) und hinten (ID3v1) bleiben die von `tagged`.
+    static func replaceAudio(tagged: [UInt8], encoded: [UInt8]) throws -> [UInt8] {
+        let t = try parse(tagged)
+        let e = try parse(encoded)
+        var frames = e.frames
+        // LAME schreibt vorn einen leeren Platzhalter-Frame (nur Nullen) → weglassen
+        if frames.count > 1, let first = frames.first,
+           encoded[(first.offset + 4)..<(first.offset + first.length)].allSatisfy({ $0 == 0 }) {
+            frames.removeFirst()
+        }
+        guard let from = frames.first?.offset else { throw TrimError.noAudio }
+        var out: [UInt8] = []
+        out.reserveCapacity(t.headerEnd + (e.tailStart - from) + (tagged.count - t.tailStart))
+        out.append(contentsOf: tagged[0..<t.headerEnd])
+        out.append(contentsOf: encoded[from..<e.tailStart])
+        out.append(contentsOf: tagged[t.tailStart...])
+        return out
+    }
+
     /// Xing/Info-Frame mit neuer Frame-Anzahl, Größe und Sprungtabelle
     private static func updatedXing(_ p: Parsed, kept: [Frame], cutStart: Bool, cutEnd: Bool) -> [UInt8] {
         let info = p.infoFrame!
@@ -196,16 +216,32 @@ extension Library {
     /// Behält nur den Teil von `start` bis `end` (Sekunden).
     /// - Parameter asCopy: `true` = als neues Lied „… (gekürzt)“ speichern, `false` = Original ersetzen
     @discardableResult
-    func trim(_ track: Track, start: Double, end: Double, asCopy: Bool) async throws -> Track {
+    func trim(_ track: Track, start: Double, end: Double, asCopy: Bool, fadeIn: Double = 0, fadeOut: Double = 0) async throws -> Track {
         guard canTrim(track) else { throw Mp3Trimmer.TrimError.notMP3 }
         let source = track.fileURL
         let startMs = Int64(start * 1000), endMs = Int64(end * 1000)
+
+        /// Schneidet zu und blendet bei Bedarf ein/aus (dann wird der Ton neu kodiert; die Tags bleiben)
+        let cut: @Sendable () throws -> [UInt8] = {
+            let trimmed = try Mp3Trimmer.trim([UInt8](Data(contentsOf: source)), startMs: startMs, endMs: endMs)
+            guard fadeIn > 0 || fadeOut > 0 else { return trimmed }
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fade-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: dir) }
+            let input = dir.appendingPathComponent("schnitt.mp3"), faded = dir.appendingPathComponent("blende.mp3")
+            try Data(trimmed).write(to: input)
+            let total = Double(try Mp3Trimmer.parse(trimmed).durationMs) / 1000
+            // Blenden zusammen höchstens so lang wie das Lied
+            let fade = AudioConverter.Fade(fadeIn: min(max(0, fadeIn), total / 2), fadeOut: min(max(0, fadeOut), total / 2), total: total)
+            try AudioConverter.reencode(input, to: faded, fade: fade)
+            return try Mp3Trimmer.replaceAudio(tagged: trimmed, encoded: [UInt8](Data(contentsOf: faded)))
+        }
 
         if !asCopy {
             // Original ersetzen: lesen, schneiden und austauschen in einem Schritt – nacheinander mit anderen
             // Dateiänderungen, damit nichts verloren geht. Erst komplett schreiben, dann austauschen.
             let newDuration = try await Self.onFiles { () throws -> Double in
-                let out = try Mp3Trimmer.trim([UInt8](Data(contentsOf: source)), startMs: startMs, endMs: endMs)
+                let out = try cut()
                 let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("trim-\(UUID().uuidString).mp3")
                 try Data(out).write(to: tmp)
                 _ = try FileManager.default.replaceItemAt(source, withItemAt: tmp)
@@ -216,7 +252,7 @@ extension Library {
         }
 
         let (trimmed, newDuration) = try await Self.onFiles { () throws -> ([UInt8], Double) in
-            let out = try Mp3Trimmer.trim([UInt8](Data(contentsOf: source)), startMs: startMs, endMs: endMs)
+            let out = try cut()
             return (out, Double(try Mp3Trimmer.parse(out).durationMs) / 1000)
         }
 

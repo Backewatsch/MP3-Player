@@ -56,13 +56,16 @@ struct TrimView: View {
     @State private var duration: Double = 0
     @State private var start: Double = 0
     @State private var end: Double = 0
+    /// Ein-/Ausblenden in Sekunden (0 = aus)
+    @State private var fadeIn = 0
+    @State private var fadeOut = 0
     @State private var busy = false
     @State private var confirmReplace = false
     @State private var message: String?
     @State private var previewTask: Task<Void, Never>?
 
     private var ready: Bool { duration > 0 }
-    private var changed: Bool { ready && (start > 0.05 || end < duration - 0.05) }
+    private var changed: Bool { ready && (start > 0.05 || end < duration - 0.05 || fadeIn > 0 || fadeOut > 0) }
 
     var body: some View {
         List {
@@ -89,6 +92,7 @@ struct TrimView: View {
             } else {
                 rangeSection
                 quickSection
+                fadeSection
                 saveSection
             }
         }
@@ -209,6 +213,36 @@ struct TrimView: View {
             .accessibilityIdentifier(id)
     }
 
+    // MARK: Ein-/Ausblenden
+
+    private var fadeSection: some View {
+        Section {
+            fadePicker("Anfang einblenden", selection: $fadeIn, id: "fadeIn")
+            fadePicker("Ende ausblenden", selection: $fadeOut, id: "fadeOut")
+        } header: {
+            Text("Sanft ein- und ausblenden")
+        } footer: {
+            if fadeIn > 0 || fadeOut > 0 {
+                Text("Mit Ein-/Ausblenden wird der Ton neu umgewandelt (192 kbit/s) – das dauert einen Moment.")
+            }
+        }
+    }
+
+    private func fadePicker(_ title: String, selection: Binding<Int>, id: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+            Picker(title, selection: selection) {
+                Text("Aus").tag(0)
+                Text("1 s").tag(1)
+                Text("3 s").tag(3)
+                Text("5 s").tag(5)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier(id)
+        }
+        .padding(.vertical, 2)
+    }
+
     // MARK: Speichern
 
     private var saveSection: some View {
@@ -229,7 +263,8 @@ struct TrimView: View {
             .accessibilityIdentifier("trimSaveReplace")
             if busy { HStack { Spacer(); ProgressView(); Spacer() } }
         } footer: {
-            Text("Verlustfrei: Die Tonqualität bleibt gleich, nichts wird neu umgewandelt.")
+            Text(fadeIn > 0 || fadeOut > 0 ? "Titel, Cover und Songtext bleiben erhalten."
+                 : "Verlustfrei: Die Tonqualität bleibt gleich, nichts wird neu umgewandelt.")
         }
     }
 
@@ -239,7 +274,8 @@ struct TrimView: View {
         Task {
             defer { busy = false }
             do {
-                let result = try await library.trim(track, start: start, end: end, asCopy: asCopy)
+                let result = try await library.trim(track, start: start, end: end, asCopy: asCopy,
+                                                    fadeIn: Double(fadeIn), fadeOut: Double(fadeOut))
                 message = asCopy
                     ? "„\(result.title)“ gespeichert (\(result.duration.formattedTime))."
                     : "„\(result.title)“ gekürzt auf \(result.duration.formattedTime)."

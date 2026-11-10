@@ -18,8 +18,22 @@ object Mp3Converter {
 
     const val BITRATE = 192
 
-    /** Wandelt [input] um und schreibt die MP3 nach [output]. Läuft blockierend – im Hintergrund aufrufen. */
-    fun convert(input: File, output: File) {
+    /** Ein-/Ausblenden beim Neu-Kodieren: Dauer der Blenden und Gesamtlänge des Liedes (ms) */
+    data class Fade(val inMs: Long, val outMs: Long, val totalMs: Long) {
+        /** Lautstärke-Faktor (0–1) an der Stelle [positionMs] */
+        fun gain(positionMs: Long): Float {
+            var g = 1f
+            if (inMs > 0) g = minOf(g, positionMs.toFloat() / inMs)
+            if (outMs > 0) g = minOf(g, (totalMs - positionMs).toFloat() / outMs)
+            return g.coerceIn(0f, 1f)
+        }
+    }
+
+    /**
+     * Wandelt [input] um und schreibt die MP3 nach [output]. Läuft blockierend – im Hintergrund aufrufen.
+     * Mit [fade] wird der Ton am Anfang ein- und am Ende ausgeblendet.
+     */
+    fun convert(input: File, output: File, fade: Fade? = null) {
         val info = MetadataReader.read(input)
         val extractor = MediaExtractor()
         try {
@@ -37,7 +51,7 @@ object Mp3Converter {
             val mime = format.getString(MediaFormat.KEY_MIME)!!
 
             FileOutputStream(output).use { out ->
-                val encoder = Encoder(out, info)
+                val encoder = Encoder(out, info, fade)
                 try {
                     if (mime == MediaFormat.MIMETYPE_AUDIO_RAW) {
                         decodeRaw(extractor, format, encoder)
@@ -123,7 +137,9 @@ object Mp3Converter {
     }
 
     /** Sammelt PCM, wandelt in 16 Bit (max. 2 Kanäle) und füttert LAME. */
-    private class Encoder(private val out: FileOutputStream, private val info: MetadataReader.Info) {
+    private class Encoder(private val out: FileOutputStream, private val info: MetadataReader.Info, private val fade: Fade? = null) {
+        /** Bisher kodierte Frames (für die Position beim Ein-/Ausblenden) */
+        private var framesDone = 0L
         private var handle = 0L
         private var channelsOut = 0
         private var mp3 = ByteArray(64 * 1024)
@@ -155,6 +171,16 @@ object Mp3Converter {
                 val frame = i / 2
                 samples[frame * channelsIn + (i % 2)]
             }
+            if (fade != null) {
+                for (f in 0 until frames) {
+                    val g = fade.gain((framesDone + f) * 1000 / sampleRate)
+                    if (g < 1f) for (c in 0 until channelsOut) {
+                        val i = f * channelsOut + c
+                        pcm[i] = (pcm[i] * g).toInt().toShort()
+                    }
+                }
+            }
+            framesDone += frames
             val needed = (frames * 1.25).toInt() + 7200
             if (mp3.size < needed) mp3 = ByteArray(needed)
             val written = LameNative.nativeEncode(handle, pcm, frames, channelsOut, mp3)

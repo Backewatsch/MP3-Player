@@ -138,6 +138,9 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
         if (end < 0 || end > duration) end = duration
         if (start >= end) start = 0
     }
+    /** Ein-/Ausblenden in Sekunden (0 = aus) */
+    var fadeIn by remember(track.id) { mutableStateOf(0) }
+    var fadeOut by remember(track.id) { mutableStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var confirmReplace by remember { mutableStateOf(false) }
     /** Vorhören bis zu dieser Stelle, dann Pause */
@@ -168,7 +171,7 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
         busy = true
         scope.launch(kotlinx.coroutines.Dispatchers.Main) {
             try {
-                val result = app.library.trim(track, start, end, asCopy)
+                val result = app.library.trim(track, start, end, asCopy, fadeIn * 1000L, fadeOut * 1000L)
                 Toast.makeText(context,
                     if (asCopy) "„${result.title}“ gespeichert (${formatTime(result.durationMs)})"
                     else "„${result.title}“ gekürzt auf ${formatTime(result.durationMs)}", Toast.LENGTH_LONG).show()
@@ -182,7 +185,7 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
     }
 
     val ready = trimmable && duration > 0 && end > 0
-    val changed = ready && (start > 0 || end < duration)
+    val changed = ready && (start > 0 || end < duration || fadeIn > 0 || fadeOut > 0)
     val step = 1_000L
     fun setStart(v: Long) { start = v.coerceIn(0, (end - 1_000).coerceAtLeast(0)) }
     fun setEnd(v: Long) { end = v.coerceIn(start + 1_000, duration) }
@@ -257,6 +260,10 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
                     label = { Text("Zurücksetzen") }, modifier = Modifier.testTag("trimReset"))
             }
 
+            SectionLabelSmall("Sanft ein- und ausblenden")
+            FadeRow("Anfang", fadeIn, "fadeIn") { fadeIn = it }
+            FadeRow("Ende", fadeOut, "fadeOut") { fadeOut = it }
+
             SectionLabelSmall("Genau einstellen")
             FineTuneRow("Anfang", start, "trimStart", onMinus = { setStart(start - step) }, onPlus = { setStart(start + step) },
                 onListen = { preview(start, start + 5_000) })
@@ -282,7 +289,8 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("trimSaveReplace"),
             ) { Text("Original kürzen") }
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp), color = Accent)
-            Text("Verlustfrei: Die Tonqualität bleibt gleich, Titel, Cover und Songtext bleiben erhalten.",
+            Text(if (fadeIn > 0 || fadeOut > 0) "Mit Ein-/Ausblenden wird der Ton neu umgewandelt (192 kbit/s) – das dauert einen Moment. Titel, Cover und Songtext bleiben erhalten."
+                else "Verlustfrei: Die Tonqualität bleibt gleich, Titel, Cover und Songtext bleiben erhalten.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 16.dp))
         }
@@ -300,6 +308,18 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { confirmReplace = false }) { Text("Abbrechen") } },
         )
+    }
+}
+
+/** Auswahl der Blendenlänge: Aus, 1 s, 3 s, 5 s */
+@Composable
+private fun FadeRow(label: String, value: Int, tag: String, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, Modifier.width(64.dp))
+        listOf(0, 1, 3, 5).forEach { s ->
+            FilterChip(selected = value == s, onClick = { onChange(s) },
+                label = { Text(if (s == 0) "Aus" else "$s s") }, modifier = Modifier.testTag("$tag-$s"))
+        }
     }
 }
 

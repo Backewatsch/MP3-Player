@@ -65,9 +65,32 @@ enum AudioConverter {
         return tags
     }
 
+    /// Ein-/Ausblenden beim Neu-Kodieren: Dauer der Blenden und Gesamtlänge des Liedes (Sekunden)
+    struct Fade {
+        var fadeIn: Double
+        var fadeOut: Double
+        var total: Double
+
+        /// Lautstärke-Faktor (0–1) an der Stelle `position`
+        func gain(at position: Double) -> Float {
+            var g = 1.0
+            if fadeIn > 0 { g = min(g, position / fadeIn) }
+            if fadeOut > 0 { g = min(g, (total - position) / fadeOut) }
+            return Float(min(1, max(0, g)))
+        }
+    }
+
+    /// Kodiert `source` neu nach `output` und blendet dabei ein/aus (blockiert – im Hintergrund aufrufen)
+    static func reencode(_ source: URL, to output: URL, fade: Fade) throws {
+        let asset = AVURLAsset(url: source)
+        let tracks = asset.tracks(withMediaType: .audio)
+        guard !tracks.isEmpty else { throw ConversionError.noAudioTrack }
+        try encode(asset: asset, tracks: tracks, to: output, tags: Tags(), fade: fade)
+    }
+
     // MARK: Kodieren (läuft im Hintergrund)
 
-    private static func encode(asset: AVAsset, tracks: [AVAssetTrack], to output: URL, tags: Tags) throws {
+    private static func encode(asset: AVAsset, tracks: [AVAssetTrack], to output: URL, tags: Tags, fade: Fade? = nil) throws {
         let reader: AVAssetReader
         do {
             reader = try AVAssetReader(asset: asset)
@@ -123,6 +146,7 @@ enum AudioConverter {
 
         var mp3Buffer = [UInt8](repeating: 0, count: 64 * 1024)
         var pcm = Data()
+        var framesDone = 0
 
         while let sampleBuffer = readerOutput.copyNextSampleBuffer() {
             guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { continue }
@@ -142,6 +166,16 @@ enum AudioConverter {
 
             let written = pcm.withUnsafeMutableBytes { raw -> Int32 in
                 let samples = raw.baseAddress!.assumingMemoryBound(to: Int16.self)
+                if let fade {
+                    for f in 0..<Int(frames) {
+                        let g = fade.gain(at: Double(framesDone + f) / Double(sampleRate))
+                        if g < 1 {
+                            samples[f * 2] = Int16(Float(samples[f * 2]) * g)
+                            samples[f * 2 + 1] = Int16(Float(samples[f * 2 + 1]) * g)
+                        }
+                    }
+                }
+                framesDone += Int(frames)
                 return mp3Buffer.withUnsafeMutableBufferPointer { out in
                     lame_encode_buffer_interleaved(lame, samples, frames, out.baseAddress, capacity)
                 }

@@ -74,4 +74,31 @@ class Mp3TrimmerTest {
     fun rejectsNonMp3() {
         Mp3Trimmer.parse(ByteArray(5000) { 0x41 })
     }
+
+    @Test fun replacesAudioButKeepsTags() {
+        val tagged = song(100, withInfo = true)
+        // „Neu kodiert“: eigener ID3-Kopf, leerer Platzhalter-Frame, dann 50 Frames
+        val encoded = ByteArrayOutputStream().apply {
+            write(byteArrayOf('I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(), 3, 0, 0, 0, 0, 0, 4, 9, 9, 9, 9))
+            write(frame(0))
+            repeat(50) { write(frame(200)) }
+        }.toByteArray()
+        val out = Mp3Trimmer.replaceAudio(tagged, encoded)
+        val p = Mp3Trimmer.parse(out)
+        assertEquals(50, p.frames.size)
+        assertEquals(null, p.infoFrame)
+        assertArrayEquals(id3, out.copyOfRange(0, id3.size))
+        assertArrayEquals(id3v1, out.copyOfRange(out.size - 128, out.size))
+        assertEquals(200.toByte(), out[id3.size + 4])
+    }
+
+    @Test fun fadeGain() {
+        val f = com.backewatsch.mp3player.convert.Mp3Converter.Fade(inMs = 2000, outMs = 4000, totalMs = 10_000)
+        assertEquals(0f, f.gain(0), 0.001f)
+        assertEquals(0.5f, f.gain(1000), 0.001f)
+        assertEquals(1f, f.gain(5000), 0.001f)
+        assertEquals(0.5f, f.gain(8000), 0.001f)
+        assertEquals(0f, f.gain(10_000), 0.001f)
+        assertEquals(1f, com.backewatsch.mp3player.convert.Mp3Converter.Fade(0, 0, 1000).gain(0), 0.001f)
+    }
 }
