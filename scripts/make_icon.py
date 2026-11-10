@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Erzeugt das App-Logo „ILLEGAL FREEDOM MUSIC“ aus denselben Formen für Android (Vektor) und iPhone (PNG).
 
-Motiv (Cyberpunk): kantiger Totenkopf mit gelben Kopfhörern, leuchtenden Augen und Leiterbahnen auf der Stirn,
-in verrutschten Glitch-Streifen; darunter das gelbe Schild „ILLEGAL“ und „FREEDOM“; dahinter Datenregen.
+Motiv (Cyberpunk): Neon-Note mit Glitch-Versatz vor einer gesprengten Kette, eingerahmt von Neon-Winkeln,
+oben ein gelbes Warnschild „ILLEGAL“, unten „FREEDOM“ in Neon-Cyan; dahinter Neon-Gitter und Leiterbahnen.
 Koordinaten im 108×108-Raster der adaptiven Android-Symbole (sichtbar: Kreis/Quadrat um 54,54).
 
 Aufruf:
@@ -20,6 +20,8 @@ YELLOW = "#FFFCEE0A"
 CYAN = "#FF00F0FF"
 MAGENTA = "#FFFF2A6D"
 INK = "#FF07030F"
+STEEL = "#FF8F96B4"
+STEEL_DARK = "#FF4A5070"
 
 # ---------- Formen ----------
 
@@ -72,25 +74,75 @@ def clip_band(poly, y0, y1):
     p = cut(poly, y0, False)
     return cut(p, y1, True) if len(p) >= 3 else []
 
-# ---------- Hilfen fürs Motiv ----------
+# ---------- Motiv: Kette + Note ----------
 
-def mirror(poly):
-    """Spiegelt an der senkrechten Mittelachse"""
-    return [(108 - x, y) for x, y in poly]
+MOTIF_SCALE = 0.80
 
-def glitch(polys, bands, dx=0.0):
-    """Zerschneidet Flächen in waagerechte Streifen (y von, y bis, Versatz) und verrutscht sie seitlich"""
+def motif(points):
+    """Kette, Note und Funken sitzen verkleinert in der Mitte, damit oben und unten Platz für die Schrift bleibt"""
+    return [((x - 57) * MOTIF_SCALE + 54, (y - 52.5) * MOTIF_SCALE + 54) for x, y in points]
+
+def chain_link(cx, cy, deg, w=26, h=14, t=3.4):
+    """Kettenglied als Ring (außen + innen)"""
+    return [rounded_rect(cx, cy, w, h, h / 2, deg), rounded_rect(cx, cy, w - 2 * t, h - 2 * t, h / 2 - t, deg)]
+
+def half_ring(cx, cy, deg, side, w=24, h=13, t=3.4, steps=14):
+    """Aufgesprengtes Kettenglied: nur die äußere Hälfte (side=+1 rechts, -1 links im Glied-Koordinatensystem)"""
+    r = h / 2
+    ri = r - t
+    outer, inner = [], []
+    for i in range(steps + 1):
+        a = math.radians(-90 + 180 * i / steps)
+        outer.append((w / 2 - r + r * math.cos(a), r * math.sin(a)))
+        inner.append((w / 2 - r + ri * math.cos(a), ri * math.sin(a)))
+    pts = [(0.5, -r)] + outer + [(0.5, r), (0.5, ri)] + list(reversed(inner)) + [(0.5, -ri)]
+    pts = [(side * x + cx, y + cy) for x, y in pts]
+    return rot(pts, cx, cy, deg)
+
+CHAIN_ANGLE = -32
+CENTER = (54, 55)
+
+def chain_parts():
+    """Kette diagonal hinter der Note: Ringe und seitlich gesehene Glieder; in der Mitte gesprengt"""
+    rings, solids = [], []
+    a = math.radians(CHAIN_ANGLE)
+    ux, uy = math.cos(a), math.sin(a)
+    for side in (-1, 1):
+        d = 10
+        cx, cy = CENTER[0] + side * d * ux, CENTER[1] + side * d * uy
+        solids.append(motif(half_ring(cx, cy, CHAIN_ANGLE, side)))
+        for k, dist in enumerate([22, 36, 50, 64, 78]):
+            cx, cy = CENTER[0] + side * dist * ux, CENTER[1] + side * dist * uy
+            if k % 2 == 0:   # seitlich gesehen: schmaler Steg
+                solids.append(motif(rounded_rect(cx, cy, 22, 5, 2.5, CHAIN_ANGLE)))
+            else:            # Ring
+                o, i = chain_link(cx, cy, CHAIN_ANGLE)
+                rings.append((motif(o), motif(i)))
+    return rings, solids
+
+def note_shapes():
+    """Doppelte Achtelnote (zwei Köpfe, zwei Hälse, ein schräger Balken)"""
+    s = [ellipse(41, 70, 7.6, 5.5, -22), ellipse(65, 63, 7.6, 5.5, -22),
+         [(46.2, 68.5), (49.8, 68.0), (49.8, 37), (46.2, 37.6)],
+         [(70.2, 61.5), (73.8, 61.0), (73.8, 30), (70.2, 30.6)],
+         [(46.2, 37.6), (73.8, 30), (73.8, 38.5), (46.2, 46.1)]]
+    return [motif(p) for p in s]
+
+# Glitch: waagerechte Streifen der Note sind seitlich verrutscht (y von, y bis, Versatz)
+GLITCH_BANDS = [(0, 43.2, 0.0), (43.2, 45.6, 3.4), (45.6, 52.0, 0.0), (52.0, 53.6, -2.8),
+                (53.6, 61.0, 0.0), (61.0, 63.4, 2.6), (63.4, 108, 0.0)]
+
+def glitched_note(dx=0.0):
     out = []
-    for p in polys:
-        for y0, y1, off in bands:
-            piece = clip_band(p, y0, y1)
+    for shape in note_shapes():
+        for y0, y1, off in GLITCH_BANDS:
+            piece = clip_band(shape, y0, y1)
             if len(piece) >= 3:
                 out.append(shift(piece, off + dx))
     return same_winding(out)
 
-def arc(cx, cy, r, a0, a1, steps=24):
-    return [(cx + r * math.cos(math.radians(a0 + (a1 - a0) * i / steps)),
-             cy + r * math.sin(math.radians(a0 + (a1 - a0) * i / steps))) for i in range(steps + 1)]
+SPARKS = [motif([(a, b), (c, d)]) for a, b, c, d in [
+    (54, 53, 51, 43), (55, 53, 63, 45), (56, 55, 66, 56), (53, 56, 44, 59), (55, 57, 59, 65), (53, 54, 45, 49)]]
 
 # ---------- Schrift (eckige Blockbuchstaben, 7 Einheiten hoch) ----------
 
@@ -136,8 +188,8 @@ def plate(cx, cy, w, h, cut=2.2):
     l, r, t, b = cx - w / 2, cx + w / 2, cy - h / 2, cy + h / 2
     return [(l + sk, t), (r + sk - cut, t), (r + sk, t + cut), (r - sk, b), (l - sk + cut, b), (l - sk, b - cut)]
 
-TOP_Y, BOTTOM_Y = 67.6, 77.0
-TEXT_K = 0.94
+TOP_Y, BOTTOM_Y = 32.5, 75.5
+TEXT_K = 1.0
 
 # ---------- Ebenen ----------
 
@@ -151,78 +203,76 @@ def circle(cx, cy, r, steps=40):
     return ellipse(cx, cy, r, r, 0, steps)
 
 def background_layers():
-    L = [fill(("radial", 54, 46, 80, "#FF14283A", "#FF020308"), [rect(0, 0, 108, 108)])]
+    L = [fill(("radial", 54, 52, 78, "#FF34095A", "#FF04010A"), [rect(0, 0, 108, 108)])]
     # Bildzeilen wie auf einem alten Monitor
-    L.append(stroke("#10FFFFFF", 0.45, [[(0, y), (108, y)] for y in [i * 2.7 + 1 for i in range(40)]], "butt"))
-    # Datenregen
-    rain = [(8, 4, 18), (15, 30, 52), (24, 0, 12), (33, 70, 96), (41, 2, 9), (67, 0, 11), (76, 78, 100), (85, 6, 26),
-            (93, 40, 66), (100, 10, 22), (12, 70, 88), (97, 80, 98)]
-    L.append(stroke("#5500F0FF", 0.7, [[(x, a), (x, b)] for x, a, b in rain], "butt"))
-    # Leuchten hinter dem Kopf
-    L.append(fill(("radial", 54, 44, 44, "#80FF2A6D", "#00FF2A6D"), [circle(54, 44, 44)]))
+    L.append(stroke("#12FFFFFF", 0.45, [[(0, y), (108, y)] for y in [i * 2.7 + 1 for i in range(40)]], "butt"))
+    # Neon-Gitter als Boden, Fluchtpunkt in der Mitte
+    hy = 57.0
+    grid = [[(0, hy + 1.5 * 1.5 ** i), (108, hy + 1.5 * 1.5 ** i)] for i in range(9)]
+    grid += [[(54 + k * 2.2, hy + 1.5), (54 + k * 26, 108)] for k in range(-9, 10)]
+    L.append(stroke("#30FF2A6D", 1.6, grid, "butt"))
+    L.append(stroke("#B0FF2A6D", 0.5, grid, "butt"))
+    # Leiterbahnen oben
+    traces = [[(0, 12), (14, 12), (22, 20), (22, 30)], [(0, 22), (8, 22), (13, 27)], [(30, 0), (30, 8), (38, 16), (48, 16)],
+              [(108, 14), (92, 14), (86, 20), (86, 31)], [(108, 26), (99, 26), (95, 30)], [(76, 0), (76, 9), (69, 16), (60, 16)],
+              [(54, 0), (54, 9)]]
+    L.append(stroke("#5500F0FF", 0.7, traces))
+    L.append(fill("#9900F0FF", [circle(x, y, 1.3, 14) for x, y in [(22, 30), (13, 27), (48, 16), (86, 31), (95, 30), (60, 16), (54, 9)]]))
+    # Leuchten am Horizont
+    L.append(fill(("radial", 54, 57, 46, "#70FF2A6D", "#00FF2A6D"), [circle(54, 57, 46)]))
     return L
-
-SKULL_TOP, SKULL_K = 27.5, 0.88
-# rechte Schädelhälfte: (Abstand von der Mitte, Höhe ab Scheitel)
-SKULL_HALF = [(0, 0), (7, 0.3), (13, 2.5), (17.5, 7), (19.5, 13), (19.5, 19), (18, 24), (15, 27.5), (13.5, 31),
-              (10.5, 32.5), (10, 38.5), (8, 40), (0, 40)]
-SKULL_BANDS = [(0, 33.4, 0), (33.4, 35.4, 3.0), (35.4, 55.6, 0), (55.6, 57.2, -2.6), (57.2, 108, 0)]
-
-def sk(points):
-    return [(54 + dx * SKULL_K, SKULL_TOP + y * SKULL_K) for dx, y in points]
 
 def foreground_layers():
     L = []
-    right = sk(SKULL_HALF)
-    left = mirror(right)
-    eye = sk([(3.5, 18.5), (14.5, 14.5), (16.5, 20.5), (13, 26), (5.5, 25.5)])
-    glow = sk([(6.5, 20.5), (13, 18.2), (14, 21), (12, 23.8), (7.6, 23.5)])
-    nose = sk([(0, 25), (2.9, 31.5), (0, 30), (-2.9, 31.5)])
-    cy = SKULL_TOP + 17 * SKULL_K  # Höhe der Ohren
+    # Neon-Leuchten hinter der Note
+    L.append(fill(("radial", 54, 54, 30, "#99FF2A6D", "#00FF2A6D"), [circle(54, 54, 30)]))
 
-    # Neon-Ring hinter dem Kopf, in vier Stücken
-    for a0, a1 in [(-60, -8), (8, 60), (120, 172), (188, 240)]:
-        L.append(stroke("#4000F0FF", 3.0, [arc(54, cy + 3, 30, a0, a1)]))
-        L.append(stroke(CYAN, 0.9, [arc(54, cy + 3, 30, a0, a1)]))
+    # Neon-Winkel links und rechts (Rahmen), mit Lücke und Markierungen
+    def chevron(side, r):
+        return [(54 + side * r * 0.5, 54 - r * 0.866), (54 + side * r, 54), (54 + side * r * 0.5, 54 + r * 0.866)]
+    outer = [chevron(-1, 32), chevron(1, 32)]
+    L.append(stroke("#4000F0FF", 3.4, outer))
+    L.append(stroke(CYAN, 1.1, outer))
+    L.append(stroke("#CCFF2A6D", 0.6, [chevron(-1, 28.6), chevron(1, 28.6)]))
+    L.append(stroke(YELLOW, 1.0, [[(54 - 32 - 2.6, 54), (54 - 32 + 2.6, 54)], [(54 + 32 - 2.6, 54), (54 + 32 + 2.6, 54)]], "butt"))
 
-    # Kopfhörer-Bügel
-    L.append(stroke(INK, 5.0, [arc(54, cy, 20.3, 180, 360, 30)]))
-    L.append(stroke(YELLOW, 3.2, [arc(54, cy, 20.3, 180, 360, 30)]))
-    L.append(stroke("#FF8A8200", 0.6, [arc(54, cy, 20.3, 200, 340, 30)]))
+    # Kette (gesprengt): dunkle Kante, Stahl, heller Rand
+    rings, solids = chain_parts()
+    for dx, dy, col in [(0.5, 0.7, STEEL_DARK), (0, 0, STEEL)]:
+        L.append(fill(col, [shift(p, dx, dy) for p in solids]))
+        for o, i in rings:
+            L.append(fill(col, [shift(o, dx, dy), shift(i, dx, dy)], evenodd=True))
+    for o, i in rings:
+        L.append(stroke("#99E8F4FF", 0.35, [o + o[:1]]))
 
-    # Schädel: Farbsäume, dann helle und schattierte Hälfte, in verrutschten Streifen
-    L.append(fill("#E600F0FF", glitch([left, right], SKULL_BANDS, -1.8)))
-    L.append(fill("#E6FF003C", glitch([left, right], SKULL_BANDS, 1.8)))
-    L.append(fill("#FFEAF6FF", glitch([left], SKULL_BANDS)))
-    L.append(fill("#FFB4C4DC", glitch([right], SKULL_BANDS)))
-    # Leiterbahnen auf der Stirn
-    L.append(stroke("#FF00B8D4", 0.6, [sk([(-12, 9), (-7, 9), (-4, 12), (-4, 15)]), sk([(-9, 4.5), (-2, 4.5), (0, 6.5)]),
-                                       sk([(9, 6), (5, 10), (5, 14)])]))
-    L.append(fill("#FF00B8D4", [circle(*sk([p])[0], 0.9, 12) for p in [(-4, 15), (0, 6.5), (5, 14)]]))
-    # Augen (leuchten), Nase, Zähne
-    L.append(fill(INK, glitch([eye, mirror(eye), nose], SKULL_BANDS)))
-    L.append(fill(CYAN, [mirror(glow)]))
-    L.append(fill(MAGENTA, [glow]))
-    L.append(stroke(INK, 0.9, [sk([(d, 34.2), (d, 40)]) for d in (-6.8, -3.4, 0, 3.4, 6.8)], "butt"))
-    L.append(stroke(INK, 0.8, [sk([(-10.2, 34.2), (10.2, 34.2)])], "butt"))
+    # Funken an der Bruchstelle
+    L.append(stroke("#55FCEE0A", 3.6, SPARKS))
+    L.append(stroke(YELLOW, 1.5, SPARKS))
+    L.append(stroke("#FFFFFFFF", 0.5, SPARKS))
 
-    # Hörmuscheln
-    for side in (-1, 1):
-        cx = 54 + side * 20.3
-        L.append(fill(INK, [rounded_rect(cx, cy + 4, 9.4, 19, 3.2, 0)]))
-        L.append(fill(YELLOW, [rounded_rect(cx, cy + 4, 7.4, 17, 2.4, 0)]))
-        L.append(fill(INK, [rounded_rect(cx + side * 0.6, cy + 4, 3.0, 11, 1.4, 0)]))
-        L.append(fill(MAGENTA, [rounded_rect(cx + side * 0.6, cy + 4, 1.2, 8, 0.6, 0)]))
+    # Note: Farbsäume (Cyan/Rot), dann Neon-Verlauf, alles in verrutschten Streifen
+    L.append(fill("#E600F0FF", glitched_note(-2.0)))
+    L.append(fill("#E6FF003C", glitched_note(2.0)))
+    L.append(fill(("linear", 54, 36, 54, 72, "#FFFF2A6D", "#FFFFB300"), glitched_note()))
+    L.append(fill("#CCFFFFFF", [rect(40.5, 49.2, 68, 49.7), rect(36, 58.6, 60, 59.0)]))
 
     # Schild „ILLEGAL“: gelb mit Farbsäumen, schwarze Schrift
-    top = plate(54, TOP_Y, text_width("ILLEGAL", TEXT_K) + 6, 9.2, 1.8)
-    L.append(fill("#E600F0FF", [shift(top, -1.1, -0.4)]))
-    L.append(fill("#E6FF2A6D", [shift(top, 1.1, 0.5)]))
+    wt = text_width("ILLEGAL", TEXT_K)
+    top = plate(54, TOP_Y, wt + 6.4, 11.4)
+    L.append(fill("#E600F0FF", [shift(top, -1.3, -0.5)]))
+    L.append(fill("#E6FF2A6D", [shift(top, 1.3, 0.6)]))
     L.append(fill(YELLOW, [top]))
     L.append(fill(INK, text("ILLEGAL", 54, TOP_Y, TEXT_K)))
-    # „FREEDOM“: weiß mit Pink-Saum
-    L.append(fill("#F2FF2A6D", text("FREEDOM", 54, BOTTOM_Y, TEXT_K, 0.9, 0.3)))
-    L.append(fill("#FFF4FBFF", text("FREEDOM", 54, BOTTOM_Y, TEXT_K)))
+    L.append(fill(INK, [rect(54 - wt / 2 - 1.0, TOP_Y + 4.55, 54 + wt / 2 - 2.0, TOP_Y + 4.95)]))
+
+    # „FREEDOM“: Neon-Cyan auf dunklem Schild
+    wb = text_width("FREEDOM", TEXT_K)
+    bottom = plate(54, BOTTOM_Y, wb + 5.6, 11.4)
+    L.append(fill("#F207030F", [bottom]))
+    L.append(stroke("#4000F0FF", 2.2, [bottom + bottom[:1]]))
+    L.append(stroke(CYAN, 0.7, [bottom + bottom[:1]]))
+    L.append(fill("#F2FF2A6D", text("FREEDOM", 54, BOTTOM_Y, TEXT_K, 0.9, 0.35)))
+    L.append(fill(CYAN, text("FREEDOM", 54, BOTTOM_Y, TEXT_K)))
     return L
 
 # ---------- PNG (iPhone + Vorschau) ----------
@@ -231,7 +281,7 @@ def rgba(c):
     c = c.lstrip("#")
     return (int(c[2:4], 16), int(c[4:6], 16), int(c[6:8], 16), int(c[0:2], 16))
 
-def render_png(size, path, crop=18, layers=None):
+def render_png(size, path, crop=18):
     """crop: Rand im 108er-Raster, der abgeschnitten wird (18 = Ausschnitt eines Android-Symbols)"""
     import numpy as np
     from PIL import Image, ImageChops, ImageDraw
@@ -257,7 +307,7 @@ def render_png(size, path, crop=18, layers=None):
         a, b = np.array(rgba(c0), np.float32), np.array(rgba(c1), np.float32)
         return Image.fromarray((a + (b - a) * t).astype(np.uint8), "RGBA")
 
-    for layer in (layers or background_layers() + foreground_layers()):
+    for layer in background_layers() + foreground_layers():
         mask = Image.new("L", (N, N), 0)
         if layer["kind"] == "fill":
             for poly in layer["polys"]:
