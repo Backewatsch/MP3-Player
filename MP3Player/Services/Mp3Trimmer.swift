@@ -4,15 +4,19 @@ import Foundation
 /// Tags (Titel, Cover, Songtext) bleiben erhalten, die Längenangabe (Xing/Info) wird angepasst.
 enum Mp3Trimmer {
     enum TrimError: LocalizedError {
-        case noAudio, tooShort, notMP3
+        case noAudio, tooShort, notMP3, tooLarge
         var errorDescription: String? {
             switch self {
             case .noAudio: return "Keine MP3-Daten gefunden."
             case .tooShort: return "Es muss mindestens 1 Sekunde übrig bleiben."
             case .notMP3: return "Nur MP3-Dateien können zugeschnitten werden."
+            case .tooLarge: return "Diese Datei ist zu groß zum Zuschneiden."
             }
         }
     }
+
+    /// Größte Datei, die zugeschnitten wird (sie wird dafür komplett in den Speicher geladen)
+    static let maxFileSize = 300 * 1024 * 1024
 
     struct Frame: Equatable {
         let offset: Int
@@ -223,6 +227,9 @@ extension Library {
 
         /// Schneidet zu und blendet bei Bedarf ein/aus (dann wird der Ton neu kodiert; die Tags bleiben)
         let cut: @Sendable () throws -> [UInt8] = {
+            // Sehr große Dateien (z. B. stundenlange Mixe) passen nicht in den Arbeitsspeicher → Meldung statt Absturz
+            let size = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard size <= Mp3Trimmer.maxFileSize else { throw Mp3Trimmer.TrimError.tooLarge }
             let trimmed = try Mp3Trimmer.trim([UInt8](Data(contentsOf: source)), startMs: startMs, endMs: endMs)
             guard fadeIn > 0 || fadeOut > 0 else { return trimmed }
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fade-\(UUID().uuidString)")

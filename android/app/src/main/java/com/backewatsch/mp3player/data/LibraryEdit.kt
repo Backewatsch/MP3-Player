@@ -28,7 +28,7 @@ suspend fun Library.trim(
     val original = fileOf(track)
 
     /** Schneidet zu und blendet bei Bedarf ein/aus (dann wird der Ton neu kodiert; die Tags bleiben) */
-    fun cut(): ByteArray {
+    fun cutUnchecked(): ByteArray {
         val trimmed = Mp3Trimmer.trim(original.readBytes(), startMs, endMs)
         if (fadeInMs <= 0 && fadeOutMs <= 0) return trimmed
         val dir = storage.newIncomingDir()
@@ -47,6 +47,14 @@ suspend fun Library.trim(
         }
     }
 
+    /** Sehr große Dateien (z. B. stundenlange Mixe) passen nicht in den Arbeitsspeicher → Meldung statt Absturz */
+    fun cut(): ByteArray {
+        val runtime = Runtime.getRuntime()
+        val free = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
+        if (original.length() * 3 > free) throw Mp3Trimmer.Mp3Exception(Mp3Trimmer.TOO_LARGE)
+        return try { cutUnchecked() } catch (e: OutOfMemoryError) { throw Mp3Trimmer.Mp3Exception(Mp3Trimmer.TOO_LARGE) }
+    }
+
     if (!asCopy) {
         // Original ersetzen: lesen, schneiden und austauschen in einem Schritt – zusammen mit anderen
         // Dateiänderungen nacheinander, damit nichts verloren geht. Erst komplett schreiben, dann austauschen.
@@ -61,7 +69,7 @@ suspend fun Library.trim(
         }
         _state.update { s -> s.copy(tracks = s.tracks.map { if (it.id == track.id) it.copy(durationMs = newDuration) else it }) }
         save()
-        return track(track.id)!!
+        return track(track.id) ?: track
     }
 
     val trimmed = withContext(fileDispatcher) { cut() }
