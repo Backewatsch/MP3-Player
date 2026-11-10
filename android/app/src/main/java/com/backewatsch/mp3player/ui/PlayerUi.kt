@@ -105,9 +105,10 @@ fun MiniPlayer(onOpen: () -> Unit) {
 
     Box(
         Modifier
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .shadow(10.dp, RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(22.dp))
             .background(Brush.horizontalGradient(listOf(color, color.copy(alpha = 0.85f))))
             // Wischen: links = nächster Titel, rechts = vorheriger
             .pointerInput(Unit) {
@@ -124,11 +125,11 @@ fun MiniPlayer(onOpen: () -> Unit) {
             .testTag("miniPlayer"),
     ) {
         Row(
-            Modifier.fillMaxWidth().offset { IntOffset((shown * 0.35f).toInt(), 0) }.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 10.dp),
+            Modifier.fillMaxWidth().offset { IntOffset((shown * 0.35f).toInt(), 0) }.padding(start = 10.dp, end = 6.dp, top = 9.dp, bottom = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Artwork(track, 42.dp, 6.dp)
-            Spacer(Modifier.width(10.dp))
+            Artwork(track, 44.dp, 12.dp)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(track.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White,
                     style = MaterialTheme.typography.bodyMedium)
@@ -155,7 +156,7 @@ fun MiniPlayer(onOpen: () -> Unit) {
             }
         }
         // Fortschritt als feine Linie unten
-        Box(Modifier.align(Alignment.BottomStart).padding(horizontal = 8.dp).fillMaxWidth().height(2.dp)
+        Box(Modifier.align(Alignment.BottomStart).padding(horizontal = 22.dp).fillMaxWidth().height(3.dp)
             .clip(RoundedCornerShape(1.dp)).background(Color.White.copy(alpha = 0.25f))) {
             Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Color.White))
         }
@@ -214,7 +215,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .graphicsLayer { scaleX = artScale; scaleY = artScale; translationX = artDrag * 0.4f }
-                        .shadow(24.dp, RoundedCornerShape(12.dp))
+                        .shadow(28.dp, RoundedCornerShape(28.dp))
                         .pointerInput(track.id) {
                             detectHorizontalDragGestures(
                                 onDragEnd = {
@@ -226,7 +227,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                             ) { _, d -> artDrag += d }
                         },
                 ) {
-                    BoxWithConstraints { Artwork(track, maxWidth, 12.dp) }
+                    BoxWithConstraints { Artwork(track, maxWidth, 28.dp) }
                 }
                 Spacer(Modifier.weight(1f))
 
@@ -278,7 +279,7 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                     IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.previous() }, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Default.SkipPrevious, "Vorheriger Titel", Modifier.size(40.dp), tint = Color.White)
                     }
-                    RoundPlayButton(playing = state.isPlaying, size = 72.dp, modifier = Modifier.testTag("bigPlayPause"), onClick = app.player::togglePlayPause)
+                    RoundPlayButton(playing = state.isPlaying, size = 80.dp, modifier = Modifier.testTag("bigPlayPause"), onClick = app.player::togglePlayPause)
                     IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); app.player.next() }, modifier = Modifier.size(56.dp)) {
                         Icon(Icons.Default.SkipNext, "Nächster Titel", Modifier.size(40.dp), tint = Color.White)
                     }
@@ -293,7 +294,9 @@ fun NowPlayingSheet(onDismiss: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
 
                 // Extras: Songtext, Schlafmodus, Klang, Wiedergabeliste
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Color.White.copy(alpha = 0.10f))
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { showLyrics = true }, modifier = Modifier.testTag("lyricsButton")) {
                         Icon(Icons.Default.Lyrics, "Songtext", tint = Color.White)
                     }
@@ -337,7 +340,7 @@ fun QueueSheet(onDismiss: () -> Unit) {
                         .testTag("queue-${index - current}-${track.title}"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Artwork(track, 40.dp)
+                    Artwork(track, 40.dp, 10.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(track.title, color = if (index == current) Accent else Color.Unspecified, maxLines = 1,

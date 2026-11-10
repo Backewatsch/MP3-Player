@@ -26,6 +26,7 @@
         android:theme="@style/Theme.MP3Player"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:requestLegacyExternalStorage="true">
 
         <activity

@@ -2,6 +2,13 @@ package com.backewatsch.mp3player.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -100,36 +107,26 @@ fun MainScreen() {
             bottomBar = {
                 Column {
                     MiniPlayer(onOpen = { nav.showNowPlaying = true })
-                    NavigationBar(containerColor = CyberBlack.copy(alpha = 0.97f), tonalElevation = 0.dp) {
-                        val colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = androidx.compose.ui.graphics.Color.White, selectedTextColor = androidx.compose.ui.graphics.Color.White,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = Accent.copy(alpha = 0.16f))
-                        NavigationBarItem(
-                            selected = nav.tab == TAB_START, onClick = { nav.tab = TAB_START },
-                            icon = { Icon(Icons.Default.Home, null) }, label = { Text("Start", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) },
-                            colors = colors, modifier = Modifier.testTag("tab-start"),
-                        )
-                        NavigationBarItem(
-                            selected = nav.tab == TAB_LIBRARY, onClick = { if (nav.tab == TAB_LIBRARY) nav.libraryStack.retainAll(listOf(LibRoute.Root)); nav.tab = TAB_LIBRARY },
-                            icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Mediathek") },
-                            colors = colors, modifier = Modifier.testTag("tab-library"),
-                        )
-                        NavigationBarItem(
-                            selected = nav.tab == TAB_EDITOR, onClick = { if (nav.tab == TAB_EDITOR) nav.editTrackId = null; nav.tab = TAB_EDITOR },
-                            icon = { Icon(Icons.Default.ContentCut, null) }, label = { Text("Bearbeiten") },
-                            colors = colors, modifier = Modifier.testTag("tab-editor"),
-                        )
-                    }
+                    FloatingNavBar(nav)
                 }
             },
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
-                when (nav.tab) {
-                    TAB_START -> StartScreen()
-                    TAB_LIBRARY -> LibraryHost()
-                    else -> EditorScreen()
+                // Tabs blenden weich ineinander über
+                androidx.compose.animation.AnimatedContent(
+                    targetState = nav.tab,
+                    transitionSpec = {
+                        (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
+                            androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(220), initialScale = 0.97f))
+                            .togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)))
+                    },
+                    label = "tabs",
+                ) { tab ->
+                    when (tab) {
+                        TAB_START -> StartScreen()
+                        TAB_LIBRARY -> LibraryHost()
+                        else -> EditorScreen()
+                    }
                 }
             }
         }
@@ -142,6 +139,53 @@ fun MainScreen() {
         nav.recapYear?.let { year -> RecapStory(year, onClose = { nav.recapYear = null }) }
         TrackActionsHost(nav.actions)
         UpdatePrompt()
+    }
+}
+
+/** Schwebende Leiste unten: der gewählte Tab wird zur farbigen Pille mit Beschriftung */
+@Composable
+private fun FloatingNavBar(nav: AppNavigation) {
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+    ) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.shadow(16.dp, CircleShape).clip(CircleShape).background(CyberPanelHigh)
+                .border(1.dp, CyberLine, CircleShape).padding(6.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            NavPill("Start", Icons.Default.Home, nav.tab == TAB_START, "tab-start") { nav.tab = TAB_START }
+            NavPill("Mediathek", Icons.Default.LibraryMusic, nav.tab == TAB_LIBRARY, "tab-library") {
+                if (nav.tab == TAB_LIBRARY) nav.libraryStack.retainAll(listOf(LibRoute.Root)); nav.tab = TAB_LIBRARY
+            }
+            NavPill("Bearbeiten", Icons.Default.ContentCut, nav.tab == TAB_EDITOR, "tab-editor") {
+                if (nav.tab == TAB_EDITOR) nav.editTrackId = null; nav.tab = TAB_EDITOR
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavPill(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, tag: String, onClick: () -> Unit) {
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) Accent else androidx.compose.ui.graphics.Color.Transparent, label = "navBg")
+    val fg by androidx.compose.animation.animateColorAsState(
+        if (selected) androidx.compose.ui.graphics.Color(0xFF04202E) else MaterialTheme.colorScheme.onSurfaceVariant, label = "navFg")
+    androidx.compose.foundation.layout.Row(
+        Modifier.height(50.dp).clip(CircleShape).background(bg)
+            .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.Tab, onClick = onClick)
+            .padding(horizontal = 20.dp).testTag(tag),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Icon(icon, if (selected) null else label, tint = fg)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = selected,
+            enter = androidx.compose.animation.expandHorizontally() + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.shrinkHorizontally() + androidx.compose.animation.fadeOut(),
+        ) {
+            Text(label, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1,
+                modifier = Modifier.padding(start = 8.dp))
+        }
     }
 }
 

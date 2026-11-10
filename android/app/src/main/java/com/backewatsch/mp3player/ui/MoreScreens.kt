@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,7 +60,7 @@ fun SmartPlaylist.colors(): List<Color> = when (this) {
 fun SmartTile(kind: SmartPlaylist, size: androidx.compose.ui.unit.Dp, count: Int, onClick: () -> Unit) {
     Column(Modifier.width(size).clickable(onClick = onClick).testTag("mix-${kind.name}")) {
         Box(
-            Modifier.size(size).clip(RoundedCornerShape(10.dp))
+            Modifier.size(size).clip(RoundedCornerShape(18.dp))
                 .background(Brush.linearGradient(kind.colors())),
             contentAlignment = Alignment.BottomStart,
         ) {
@@ -95,9 +96,11 @@ fun SmartPlaylistScreen(name: String) {
     val lib by app.library.state.collectAsState()
     val player by app.player.state.collectAsState()
     val tracks = remember(lib) { kind.tracks(lib) }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf("") }
+    val shown = remember(tracks, query) { Search.filter(tracks, query) }
     val selection = rememberSelection()
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar("", onBack = { nav.pop() })
+        if (selection.active) SelectionBar(selection, shown) else ScreenTopBar("", onBack = { nav.pop() })
         LazyColumn {
             item {
                 CollectionHeader(
@@ -105,7 +108,7 @@ fun SmartPlaylistScreen(name: String) {
                     subtitle = "${kind.subtitle} · ${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
                     colors = kind.colors(),
                     art = {
-                        Box(Modifier.size(180.dp).clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(kind.colors())),
+                        Box(Modifier.size(180.dp).clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(kind.colors())),
                             contentAlignment = Alignment.Center) {
                             Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(64.dp))
                         }
@@ -116,9 +119,10 @@ fun SmartPlaylistScreen(name: String) {
                 )
             }
             if (tracks.isEmpty()) item { EmptyHint("Noch leer", "Hier erscheinen Lieder, sobald es passende gibt.") }
-            itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+            if (tracks.isNotEmpty()) listSearch(query, { query = it }, shown.size)
+            itemsIndexed(shown, key = { _, t -> t.id }) { _, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
-                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
+                    onPlay = { app.player.play(tracks, tracks.indexOf(track)) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -161,7 +165,7 @@ fun DuplicatesScreen() {
                 Card {
                     group.forEach { t ->
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Artwork(t, 40.dp)
+                            Artwork(t, 40.dp, 10.dp)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis)

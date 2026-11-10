@@ -109,25 +109,34 @@ fun TrackRow(
     val favorite = track.id in LocalFavorites.current
     val selecting = selection?.active == true
     val selected = selection != null && track.id in selection.ids
+    // Das laufende und ausgewählte Lieder liegen auf einer weich abgerundeten Fläche
+    val highlight by androidx.compose.animation.animateColorAsState(
+        when {
+            selected -> Accent.copy(alpha = 0.16f)
+            isCurrent -> Accent.copy(alpha = 0.09f)
+            else -> Color.Transparent
+        }, label = "rowHighlight")
     Row(
         Modifier
             .fillMaxWidth()
-            .background(if (selected) Accent.copy(alpha = 0.10f) else Color.Transparent)
+            .padding(horizontal = 8.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(highlight)
             .combinedClickable(
                 onClick = { if (selecting) selection!!.toggle(track.id) else onPlay() },
                 onLongClick = { if (selection != null) selection.toggle(track.id) else onMore() },
             )
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(start = 8.dp, top = 7.dp, bottom = 7.dp)
             .testTag("track-${track.title}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(track, 52.dp, 6.dp)
+        Artwork(track, 52.dp, 12.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 track.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = if (isCurrent) Accent else MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
             )
             Text(
                 track.artist.ifEmpty { "Unbekannter Interpret" }, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -157,19 +166,19 @@ fun TrackRow(
 fun SectionHeader(text: String) {
     Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold,
         color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 26.dp, bottom = 10.dp))
+        modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 28.dp, bottom = 12.dp))
 }
 
 /** Gruppe als ruhige, abgerundete Fläche */
 @Composable
 fun Card(content: @Composable () -> Unit) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(24.dp)
     Column(
         Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clip(shape)
-            .background(CyberPanelHigh.copy(alpha = 0.85f)),
+            .background(CyberPanelHigh),
         verticalArrangement = Arrangement.Top,
     ) { content() }
 }
@@ -201,10 +210,12 @@ fun Modifier.cyberBackground(): Modifier = this.drawBehind {
 @Composable
 fun EmptyHint(title: String, message: String) {
     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.MusicNote, null, Modifier.size(40.dp), tint = NeonCyan)
-        Spacer(Modifier.size(8.dp))
+        Box(Modifier.size(72.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Accent.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center) { Icon(Icons.Default.MusicNote, null, Modifier.size(34.dp), tint = Accent) }
+        Spacer(Modifier.size(14.dp))
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.size(4.dp))
-        Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }

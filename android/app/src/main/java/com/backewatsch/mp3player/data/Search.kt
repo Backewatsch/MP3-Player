@@ -52,6 +52,13 @@ object Search {
         )
     }
 
+    /** Lieder einer Liste (Playlist, Album …) filtern – die Reihenfolge der Liste bleibt erhalten */
+    fun filter(tracks: List<Track>, query: String): List<Track> {
+        val q = norm(query)
+        if (q.isEmpty()) return tracks
+        return tracks.filter { score(it.title, q) > 0 || score(it.artist, q) > 0 || score(it.album, q) > 0 }
+    }
+
     /** Letzte Suchen: neueste zuerst, ohne Doppelte, höchstens [max] */
     fun remember(recent: List<String>, query: String, max: Int = 8): List<String> {
         val q = query.trim()

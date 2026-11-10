@@ -148,7 +148,7 @@ private fun StatTile(label: String, value: String, modifier: Modifier, tag: Stri
 private fun TopRow(index: Int, track: Track, count: Int, max: Int, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("%02d".format(index + 1), color = NeonYellow, fontWeight = FontWeight.Bold, fontFamily = CyberMono, modifier = Modifier.width(32.dp))
-        Artwork(track, 40.dp)
+        Artwork(track, 40.dp, 10.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -119,7 +119,7 @@ fun MediathekRoot() {
     Column(Modifier.fillMaxSize()) {
         ScreenTopBar("Mediathek", actions = {
             Box {
-                IconButton(onClick = { showMenu = true }, modifier = Modifier.testTag("addMenu")) { Icon(Icons.Default.Add, "Hinzufügen") }
+                androidx.compose.material3.FilledIconButton(onClick = { showMenu = true }, modifier = Modifier.padding(end = 12.dp).testTag("addMenu")) { Icon(Icons.Default.Add, "Hinzufügen") }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(text = { Text("Neue Playlist") }, leadingIcon = { Icon(Icons.Default.Add, null) },
                         onClick = { showMenu = false; showNewPlaylist = true })
@@ -135,19 +135,10 @@ fun MediathekRoot() {
         LazyColumn(Modifier.fillMaxSize().testTag("libraryList")) {
             item {
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = search, onValueChange = { search = it }, singleLine = true,
-                        placeholder = { Text("Was willst du hören?", maxLines = 1) },
-                        leadingIcon = { Icon(Icons.Default.Search, null) },
-                        trailingIcon = {
-                            if (search.isNotEmpty()) IconButton(onClick = { search = "" }, modifier = Modifier.testTag("searchClear")) {
-                                Icon(Icons.Default.Close, "Suche löschen")
-                            }
-                        },
-                        modifier = Modifier.weight(1f).onFocusChanged { searchFocused = it.isFocused }.testTag("searchField"),
-                        shape = RoundedCornerShape(24.dp),
-                    )
-                    IconButton(onClick = { nav.showSettings = true }, modifier = Modifier.testTag("settingsButton")) {
+                    SearchPill(search, { search = it }, "Was willst du hören?",
+                        Modifier.weight(1f).onFocusChanged { searchFocused = it.isFocused }.testTag("searchField"))
+                    Spacer(Modifier.width(8.dp))
+                    androidx.compose.material3.FilledTonalIconButton(onClick = { nav.showSettings = true }, modifier = Modifier.size(52.dp).testTag("settingsButton")) {
                         Icon(Icons.Default.Settings, "Info & Updates")
                     }
                 }
@@ -155,7 +146,7 @@ fun MediathekRoot() {
             (update as? UpdateChecker.State.Available)?.let { available ->
                 item {
                     Row(
-                        Modifier.padding(16.dp, 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Accent)
+                        Modifier.padding(16.dp, 10.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Accent)
                             .clickable { nav.showSettings = true }.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -274,7 +265,7 @@ fun MediathekRoot() {
                         horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         itemsIndexed(pinned, key = { _, t -> "p-" + t.id }) { index, track ->
                             Column(Modifier.width(110.dp).clickable { app.player.play(pinned, index) }) {
-                                Artwork(track, 110.dp, 12.dp)
+                                Artwork(track, 110.dp, 20.dp)
                                 Text(track.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(top = 6.dp))
                                 Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1,
@@ -295,15 +286,15 @@ fun MediathekRoot() {
                 Card {
                     CategoryRow("Lieblingssongs", Icons.Default.Favorite, lib.favorites.count { id -> lib.tracks.any { it.id == id } },
                         "category-Lieblingssongs") { nav.push(LibRoute.Favorites) }
-                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Titel", Icons.Default.MusicNote, lib.tracks.size, "category-Titel") { nav.push(LibRoute.AllTracks) }
-                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Alben", Icons.Default.Album, app.library.albumNames().size, "category-Alben") { nav.push(LibRoute.Albums) }
-                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Interpreten", Icons.Default.Mic, app.library.artistNames().size, "category-Interpreten") { nav.push(LibRoute.Artists) }
-                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Genres", Icons.Default.Category, app.library.genreNames().size, "category-Genres") { nav.push(LibRoute.Genres) }
-                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
                     CategoryRow("Statistik", Icons.Default.BarChart, null, "category-Statistik") { nav.push(LibRoute.Stats) }
                 }
             }
@@ -315,7 +306,7 @@ fun MediathekRoot() {
                         Modifier.fillMaxWidth().clickable { showNewPlaylist = true }.padding(12.dp).testTag("newPlaylistButton"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
                             contentAlignment = Alignment.Center) { Icon(Icons.Default.Add, null, tint = Accent) }
                         Spacer(Modifier.width(12.dp))
                         Text("Neue Playlist", color = Accent)
@@ -340,11 +331,12 @@ fun MediathekRoot() {
 
 @Composable
 internal fun CategoryRow(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, count: Int?, tag: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp).testTag(tag),
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = Accent)
-        Spacer(Modifier.width(16.dp))
-        Text(title, Modifier.weight(1f))
+        Box(Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Accent.copy(alpha = 0.13f)),
+            contentAlignment = Alignment.Center) { Icon(icon, null, tint = Accent, modifier = Modifier.size(22.dp)) }
+        Spacer(Modifier.width(14.dp))
+        Text(title, Modifier.weight(1f), fontWeight = FontWeight.Medium)
         if (count != null) Text("$count", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -355,7 +347,7 @@ internal fun PlaylistRow(playlist: Playlist, onClick: () -> Unit) {
     val app = LocalApp.current
     val tracks = app.library.tracksIn(playlist)
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        PlaylistArtwork(playlist, tracks.firstOrNull(), 52.dp, 8.dp)
+        PlaylistArtwork(playlist, tracks.firstOrNull(), 52.dp, 12.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -376,7 +368,7 @@ internal fun PlaylistRow(playlist: Playlist, onClick: () -> Unit) {
 internal fun ResultRow(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tag: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp).testTag(tag),
         verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(CyberPanelHigh), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(CyberPanelHigh), contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = Accent)
         }
         Spacer(Modifier.width(14.dp))
@@ -404,7 +396,7 @@ private fun DownloadPermissionHint() {
     }
     if (!enabled || allowed || dismissed) return
     Row(
-        Modifier.padding(16.dp, 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
+        Modifier.padding(16.dp, 10.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { ask.launch(com.backewatsch.mp3player.data.DownloadWatcher.permission) }
             .padding(start = 12.dp, top = 8.dp, bottom = 8.dp).testTag("downloadHint"),

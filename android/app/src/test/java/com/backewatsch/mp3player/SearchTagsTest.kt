@@ -43,6 +43,17 @@ class SearchTagsTest {
         assertTrue(Search.run(state, " ").isEmpty)
     }
 
+    @Test fun filtersListAndKeepsOrder() {
+        val a = Track(id = "a", fileName = "a.mp3", title = "Regen", artist = "Bella", album = "Nachts")
+        val b = Track(id = "b", fileName = "b.mp3", title = "Bella Ciao", artist = "Marco", album = "Sommer")
+        val c = Track(id = "c", fileName = "c.mp3", title = "Sonne", artist = "Andere", album = "Tag")
+        val list = listOf(a, b, c)
+        assertEquals(listOf("a", "b"), Search.filter(list, "bella").map { it.id }) // Reihenfolge der Playlist bleibt
+        assertEquals(listOf("b"), Search.filter(list, "SOMMER").map { it.id })      // Album, Groß/Klein egal
+        assertEquals(list, Search.filter(list, "  "))
+        assertTrue(Search.filter(list, "xyz").isEmpty())
+    }
+
     @Test fun remembersRecentSearches() {
         var recent = emptyList<String>()
         recent = Search.remember(recent, "Rock")

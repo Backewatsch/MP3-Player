@@ -73,7 +73,7 @@ fun DownloadsSheet(onDismiss: () -> Unit) {
                 link, { link = it }, singleLine = true, placeholder = { Text("Link zu Audio- oder Videodatei") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { start() }),
-                shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).testTag("downloadLinkField"),
+                shape = RoundedCornerShape(20.dp), modifier = Modifier.weight(1f).testTag("downloadLinkField"),
             )
             TextButton(onClick = { start() }, enabled = valid, modifier = Modifier.testTag("downloadStartButton")) { Text("Laden") }
         }

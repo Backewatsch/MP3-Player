@@ -100,10 +100,12 @@ fun AllTracksScreen() {
     val player by app.player.state.collectAsState()
     val sort by app.trackSort.collectAsState()
     val tracks = remember(lib, sort) { app.library.sortedTracks(sort) }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val shown = remember(tracks, query) { com.backewatsch.mp3player.data.Search.filter(tracks, query) }
     val selection = rememberSelection()
     var showSort by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) SelectionBar(selection, tracks)
+        if (selection.active) SelectionBar(selection, shown)
         else ScreenTopBar("Titel", onBack = { nav.pop() }) {
             Box {
                 IconButton(onClick = { showSort = true }, modifier = Modifier.testTag("sortButton")) {
@@ -127,9 +129,10 @@ fun AllTracksScreen() {
                 Text("Sortiert: ${sort.label} · Gedrückt halten zum Auswählen", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp))
             }
-            itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+            if (tracks.isNotEmpty()) listSearch(query, { query = it }, shown.size)
+            itemsIndexed(shown, key = { _, t -> t.id }) { _, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
-                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
+                    onPlay = { app.player.play(tracks, tracks.indexOf(track)) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
             item {
                 Text("${tracks.size} Titel", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -146,9 +149,11 @@ fun FavoritesScreen() {
     val lib by app.library.state.collectAsState()
     val player by app.player.state.collectAsState()
     val tracks = remember(lib) { app.library.favoriteTracks() }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val shown = remember(tracks, query) { com.backewatsch.mp3player.data.Search.filter(tracks, query) }
     val selection = rememberSelection()
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar("", onBack = { nav.pop() })
+        if (selection.active) SelectionBar(selection, shown) else ScreenTopBar("", onBack = { nav.pop() })
         LazyColumn {
             item {
                 CollectionHeader(
@@ -156,7 +161,7 @@ fun FavoritesScreen() {
                     subtitle = "${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
                     colors = listOf(Color(0xFF3A2F7A), Color(0xFF89CFF0)),
                     art = {
-                        Box(Modifier.size(180.dp).clip(RoundedCornerShape(12.dp))
+                        Box(Modifier.size(180.dp).clip(RoundedCornerShape(24.dp))
                             .background(Brush.linearGradient(listOf(Color(0xFF3A2F7A), Color(0xFF89CFF0)))),
                             contentAlignment = Alignment.Center) {
                             Icon(Icons.Default.Favorite, null, tint = Color.White, modifier = Modifier.size(72.dp))
@@ -170,9 +175,10 @@ fun FavoritesScreen() {
             if (tracks.isEmpty()) item {
                 EmptyHint("Noch keine Lieblingssongs", "Tippe im Player oder im Menü eines Liedes auf das Herz ♥ – dann erscheint es hier.")
             }
-            itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+            if (tracks.isNotEmpty()) listSearch(query, { query = it }, shown.size)
+            itemsIndexed(shown, key = { _, t -> t.id }) { _, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
-                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
+                    onPlay = { app.player.play(tracks, tracks.indexOf(track)) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -196,7 +202,7 @@ fun GroupScreen(albums: Boolean) {
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Artwork(tracks.firstOrNull(), 52.dp, 8.dp)
+                    Artwork(tracks.firstOrNull(), 52.dp, 12.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -222,25 +228,28 @@ fun CollectionScreen(name: String, kind: String) {
             else -> app.library.tracksByArtist(name)
         }
     }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val shown = remember(tracks, query) { com.backewatsch.mp3player.data.Search.filter(tracks, query) }
     val selection = rememberSelection()
     val color = rememberArtworkColor(tracks.firstOrNull())
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) SelectionBar(selection, tracks) else ScreenTopBar("", onBack = { nav.pop() })
+        if (selection.active) SelectionBar(selection, shown) else ScreenTopBar("", onBack = { nav.pop() })
         LazyColumn {
             item {
                 CollectionHeader(
                     title = name,
                     subtitle = "$kind · ${tracks.size} Titel · ${formatTime(tracks.sumOf { it.durationMs })}",
                     colors = listOf(color, color),
-                    art = { Artwork(tracks.firstOrNull(), 180.dp, 12.dp) },
+                    art = { Artwork(tracks.firstOrNull(), 180.dp, 24.dp) },
                     playing = player.isPlaying && tracks.any { it.id == player.currentId },
                     onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
                     onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
                 )
             }
-            itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+            if (tracks.isNotEmpty()) listSearch(query, { query = it }, shown.size)
+            itemsIndexed(shown, key = { _, t -> t.id }) { _, track ->
                 TrackRow(track, player.currentId == track.id, player.isPlaying,
-                    onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track) }, selection = selection)
+                    onPlay = { app.player.play(tracks, tracks.indexOf(track)) }, onMore = { nav.actions.open(track) }, selection = selection)
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -263,6 +272,9 @@ fun PlaylistScreen(id: String) {
         return
     }
     val tracks = app.library.tracksIn(playlist)
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    // Beim Umsortieren immer die ganze Playlist zeigen
+    val shown = if (editing) tracks else com.backewatsch.mp3player.data.Search.filter(tracks, query)
     val isDownloads = playlist.id == DOWNLOADS_PLAYLIST_ID
     val selection = rememberSelection()
     val context = LocalContext.current
@@ -278,7 +290,7 @@ fun PlaylistScreen(id: String) {
         }
     }
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) SelectionBar(selection, tracks, playlist)
+        if (selection.active) SelectionBar(selection, shown, playlist)
         else ScreenTopBar("", onBack = { nav.pop() }) {
             TextButton(onClick = { editing = !editing }) { Text(if (editing) "Fertig" else "Bearbeiten") }
         }
@@ -291,18 +303,19 @@ fun PlaylistScreen(id: String) {
                     art = {
                         Box(Modifier.clickable {
                             coverPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        }.testTag("playlistCover")) { PlaylistArtwork(playlist, tracks.firstOrNull(), 180.dp, 12.dp) }
+                        }.testTag("playlistCover")) { PlaylistArtwork(playlist, tracks.firstOrNull(), 180.dp, 24.dp) }
                     },
                     playing = player.isPlaying && tracks.any { it.id == player.currentId },
                     onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
                     onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
                 )
             }
-            itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
+            if (tracks.isNotEmpty() && !editing) listSearch(query, { query = it }, shown.size)
+            itemsIndexed(shown, key = { _, t -> t.id }) { index, track ->
                 if (editing) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { app.library.remove(track, playlist) }) { Icon(Icons.Default.Delete, "Entfernen", tint = MaterialTheme.colorScheme.error) }
-                        Artwork(track, 40.dp)
+                        Artwork(track, 40.dp, 10.dp)
                         Spacer(Modifier.width(10.dp))
                         Text(track.title, Modifier.weight(1f), maxLines = 1)
                         IconButton(onClick = { app.library.move(playlist, index, index - 1) }, enabled = index > 0) { Icon(Icons.Default.KeyboardArrowUp, "Nach oben") }
@@ -310,7 +323,7 @@ fun PlaylistScreen(id: String) {
                     }
                 } else {
                     TrackRow(track, player.currentId == track.id, player.isPlaying,
-                        onPlay = { app.player.play(tracks, index) }, onMore = { nav.actions.open(track, playlist) }, selection = selection)
+                        onPlay = { app.player.play(tracks, tracks.indexOf(track)) }, onMore = { nav.actions.open(track, playlist) }, selection = selection)
                 }
             }
             item {
@@ -370,7 +383,7 @@ fun GenresScreen() {
                     pair.forEach { g ->
                         val color = palette[(g.lowercase().hashCode() and 0x7fffffff) % palette.size]
                         Box(
-                            Modifier.weight(1f).height(96.dp).clip(RoundedCornerShape(10.dp))
+                            Modifier.weight(1f).height(96.dp).clip(RoundedCornerShape(18.dp))
                                 .background(Brush.linearGradient(listOf(color, color.copy(alpha = 0.6f))))
                                 .clickable { nav.push(LibRoute.Genre(g)) }.padding(12.dp).testTag("genre-$g"),
                         ) {

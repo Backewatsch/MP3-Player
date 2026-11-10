@@ -26,6 +26,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.IconButton
@@ -123,17 +127,70 @@ fun PlayingBars(playing: Boolean, color: Color = Accent, modifier: Modifier = Mo
     }
 }
 
-/** Großer runder Abspiel-Knopf wie bei Streaming-Apps */
+/**
+ * Großer Abspiel-Knopf: rund bei Pause, beim Abspielen ein weich abgerundetes Quadrat (Form wechselt fließend),
+ * und er gibt beim Drücken leicht nach.
+ */
 @Composable
 fun RoundPlayButton(playing: Boolean, size: Dp = 56.dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val haptic = LocalHapticFeedback.current
+    val interaction = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val corner by androidx.compose.animation.core.animateIntAsState(if (playing) 32 else 50,
+        androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f), label = "playShape")
+    val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.9f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 500f), label = "playPress")
+    val shape = RoundedCornerShape(percent = corner.coerceIn(0, 50))
     Box(
-        modifier.size(size).clip(CircleShape).background(Accent)
-            .clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick() },
+        modifier.size(size).graphicsLayer { scaleX = scale; scaleY = scale }.clip(shape).background(Accent)
+            .clickable(interactionSource = interaction, indication = androidx.compose.material3.ripple()) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick()
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Abspielen",
-            tint = Color.Black, modifier = Modifier.size(size * 0.55f))
+            tint = Color(0xFF04202E), modifier = Modifier.size(size * 0.55f))
+    }
+}
+
+/** Rundes Suchfeld ohne Rahmen – für die Mediathek und für die Suche in einer Liste */
+@Composable
+fun SearchPill(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    clearTag: String = "searchClear",
+) {
+    androidx.compose.material3.TextField(
+        value = value, onValueChange = onValueChange, singleLine = true,
+        placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = { Icon(Icons.Default.Search, null) },
+        trailingIcon = {
+            if (value.isNotEmpty()) IconButton(onClick = { onValueChange("") }, modifier = Modifier.testTag(clearTag)) {
+                Icon(Icons.Default.Close, "Suche löschen")
+            }
+        },
+        shape = CircleShape,
+        colors = androidx.compose.material3.TextFieldDefaults.colors(
+            focusedContainerColor = CyberPanelHighest, unfocusedContainerColor = CyberPanelHigh,
+            focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+            cursorColor = Accent, focusedLeadingIconColor = Accent,
+        ),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+        modifier = modifier,
+    )
+}
+
+/** Suchfeld über einer Liederliste (Playlist, Album, Lieblingssongs …) */
+fun androidx.compose.foundation.lazy.LazyListScope.listSearch(query: String, onChange: (String) -> Unit, found: Int) {
+    item(key = "listSearch") {
+        SearchPill(query, onChange, "In dieser Liste suchen",
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("listSearch"), clearTag = "listSearchClear")
+    }
+    if (query.isNotBlank() && found == 0) item(key = "listSearchEmpty") {
+        EmptyHint("Nichts gefunden", "Zu „${query.trim()}“ gibt es in dieser Liste keine Treffer.")
     }
 }
 
@@ -162,20 +219,20 @@ fun CollectionHeader(
             .padding(top = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.shadow(18.dp, RoundedCornerShape(12.dp))) { art() }
+        Box(Modifier.shadow(24.dp, RoundedCornerShape(24.dp))) { art() }
         Spacer(Modifier.height(18.dp))
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, maxLines = 2,
+            Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, maxLines = 2,
                 overflow = TextOverflow.Ellipsis)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 extra()
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = onShuffle, modifier = Modifier.testTag("shuffleAllButton")) {
-                    Icon(Icons.Default.Shuffle, "Zufällig", tint = Accent, modifier = Modifier.size(28.dp))
+                androidx.compose.material3.FilledTonalIconButton(onClick = onShuffle, modifier = Modifier.size(48.dp).testTag("shuffleAllButton")) {
+                    Icon(Icons.Default.Shuffle, "Zufällig", tint = Accent)
                 }
-                Spacer(Modifier.width(8.dp))
-                RoundPlayButton(playing = playing, size = 56.dp, modifier = Modifier.testTag("playAllButton"), onClick = onPlay)
+                Spacer(Modifier.width(12.dp))
+                RoundPlayButton(playing = playing, size = 60.dp, modifier = Modifier.testTag("playAllButton"), onClick = onPlay)
             }
         }
     }

@@ -196,7 +196,7 @@ private fun slidesFor(r: Recap.Result, shareLayer: GraphicsLayer): List<Slide> {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Body("Damit ging's los")
                     Spacer(Modifier.height(16.dp))
-                    Artwork(first, 180.dp, 12.dp)
+                    Artwork(first, 180.dp, 24.dp)
                     Spacer(Modifier.height(16.dp))
                     Headline(first.title)
                     Body(first.artist.ifBlank { "Unbekannter Interpret" })

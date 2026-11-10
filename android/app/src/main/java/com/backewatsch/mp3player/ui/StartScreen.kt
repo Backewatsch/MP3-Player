@@ -88,7 +88,7 @@ fun StartScreen() {
         (update as? UpdateChecker.State.Available)?.let { available ->
             item {
                 Row(
-                    Modifier.padding(16.dp, 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Accent)
+                    Modifier.padding(16.dp, 6.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Accent)
                         .clickable { nav.showSettings = true }.padding(12.dp).testTag("startUpdateBanner"),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -147,7 +147,7 @@ fun StartScreen() {
             item {
                 Card {
                     Row(Modifier.fillMaxWidth().clickable { nav.showNowPlaying = true }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Artwork(current, 64.dp, 10.dp)
+                        Artwork(current, 64.dp, 16.dp)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(current.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -175,7 +175,7 @@ fun StartScreen() {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     itemsIndexed(favorites.take(20), key = { _, t -> "f-" + t.id }) { index, track ->
                         Column(Modifier.width(120.dp).clickable { app.player.play(favorites, index) }.testTag("startFav-${track.title}")) {
-                            Artwork(track, 120.dp, 12.dp)
+                            Artwork(track, 120.dp, 20.dp)
                             Text(track.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.padding(top = 6.dp))
                             Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1,
@@ -230,7 +230,7 @@ fun StartScreen() {
                 ) {
                     Text("%02d".format(index + 1), color = NeonYellow, fontWeight = FontWeight.Bold,
                         fontFamily = CyberMono, modifier = Modifier.width(32.dp))
-                    Artwork(track, 44.dp)
+                    Artwork(track, 44.dp, 10.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -251,7 +251,7 @@ fun StartScreen() {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     itemsIndexed(recent, key = { _, t -> "r-" + t.id }) { index, track ->
                         Column(Modifier.width(120.dp).clickable { app.player.play(recent, index) }) {
-                            Artwork(track, 120.dp, 12.dp)
+                            Artwork(track, 120.dp, 20.dp)
                             Text(track.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.padding(top = 6.dp))
                             Text(track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1,
@@ -287,7 +287,7 @@ fun StartScreen() {
             ) {
                 Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(10.dp))
-                Artwork(track, 40.dp)
+                Artwork(track, 40.dp, 10.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -338,7 +338,7 @@ private fun QuickTileView(tile: QuickTile, modifier: Modifier) {
     val nav = LocalNav.current
     val player by app.player.state.collectAsState()
     Row(
-        modifier.height(56.dp).clip(RoundedCornerShape(8.dp)).background(CyberPanelHigh)
+        modifier.height(56.dp).clip(RoundedCornerShape(14.dp)).background(CyberPanelHigh)
             .clickable {
                 when (tile) {
                     is QuickTile.Favorites -> nav.push(LibRoute.Favorites)

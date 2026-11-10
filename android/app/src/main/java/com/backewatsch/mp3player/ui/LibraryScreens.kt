@@ -1,6 +1,7 @@
 package com.backewatsch.mp3player.ui
 
 import android.widget.Toast
+import androidx.compose.animation.togetherWith
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -107,33 +108,57 @@ sealed interface LibRoute {
 @Composable
 fun LibraryHost() {
     val nav = LocalNav.current
-    when (val route = nav.libraryStack.last()) {
-        LibRoute.Root -> MediathekRoot()
-        LibRoute.AllTracks -> AllTracksScreen()
-        LibRoute.Albums -> GroupScreen(albums = true)
-        LibRoute.Artists -> GroupScreen(albums = false)
-        is LibRoute.Album -> CollectionScreen(route.name, "Album")
-        is LibRoute.Artist -> CollectionScreen(route.name, "Interpret")
-        is LibRoute.PlaylistDetail -> PlaylistScreen(route.id)
-        LibRoute.Favorites -> FavoritesScreen()
-        LibRoute.Stats -> StatsScreen()
-        is LibRoute.Smart -> SmartPlaylistScreen(route.name)
-        LibRoute.Duplicates -> DuplicatesScreen()
-        LibRoute.Genres -> GenresScreen()
-        is LibRoute.Genre -> CollectionScreen(route.name, "Genre")
+    // Vor und zurück gleitet die Seite in die passende Richtung
+    androidx.compose.animation.AnimatedContent(
+        targetState = nav.libraryStack.last() to nav.libraryStack.size,
+        transitionSpec = {
+            val dir = if (targetState.second >= initialState.second) 1 else -1
+            (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { it / 6 * dir } +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)))
+                .togetherWith(androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(200)) { -it / 6 * dir } +
+                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)))
+        },
+        label = "library",
+    ) { target ->
+        when (val route = target.first) {
+            LibRoute.Root -> MediathekRoot()
+            LibRoute.AllTracks -> AllTracksScreen()
+            LibRoute.Albums -> GroupScreen(albums = true)
+            LibRoute.Artists -> GroupScreen(albums = false)
+            is LibRoute.Album -> CollectionScreen(route.name, "Album")
+            is LibRoute.Artist -> CollectionScreen(route.name, "Interpret")
+            is LibRoute.PlaylistDetail -> PlaylistScreen(route.id)
+            LibRoute.Favorites -> FavoritesScreen()
+            LibRoute.Stats -> StatsScreen()
+            is LibRoute.Smart -> SmartPlaylistScreen(route.name)
+            LibRoute.Duplicates -> DuplicatesScreen()
+            LibRoute.Genres -> GenresScreen()
+            is LibRoute.Genre -> CollectionScreen(route.name, "Genre")
+        }
     }
 }
 
+/** Kopfzeile: großer, linksbündiger Titel; „Zurück“ als runder Knopf */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScreenTopBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
-    CenterAlignedTopAppBar(
-        title = { Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") } },
+    androidx.compose.material3.TopAppBar(
+        title = {
+            Text(title, style = if (onBack == null) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = if (onBack == null) 4.dp else 6.dp))
+        },
+        navigationIcon = {
+            if (onBack != null) androidx.compose.material3.FilledTonalIconButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück")
+            }
+        },
         actions = { actions() },
-        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+        colors = TopAppBarDefaults.topAppBarColors(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
-            navigationIconContentColor = NeonCyan, actionIconContentColor = NeonCyan,
+            scrolledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            actionIconContentColor = MaterialTheme.colorScheme.onBackground,
         ),
     )
 }
@@ -141,11 +166,11 @@ fun ScreenTopBar(title: String, onBack: (() -> Unit)? = null, actions: @Composab
 @Composable
 internal fun PlayShuffleButtons(onPlay: () -> Unit, onShuffle: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        FilledTonalButton(onClick = onPlay, modifier = Modifier.weight(1f).testTag("playAllButton")) {
-            Icon(Icons.Default.PlayArrow, null, tint = Accent); Spacer(Modifier.width(6.dp)); Text("Abspielen", color = Accent)
+        androidx.compose.material3.Button(onClick = onPlay, modifier = Modifier.weight(1f).height(52.dp).testTag("playAllButton")) {
+            Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Abspielen", fontWeight = FontWeight.Bold)
         }
-        FilledTonalButton(onClick = onShuffle, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Default.Shuffle, null, tint = Accent); Spacer(Modifier.width(6.dp)); Text("Zufällig", color = Accent)
+        FilledTonalButton(onClick = onShuffle, modifier = Modifier.weight(1f).height(52.dp)) {
+            Icon(Icons.Default.Shuffle, null, tint = Accent); Spacer(Modifier.width(6.dp)); Text("Zufällig", color = Accent, fontWeight = FontWeight.Bold)
         }
     }
 }
