@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.animation.togetherWith
@@ -144,15 +145,18 @@ fun MainScreen() {
 
         // Navigation blendet beim Herunterscrollen aus und kommt beim Hochscrollen wieder
         var navVisible by remember { mutableStateOf(true) }
-        val hideAfter = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+        val hideAfter = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
         val scrollWatcher = remember(hideAfter) {
             object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
                 var down = 0f
+                /** Nur echtes Scrollen mit dem Finger zählt – nicht, wenn die App selbst eine Liste verschiebt */
+                var touching = false
                 override fun onPostScroll(
                     consumed: androidx.compose.ui.geometry.Offset,
                     available: androidx.compose.ui.geometry.Offset,
                     source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
                 ): androidx.compose.ui.geometry.Offset {
+                    if (!touching) return androidx.compose.ui.geometry.Offset.Zero
                     if (consumed.y > 0f) { down = 0f; navVisible = true }
                     else if (consumed.y < 0f) { down -= consumed.y; if (down > hideAfter) navVisible = false }
                     return androidx.compose.ui.geometry.Offset.Zero
@@ -181,7 +185,16 @@ fun MainScreen() {
                 }
             },
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding).nestedScroll(scrollWatcher)) {
+            Box(Modifier.fillMaxSize().padding(padding).nestedScroll(scrollWatcher)
+                .pointerInput(scrollWatcher) {
+                    // Merken, ob gerade ein Finger auf dem Bildschirm liegt (ohne die Berührung zu verbrauchen)
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                            scrollWatcher.touching = event.changes.any { it.pressed }
+                        }
+                    }
+                }) {
                 // Tabs blenden weich ineinander über
                 androidx.compose.animation.AnimatedContent(
                     targetState = if (nav.showSearch) TAB_SEARCH else nav.tab,
