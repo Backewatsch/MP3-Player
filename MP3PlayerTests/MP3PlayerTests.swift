@@ -1255,3 +1255,16 @@ final class FadeTests: XCTestCase {
         XCTAssertLessThan(endLevel, startLevel * 0.6, "Ende leiser als Anfang")
     }
 }
+
+// MARK: - Widget-Verknüpfungen
+
+final class WidgetLinkTests: XCTestCase {
+    func testParsesLinks() {
+        XCTAssertEqual(WidgetLink(url: URL(string: "ifmusic://resume")!), .resume)
+        XCTAssertEqual(WidgetLink(url: URL(string: "ifmusic://shuffle")!), .shuffle)
+        XCTAssertEqual(WidgetLink(url: URL(string: "IFMUSIC://Favorites")!), .favorites)
+        XCTAssertNil(WidgetLink(url: URL(string: "ifmusic://unbekannt")!))
+        XCTAssertNil(WidgetLink(url: URL(string: "file:///tmp/lied.mp3")!), "Dateien werden weiter importiert")
+        for link in WidgetLink.allCases { XCTAssertEqual(WidgetLink(url: link.url), link) }
+    }
+}

@@ -63,6 +63,11 @@ jobs:
           plutil -extract UIFileSharingEnabled raw -o - "$PLIST" | grep -q true
           test "$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")" = "$APP_VERSION"
           test "$(plutil -extract CFBundleVersion raw -o - "$PLIST")" = "$APP_BUILD"
+          # Widget ist eingebettet und hat dieselbe Version wie die App
+          WIDGET=build/Build/Products/Release-iphoneos/MP3Player.app/PlugIns/MP3PlayerWidget.appex/Info.plist
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "$WIDGET")" = "$APP_VERSION"
+          test "$(plutil -extract CFBundleVersion raw -o - "$WIDGET")" = "$APP_BUILD"
+          plutil -extract CFBundleURLTypes json -o - "$PLIST" | grep -q ifmusic
 
       - name: Unsignierte IPA packen
         run: |

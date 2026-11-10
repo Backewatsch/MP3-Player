@@ -22,6 +22,8 @@ targets:
       - path: ThirdParty/lame/libmp3lame
         group: ThirdParty/LAME
         compilerFlags: ["-w", "-DHAVE_CONFIG_H"]
+    dependencies:
+      - target: MP3PlayerWidget
     scheme:
       testTargets:
         - MP3PlayerTests
@@ -59,6 +61,9 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.backewatsch.mp3player.widget-links
+            CFBundleURLSchemes: [ifmusic]
         CFBundleDocumentTypes:
           - CFBundleTypeName: Audio
             CFBundleTypeRole: Viewer
@@ -74,6 +79,29 @@ targets:
               - public.mpeg-4
               - com.apple.quicktime-movie
               - com.apple.m4v-video
+
+  # Startbildschirm-Widget (Schnellstart: Weiterhören, Zufällig, Lieblingssongs)
+  MP3PlayerWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MP3PlayerWidget
+      - path: MP3Player/Models/WidgetLink.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.backewatsch.mp3player.widget
+        PRODUCT_NAME: MP3PlayerWidget
+        SKIP_INSTALL: YES
+        SWIFT_INCLUDE_PATHS: ""
+        HEADER_SEARCH_PATHS: ""
+    info:
+      path: MP3PlayerWidget/Info.plist
+      properties:
+        CFBundleDisplayName: ILLEGAL FREEDOM MUSIC
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
   MP3PlayerTests:
     type: bundle.unit-test

@@ -15,3 +15,4 @@ android/app/build/
 android/app/.cxx/
 android/local.properties
 *.apk
+MP3PlayerWidget/Info.plist

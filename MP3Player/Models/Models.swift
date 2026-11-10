@@ -39,6 +39,7 @@ enum Storage {
         }
         try? fm.removeItem(at: artwork)
         try? fm.createDirectory(at: artwork, withIntermediateDirectories: true)
+        LibrarySaver.shared.discard()
         try? fm.removeItem(at: indexFile)
     }
 

@@ -722,6 +722,7 @@ final class Library: ObservableObject {
     // MARK: Persistenz
 
     private func load() {
+        LibrarySaver.shared.wait() // noch laufendes Speichern erst abschließen
         guard let data = try? Data(contentsOf: Storage.indexFile),
               let state = try? JSONDecoder().decode(LibraryState.self, from: data) else { return }
         tracks = state.tracks
@@ -740,11 +741,9 @@ final class Library: ObservableObject {
         needsMetadataUpgrade = state.version < 2
     }
 
+    /// Speichert im Hintergrund (das Kodieren großer Statistiken würde sonst kurz die Bedienung bremsen)
     private func save() {
-        let state = stateSnapshot
-        if let data = try? JSONEncoder().encode(state) {
-            try? data.write(to: Storage.indexFile, options: .atomic)
-        }
+        LibrarySaver.shared.save(stateSnapshot)
     }
 
     private func ensureDownloadsPlaylist() {
@@ -868,5 +867,31 @@ final class ArtworkCache {
     func remove(_ id: UUID) {
         cache.removeObject(forKey: id as NSUUID)
         lock.lock(); missing.remove(id); lock.unlock()
+    }
+}
+
+/// Schreibt die Mediathek nacheinander im Hintergrund; von mehreren schnellen Änderungen wird nur der letzte Stand geschrieben.
+final class LibrarySaver: @unchecked Sendable {
+    static let shared = LibrarySaver()
+    private let queue = DispatchQueue(label: "com.backewatsch.mp3player.save", qos: .userInitiated)
+    private let lock = NSLock()
+    private var latest: LibraryState?
+
+    func save(_ state: LibraryState) {
+        lock.lock(); latest = state; lock.unlock()
+        queue.async { [self] in
+            lock.lock(); let state = latest; latest = nil; lock.unlock()
+            guard let state, let data = try? JSONEncoder().encode(state) else { return }
+            try? data.write(to: Storage.indexFile, options: .atomic)
+        }
+    }
+
+    /// Wartet, bis alles geschrieben ist (App geht in den Hintergrund, Tests)
+    func wait() { queue.sync {} }
+
+    /// Verwirft noch nicht Geschriebenes (Zurücksetzen in Tests)
+    func discard() {
+        lock.lock(); latest = nil; lock.unlock()
+        queue.sync {}
     }
 }

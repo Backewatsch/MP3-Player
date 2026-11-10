@@ -28,6 +28,8 @@ struct MP3PlayerApp: App {
                 .environmentObject(updates)
                 .onAppear(perform: connect)
                 .onOpenURL { url in
+                    // Tipp auf das Startbildschirm-Widget
+                    if let link = WidgetLink(url: url) { open(link); return }
                     // „Öffnen in … MP3 Player“ aus der Dateien-App oder anderen Apps
                     Task {
                         do { try await library.importAudio(from: url, move: false) }
@@ -44,10 +46,37 @@ struct MP3PlayerApp: App {
                 }
         }
         .onChange(of: scenePhase) { phase in
+            // Beim Verlassen der App alles sicher gespeichert haben
+            if phase != .active { LibrarySaver.shared.wait() }
             if phase == .active {
                 (Appearance(rawValue: UserDefaults.standard.string(forKey: Appearance.key) ?? "") ?? .dark).apply()
                 Task { await library.rescan() }
                 Task { await updates.checkIfDue() }
+            }
+        }
+    }
+
+    /// Schnellstart aus dem Widget
+    private func open(_ link: WidgetLink) {
+        switch link {
+        case .shuffle:
+            let all = library.sortedTracks
+            guard !all.isEmpty else { return }
+            player.shuffle = true
+            player.play(all, startAt: Int.random(in: 0..<all.count), allTracks: true)
+        case .favorites:
+            let favorites = library.favoriteTracks
+            guard !favorites.isEmpty else { return }
+            player.shuffle = false
+            player.play(favorites, startAt: 0)
+        case .resume:
+            if player.current != nil {
+                if !player.isPlaying { player.resume() }
+            } else {
+                let all = library.sortedTracks
+                guard !all.isEmpty else { return }
+                player.shuffle = false
+                player.play(all, startAt: 0, allTracks: true)
             }
         }
     }
