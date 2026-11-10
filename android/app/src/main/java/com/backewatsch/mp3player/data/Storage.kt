@@ -10,6 +10,16 @@ import java.util.UUID
  * @param testRoot eigener Ordner für automatische Tests
  */
 class Storage(context: Context, testRoot: File? = null) {
+    private val appContext = context.applicationContext
+
+    /** Darf die App Musikdateien außerhalb ihres Ordners lesen (für verknüpfte Lieder)? */
+    fun canReadSharedMusic(): Boolean {
+        val permission = if (android.os.Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_AUDIO
+            else android.Manifest.permission.READ_EXTERNAL_STORAGE
+        return androidx.core.content.ContextCompat.checkSelfPermission(appContext, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
     val musicDir: File = (testRoot?.let { File(it, "Music") }
         ?: context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(context.filesDir, "Music")).apply { mkdirs() }
     val artworkDir: File = File(testRoot ?: context.filesDir, "artwork").apply { mkdirs() }

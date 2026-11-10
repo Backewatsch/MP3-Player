@@ -33,8 +33,10 @@ class Backup(private val library: Library) {
                     state.tracks.forEachIndexed { n, track ->
                         onProgress(n, state.tracks.size)
                         val file = library.fileOf(track)
-                        if (file.exists() && names.add(track.fileName)) {
-                            zip.putNextEntry(ZipEntry(MUSIC + track.fileName).apply { method = ZipEntry.DEFLATED })
+                        if (file.exists()) {
+                            // Gleicher Dateiname zweimal (z. B. verknüpftes Original und eigene Kopie) → eindeutig machen
+                            val entryName = if (names.add(track.fileName)) track.fileName else "${track.id}__${track.fileName}"
+                            zip.putNextEntry(ZipEntry(MUSIC + entryName).apply { method = ZipEntry.DEFLATED })
                             file.inputStream().use { it.copyTo(zip) }
                             zip.closeEntry()
                         }

@@ -88,8 +88,10 @@ class Library(
     fun genreNames() = groupNames(tracks.map { it.genre })
     fun tracksInGenre(genre: String) = sortedTracks().filter { it.genre.equals(genre, ignoreCase = true) }
     fun artistNames() = groupNames(tracks.map { it.artist })
-    fun convertibleTracks() = tracks.filter { !FileNames.isMp3(it.fileName) }
-    fun fileOf(track: Track) = storage.fileFor(track.fileName)
+    /** Nicht-MP3 im eigenen Ordner (verknüpfte Originale werden nie umgewandelt – sie bleiben, wie sie sind) */
+    fun convertibleTracks() = tracks.filter { !it.isLinked && !FileNames.isMp3(it.fileName) }
+    /** Datei eines Titels: verknüpftes Original oder Datei im Musikordner der App */
+    fun fileOf(track: Track) = if (track.isLinked) File(track.path) else storage.fileFor(track.fileName)
     fun artworkOf(track: Track) = storage.artworkFor(track.id).takeIf { it.exists() }
 
     private fun groupNames(names: List<String>): List<String> {
@@ -173,15 +175,21 @@ class Library(
         }
         val present = files.map { it.name }.toSet()
         val busy = mutex.withLock { importing.toSet() }
-        val known = tracks.map { it.fileName }.toSet()
+        val known = tracks.filter { !it.isLinked }.map { it.fileName }.toSet()
+        // Verknüpfte Originale, die es nicht mehr gibt (z. B. in Samsung Music gelöscht). Nur prüfen, wenn die App
+        // überhaupt lesen darf – sonst wirkten alle Dateien „verschwunden“.
+        val linkedGone = if (storage.canReadSharedMusic()) withContext(Dispatchers.IO) {
+            tracks.filter { it.isLinked && !File(it.path).exists() }.map { it.id }.toSet()
+        } else emptySet()
         val newTracks = withContext(Dispatchers.IO) {
             files.filter { it.name !in known && it.name !in busy }.map { makeTrack(it) }
         }
         var changed = false
         mutex.withLock {
             _state.update { s ->
-                val missing = s.tracks.filter { it.fileName !in present && it.fileName !in importing }.map { it.id }.toSet()
-                val fresh = newTracks.filter { t -> s.tracks.none { it.fileName == t.fileName } && t.fileName !in importing }
+                val missing = s.tracks.filter { !it.isLinked && it.fileName !in present && it.fileName !in importing }
+                    .map { it.id }.toSet() + linkedGone
+                val fresh = newTracks.filter { t -> s.tracks.none { !it.isLinked && it.fileName == t.fileName } && t.fileName !in importing }
                 if (missing.isEmpty() && fresh.isEmpty()) return@update s
                 changed = true
                 s.copy(
@@ -196,6 +204,64 @@ class Library(
         if (autoConvert && convertibleTracks().isNotEmpty()) {
             scope.launch { convertAllToMp3() }
         }
+    }
+
+    /**
+     * Verknüpft eine Datei auf dem Handy (ohne sie zu kopieren). Ist sie schon verknüpft, kommt der vorhandene Titel zurück.
+     * @param sourceKey Herkunft zum Wiedererkennen (Pfad aus dem Medienspeicher)
+     */
+    suspend fun link(file: File, sourceKey: String = file.absolutePath, addToDownloads: Boolean = false): Track {
+        val path = file.absolutePath
+        tracks.firstOrNull { it.path == path || (sourceKey.isNotEmpty() && it.source == sourceKey) }?.let { return it }
+        if (!file.canRead()) throw LibraryException("„${file.name}“ ist nicht lesbar.")
+        if (!FileNames.isImportable(file.name)) throw LibraryException("„${file.name}“ ist keine unterstützte Audiodatei.")
+        val track = withContext(Dispatchers.IO) { makeTrack(file) }.copy(source = sourceKey, path = path)
+        var target: String? = null
+        mutex.withLock {
+            _state.update { s ->
+                var playlists = s.playlists
+                if (addToDownloads) {
+                    playlists = playlists.map { if (it.id == DOWNLOADS_PLAYLIST_ID) it.copy(trackIds = it.trackIds + track.id) else it }
+                    target = DOWNLOADS_PLAYLIST_ID
+                }
+                s.copy(tracks = s.tracks + track, playlists = playlists)
+            }
+        }
+        save()
+        onTrackAdded?.invoke(track, target)
+        return track
+    }
+
+    /** Kopien, die genau dem Original auf dem Handy entsprechen – können durch Verknüpfungen ersetzt werden */
+    suspend fun linkableCopies(): List<Track> = withContext(Dispatchers.IO) {
+        if (!storage.canReadSharedMusic()) return@withContext emptyList()
+        tracks.filter { t ->
+            if (t.isLinked || !t.source.startsWith("/")) return@filter false
+            val original = File(t.source)
+            val copy = storage.fileFor(t.fileName)
+            // Gleiche Größe = unverändert übernommen (zugeschnittene, umgewandelte oder bearbeitete Kopien bleiben)
+            original.exists() && original.canRead() && copy.exists() && original.length() == copy.length()
+        }
+    }
+
+    /** Ersetzt unveränderte Kopien durch Verknüpfungen zum Original; liefert Anzahl und freigegebene Bytes */
+    suspend fun replaceCopiesWithLinks(): Pair<Int, Long> {
+        val candidates = linkableCopies()
+        var freed = 0L
+        var count = 0
+        for (t in candidates) {
+            val copy = storage.fileFor(t.fileName)
+            val original = File(t.source)
+            val size = copy.length()
+            mutex.withLock {
+                _state.update { s ->
+                    s.copy(tracks = s.tracks.map { if (it.id == t.id) it.copy(path = original.absolutePath, fileName = original.name) else it })
+                }
+            }
+            if (withContext(Dispatchers.IO) { copy.delete() }) { freed += size; count++ }
+        }
+        if (candidates.isNotEmpty()) save()
+        return count to freed
     }
 
     private fun makeTrack(file: File): Track {
@@ -286,7 +352,11 @@ class Library(
     fun deleteAll(list: List<Track>) {
         if (list.isEmpty()) return
         val ids = list.map { it.id }.toSet()
-        list.forEach { fileOf(it).delete(); storage.artworkFor(it.id).delete(); storage.originalCoverFor(it.id).delete() }
+        list.forEach {
+            // Verknüpfte Originale bleiben auf dem Handy – nur die eigene Kopie wird gelöscht
+            if (!it.isLinked) fileOf(it).delete()
+            storage.artworkFor(it.id).delete(); storage.originalCoverFor(it.id).delete()
+        }
         _state.update { s ->
             s.copy(
                 tracks = s.tracks.filter { it.id !in ids },
@@ -354,6 +424,8 @@ class Library(
 
     /** Änderungen in die MP3 schreiben (Fehler ändern nichts an der Mediathek) */
     internal fun writeTags(track: Track, update: Id3Writer.Update) {
+        // Verknüpfte Originale gehören anderen Apps → Änderungen nur in der Mediathek, die Datei bleibt unberührt
+        if (track(track.id)?.isLinked ?: track.isLinked) return
         val file = fileOf(track)
         if (!FileNames.isMp3(file.name)) return
         // Die Datei bleibt dabei immer vollständig (neue Fassung wird erst fertig geschrieben, dann ausgetauscht)

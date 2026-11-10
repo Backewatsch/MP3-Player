@@ -74,6 +74,10 @@ class TransferTest {
         val track = library.trackFromSource(song.sourceKey)!!
         assertEquals("Testlied", track.title)
         assertTrue(track.fileName.endsWith(".mp3"))
+        // Verknüpft, nicht kopiert: die App spielt die Originaldatei, ihr eigener Ordner bleibt leer
+        assertTrue("verknüpft", track.isLinked)
+        assertEquals(song.path, library.fileOf(track).absolutePath)
+        assertTrue(root.resolve("Music").listFiles().orEmpty().none { it.name.endsWith(".mp3") })
 
         val second = importer.importSongs(listOf(song))
         assertEquals("schon übertragen → übersprungen", 1, second.skipped)
@@ -101,5 +105,52 @@ class TransferTest {
         importer.importPlaylistFiles(listOf(Uri.fromFile(m3u)))
         assertEquals(1, library.playlists.count { it.name == "Lieblingslieder" })
         assertEquals(1, library.playlists.first { it.name == "Lieblingslieder" }.trackIds.size)
+    }
+
+    /** Verknüpfte Lieder: Löschen in der App lässt das Original stehen; verschwindet das Original, verschwindet das Lied */
+    @Test fun linkedSongsFollowTheOriginal() = runBlocking {
+        var songs = importer.scanSongs()
+        repeat(10) { if (songs.none { it.displayName == songName }) { Thread.sleep(500); songs = importer.scanSongs() } }
+        val song = songs.first { it.displayName == songName }
+        importer.importSongs(listOf(song))
+        val track = library.trackFromSource(song.sourceKey)!!
+        val original = File(song.path)
+
+        // Neu einlesen behält das verknüpfte Lied
+        library.rescan()
+        assertEquals(1, library.tracks.size)
+
+        // Löschen in der App: Original bleibt
+        library.delete(track)
+        assertTrue("Original bleibt auf dem Handy", original.exists())
+        assertEquals(0, library.tracks.size)
+
+        // Wieder übernehmen, dann Original löschen → Lied verschwindet beim nächsten Einlesen
+        importer.importSongs(listOf(song))
+        assertEquals(1, library.tracks.size)
+        inserted.forEach { context.contentResolver.delete(it, null, null) }
+        inserted.clear()
+        library.rescan()
+        assertEquals(0, library.tracks.size)
+    }
+
+    /** Ältere Kopien lassen sich durch Verknüpfungen ersetzen und geben Speicher frei */
+    @Test fun replacesOldCopiesWithLinks() = runBlocking {
+        var songs = importer.scanSongs()
+        repeat(10) { if (songs.none { it.displayName == songName }) { Thread.sleep(500); songs = importer.scanSongs() } }
+        val song = songs.first { it.displayName == songName }
+        // So hat die App früher übernommen: eigene Kopie mit Herkunft
+        val copySource = File(root, "copy.mp3").apply { File(song.path).copyTo(this) }
+        val copy = library.import(copySource, preferredName = songName, move = true, sourceKey = song.sourceKey)
+        assertTrue(!copy.isLinked)
+        assertEquals(listOf(copy.id), library.linkableCopies().map { it.id })
+
+        val (count, freed) = library.replaceCopiesWithLinks()
+        assertEquals(1, count)
+        assertTrue(freed > 0)
+        val linked = library.track(copy.id)!!
+        assertTrue(linked.isLinked)
+        assertEquals(song.path, library.fileOf(linked).absolutePath)
+        assertTrue(library.linkableCopies().isEmpty())
     }
 }

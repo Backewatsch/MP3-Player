@@ -89,7 +89,7 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
         songs
     }
 
-    /** Kopiert die Lieder in die Mediathek (Nicht-MP3 wird umgewandelt). Bereits übertragene werden übersprungen. */
+    /** Übernimmt die Lieder in die Mediathek – verknüpft, nicht kopiert. Bereits übertragene werden übersprungen. */
     suspend fun importSongs(songs: List<DeviceSong>): SongResult {
         var imported = 0
         var skipped = 0
@@ -121,6 +121,12 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
     }
 
     private suspend fun importSong(song: DeviceSong, addToDownloads: Boolean = false): Track {
+        // Normalfall: nur verknüpfen – die Datei bleibt, wo sie ist, und belegt keinen zusätzlichen Speicher
+        val original = song.path.takeIf { it.startsWith("/") }?.let { File(it) }
+        if (original != null && withContext(Dispatchers.IO) { original.canRead() }) {
+            return library.link(original, sourceKey = song.sourceKey, addToDownloads = addToDownloads)
+        }
+        // Rückfall (Pfad unbekannt oder nicht lesbar): Kopie über den Medienspeicher
         val dir = library.storage.newIncomingDir()
         try {
             val file = File(dir, FileNames.sanitize(song.displayName))

@@ -36,8 +36,17 @@ suspend fun Library.restore(backup: LibraryState, musicFiles: Map<String, File>,
             if (existing != null) {
                 idMap[bt.id] = existing.id; matched++; continue
             }
-            val file = musicFiles[bt.fileName]
-            if (file == null || !file.exists()) { missing++; continue }
+            val file = musicFiles["${bt.id}__${bt.fileName}"] ?: musicFiles[bt.fileName]
+            if (file == null || !file.exists()) {
+                // Verknüpftes Lied ohne Datei in der Sicherung: Original liegt auf diesem Handy noch am selben Ort?
+                if (bt.isLinked && withContext(Dispatchers.IO) { File(bt.path).canRead() } && newTracks.none { it.path == bt.path }) {
+                    val id = if (newTracks.none { it.id == bt.id }) bt.id else java.util.UUID.randomUUID().toString()
+                    newTracks += bt.copy(id = id)
+                    idMap[bt.id] = id
+                    added++
+                } else missing++
+                continue
+            }
             val destination = mutex.withLock {
                 storage.uniqueDestination(FileNames.sanitize(bt.fileName)).also { importing += it.name; reserved += it.name }
             }
@@ -46,7 +55,8 @@ suspend fun Library.restore(backup: LibraryState, musicFiles: Map<String, File>,
             artworkFiles[bt.id]?.takeIf { it.exists() }?.let { art ->
                 withContext(Dispatchers.IO) { art.copyTo(storage.artworkFor(id), overwrite = true) }
             }
-            newTracks += bt.copy(id = id, fileName = destination.name)
+            // Aus der Sicherung wiederhergestellte Dateien liegen danach im Ordner der App (keine Verknüpfung mehr)
+            newTracks += bt.copy(id = id, fileName = destination.name, path = "")
             idMap[bt.id] = id
             added++
         }

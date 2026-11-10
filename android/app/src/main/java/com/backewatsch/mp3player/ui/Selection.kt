@@ -113,7 +113,10 @@ fun SelectionBar(selection: SelectionState, all: List<Track>, playlist: Playlist
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
             title = { Text("${list.size} Titel löschen?") },
-            text = { Text("Die Titel werden vom Gerät gelöscht und aus allen Playlists entfernt.") },
+            text = {
+                Text(if (list.any { it.isLinked }) "Die Titel werden aus der Mediathek und allen Playlists entfernt. Eigene Kopien werden gelöscht, verknüpfte Originaldateien bleiben auf dem Handy."
+                    else "Die Titel werden vom Gerät gelöscht und aus allen Playlists entfernt.")
+            },
             confirmButton = {
                 TextButton(onClick = { app.library.deleteAll(list); confirmDelete = null; selection.clear() },
                     modifier = Modifier.testTag("sel-delete-confirm")) {

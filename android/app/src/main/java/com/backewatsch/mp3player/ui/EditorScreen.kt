@@ -293,7 +293,11 @@ private fun TrimEditor(track: Track, onClose: () -> Unit) {
             ) {
                 Icon(Icons.Default.ContentCut, null); Spacer(Modifier.width(8.dp)); Text("Als neues Lied speichern")
             }
-            OutlinedButton(
+            if (track.isLinked) {
+                Text("Verknüpftes Lied: Die Originaldatei bleibt unverändert – gespeichert wird ein neues Lied.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp))
+            } else OutlinedButton(
                 onClick = { confirmReplace = true }, enabled = changed && !busy,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("trimSaveReplace"),
             ) { Text("Original kürzen") }

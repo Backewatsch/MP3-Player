@@ -17,7 +17,15 @@ data class Track(
     val genre: String = "",
     /** Herkunft (z. B. Pfad der Originaldatei bei Übernahme aus Samsung Music) – verhindert Doppelte */
     val source: String = "",
-)
+    /**
+     * Verknüpfte Datei: voller Pfad zur Originaldatei auf dem Handy (z. B. aus Samsung Music oder „Download“).
+     * Leer = die Datei liegt im eigenen Musikordner der App.
+     */
+    val path: String = "",
+) {
+    /** Liegt die Datei außerhalb der App (nur verknüpft, nicht kopiert)? */
+    val isLinked: Boolean get() = path.isNotEmpty()
+}
 
 @Serializable
 data class Playlist(

@@ -2,4 +2,7 @@
 <paths>
     <external-files-path name="music" path="Music/" />
     <cache-path name="cache" path="." />
+    <!-- Verknüpfte Lieder (Originale in Music, Download, auf der SD-Karte …) teilen -->
+    <external-path name="shared" path="." />
+    <root-path name="root" path="/" />
 </paths>

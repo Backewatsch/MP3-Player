@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.CleaningServices
 
 import android.content.Intent
+import android.widget.Toast
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -220,6 +221,8 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
 
+            LinkCopiesCard()
+
             SectionHeader("Sicherung")
             Card {
                 Row(
@@ -337,5 +340,47 @@ internal fun DownloadWatcherRow() {
             )
         }
         androidx.compose.material3.Switch(checked = active, onCheckedChange = toggle)
+    }
+}
+
+
+/** Bereits kopierte Lieder aus Samsung Music/Download durch Verknüpfungen ersetzen (gibt Speicher frei) */
+@Composable
+private fun LinkCopiesCard() {
+    val app = LocalApp.current
+    val context = LocalContext.current
+    val lib by app.library.state.collectAsState()
+    var candidates by remember { mutableStateOf<List<com.backewatsch.mp3player.model.Track>>(emptyList()) }
+    var busy by remember { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf(false) }
+    LaunchedEffect(lib.tracks.size) { candidates = app.library.linkableCopies() }
+    if (candidates.isEmpty()) return
+    val bytes = remember(candidates) { candidates.sumOf { app.library.fileOf(it).length() } }
+    SectionHeader("Speicher")
+    Card {
+        ActionLine("Doppelte Dateien freigeben (${candidates.size} Lieder, ${"%.0f".format(bytes / 1_048_576.0)} MB)",
+            Icons.Default.CleaningServices, "linkCopies") { if (!busy) confirm = true }
+        Text("Diese Lieder liegen noch als Kopie in der App, obwohl das Original auf dem Handy ist. Danach spielt die App das Original ab – Playlists, Herzen und Statistik bleiben.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
+    }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Kopien durch Verknüpfungen ersetzen?") },
+            text = { Text("${candidates.size} Kopien werden gelöscht, die App nutzt dann die Originaldateien. Löschst du später ein Original (z. B. in Samsung Music), verschwindet das Lied auch hier.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirm = false; busy = true
+                    app.scope.launch {
+                        val (count, freed) = app.library.replaceCopiesWithLinks()
+                        busy = false
+                        candidates = app.library.linkableCopies()
+                        Toast.makeText(context, "$count Lieder verknüpft – ${"%.0f".format(freed / 1_048_576.0)} MB frei", Toast.LENGTH_LONG).show()
+                    }
+                }, modifier = Modifier.testTag("linkCopiesConfirm")) { Text("Ersetzen") }
+            },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Abbrechen") } },
+        )
     }
 }

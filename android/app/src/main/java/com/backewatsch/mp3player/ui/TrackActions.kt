@@ -126,7 +126,10 @@ fun TrackActionsHost(state: TrackActionsState) {
         AlertDialog(
             onDismissRequest = { state.confirmDelete = null },
             title = { Text("Aus Mediathek entfernen?") },
-            text = { Text("„${track.title}“ wird vom Gerät gelöscht und aus allen Playlists entfernt.") },
+            text = {
+                Text(if (track.isLinked) "„${track.title}“ wird aus der Mediathek und allen Playlists entfernt. Die Originaldatei bleibt auf dem Handy."
+                    else "„${track.title}“ wird vom Gerät gelöscht und aus allen Playlists entfernt.")
+            },
             confirmButton = {
                 TextButton(onClick = { app.library.delete(track); state.confirmDelete = null }) {
                     Text("Entfernen", color = MaterialTheme.colorScheme.error)
@@ -170,13 +173,15 @@ private fun TrackMenuSheet(track: Track, playlist: Playlist?, state: TrackAction
                     close(); state.addToPlaylist = current
                 }
                 Tile("Teilen", Icons.Default.Share, Modifier.weight(1f)) {
-                    val uri = FileProvider.getUriForFile(context, context.packageName + ".files", app.library.fileOf(current))
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "audio/mpeg"
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(Intent.createChooser(send, current.title))
+                    runCatching {
+                        val uri = FileProvider.getUriForFile(context, context.packageName + ".files", app.library.fileOf(current))
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "audio/mpeg"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(send, current.title))
+                    }.onFailure { Toast.makeText(context, "Teilen nicht möglich: ${it.message}", Toast.LENGTH_LONG).show() }
                     close()
                 }
             }

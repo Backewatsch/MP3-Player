@@ -25,6 +25,9 @@ suspend fun Library.trim(
     track: Track, startMs: Long, endMs: Long, asCopy: Boolean, fadeInMs: Long = 0, fadeOutMs: Long = 0,
 ): Track {
     if (!canTrim(track)) throw Mp3Trimmer.Mp3Exception("Nur MP3-Dateien können zugeschnitten werden.")
+    if (!asCopy && (track(track.id)?.isLinked ?: track.isLinked)) {
+        throw Mp3Trimmer.Mp3Exception("Verknüpfte Lieder bleiben unverändert – bitte „Als neues Lied speichern“.")
+    }
     val original = fileOf(track)
 
     /** Schneidet zu und blendet bei Bedarf ein/aus (dann wird der Ton neu kodiert; die Tags bleiben) */
