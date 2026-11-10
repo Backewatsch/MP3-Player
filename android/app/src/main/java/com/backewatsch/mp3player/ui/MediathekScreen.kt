@@ -102,9 +102,6 @@ fun MediathekRoot() {
     val player by app.player.state.collectAsState()
     val conversion by app.library.conversionStatus.collectAsState()
     val update by app.updates.state.collectAsState()
-    var search by remember { mutableStateOf("") }
-    var searchFocused by remember { mutableStateOf(false) }
-    val recentSearches by app.recentSearches.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
     var showNewPlaylist by remember { mutableStateOf(false) }
 
@@ -118,6 +115,12 @@ fun MediathekRoot() {
 
     Column(Modifier.fillMaxSize()) {
         ScreenTopBar("Mediathek", actions = {
+            androidx.compose.material3.FilledTonalIconButton(onClick = { nav.openSearch() }, modifier = Modifier.testTag("searchButton")) {
+                Icon(Icons.Default.Search, "Suchen")
+            }
+            androidx.compose.material3.FilledTonalIconButton(onClick = { nav.showSettings = true }, modifier = Modifier.testTag("settingsButton")) {
+                Icon(Icons.Default.Settings, "Info & Updates")
+            }
             Box {
                 androidx.compose.material3.FilledIconButton(onClick = { showMenu = true }, modifier = Modifier.padding(end = 12.dp).testTag("addMenu")) { Icon(Icons.Default.Add, "Hinzufügen") }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -133,16 +136,6 @@ fun MediathekRoot() {
             }
         })
         LazyColumn(Modifier.fillMaxSize().testTag("libraryList")) {
-            item {
-                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SearchPill(search, { search = it }, "Was willst du hören?",
-                        Modifier.weight(1f).onFocusChanged { searchFocused = it.isFocused }.testTag("searchField"))
-                    Spacer(Modifier.width(8.dp))
-                    androidx.compose.material3.FilledTonalIconButton(onClick = { nav.showSettings = true }, modifier = Modifier.size(52.dp).testTag("settingsButton")) {
-                        Icon(Icons.Default.Settings, "Info & Updates")
-                    }
-                }
-            }
             (update as? UpdateChecker.State.Available)?.let { available ->
                 item {
                     Row(
@@ -160,79 +153,13 @@ fun MediathekRoot() {
                     }
                 }
             }
-            if (search.isBlank()) item { DownloadPermissionHint() }
+            item { DownloadPermissionHint() }
             conversion?.let { status ->
                 item {
                     Column(Modifier.padding(16.dp, 6.dp)) {
                         Text(status, style = MaterialTheme.typography.bodySmall)
                         LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp), color = Accent)
                     }
-                }
-            }
-
-            if (search.isNotBlank()) {
-                val results = com.backewatsch.mp3player.data.Search.run(lib, search)
-                val saveQuery = { app.rememberSearch(search) }
-                if (results.isEmpty) {
-                    item { EmptyHint("Nichts gefunden", "Zu „${search.trim()}“ gibt es keine Treffer.") }
-                    return@LazyColumn
-                }
-                if (results.artists.isNotEmpty()) {
-                    item { SectionHeader("Interpreten") }
-                    item {
-                        LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            items(results.artists, key = { "a-$it" }) { artist ->
-                                Column(Modifier.width(96.dp).clickable { saveQuery(); nav.push(LibRoute.Artist(artist)) }.testTag("result-artist-$artist"),
-                                    horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box(Modifier.clip(androidx.compose.foundation.shape.CircleShape)) {
-                                        Artwork(app.library.tracksByArtist(artist).firstOrNull(), 88.dp, 44.dp)
-                                    }
-                                    Text(artist, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(top = 6.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-                if (results.albums.isNotEmpty() || results.genres.isNotEmpty() || results.playlists.isNotEmpty()) {
-                    item { SectionHeader("Alben, Genres & Playlists") }
-                    items(results.albums, key = { "al-$it" }) { album ->
-                        ResultRow(album, "Album", Icons.Default.Album, "result-album-$album") { saveQuery(); nav.push(LibRoute.Album(album)) }
-                    }
-                    items(results.genres, key = { "g-$it" }) { genre ->
-                        ResultRow(genre, "Genre", Icons.Default.Category, "result-genre-$genre") { saveQuery(); nav.push(LibRoute.Genre(genre)) }
-                    }
-                    items(results.playlists, key = { "pl-" + it.id }) { pl ->
-                        ResultRow(pl.name, "Playlist · ${pl.trackIds.size} Titel", Icons.AutoMirrored.Filled.QueueMusic, "result-playlist-${pl.name}") {
-                            saveQuery(); nav.push(LibRoute.PlaylistDetail(pl.id))
-                        }
-                    }
-                }
-                if (results.tracks.isNotEmpty()) {
-                    item { SectionHeader("Lieder (${results.tracks.size})") }
-                    itemsIndexed(results.tracks, key = { _, t -> "s-" + t.id }) { index, track ->
-                        TrackRow(track, player.currentId == track.id, player.isPlaying,
-                            onPlay = { saveQuery(); app.player.play(results.tracks, index) }, onMore = { nav.actions.open(track) })
-                    }
-                }
-                item { Spacer(Modifier.height(24.dp)) }
-                return@LazyColumn
-            }
-
-            // Fokus im leeren Suchfeld: letzte Suchen
-            if (searchFocused && recentSearches.isNotEmpty()) {
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SectionHeader("Letzte Suchen")
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { app.clearSearches() }, modifier = Modifier.padding(end = 8.dp, top = 16.dp)) {
-                            Text("Löschen", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                items(recentSearches, key = { "r-$it" }) { q ->
-                    ResultRow(q, "Letzte Suche", Icons.Default.History, "recent-$q") { search = q }
                 }
             }
 

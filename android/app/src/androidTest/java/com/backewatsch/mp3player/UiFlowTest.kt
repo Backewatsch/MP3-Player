@@ -125,7 +125,6 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasText("Sommerhits", ignoreCase = true), 5_000)
 
         // Info & Updates
-        rule.onNodeWithTag("libraryList").performScrollToNode(hasTestTag("settingsButton"))
         rule.onNodeWithTag("settingsButton").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("currentVersion"), 5_000)
         rule.onNodeWithTag("convertAllButton").assertExists()
@@ -440,6 +439,9 @@ class UiFlowTest {
         app.clearSearches()
 
         rule.onNodeWithTag("tab-library").performClick()
+        // Suche öffnet sich über die runde Lupe oben rechts
+        rule.waitUntilAtLeastOneExists(hasTestTag("searchButton"), 5_000)
+        rule.onNodeWithTag("searchButton").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("searchField"), 5_000)
         rule.onNodeWithTag("searchField").performTextInput("bella")
         rule.waitUntilAtLeastOneExists(hasTestTag("result-artist-Bella"), 5_000)
@@ -453,6 +455,8 @@ class UiFlowTest {
         rule.onNodeWithTag("searchField").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("recent-bella"), 5_000)
         screenshot("a33-Letzte-Suchen")
+        rule.onNodeWithContentDescription("Zurück").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("libraryList"), 5_000)
 
         // Genres
         rule.onNodeWithTag("libraryList").performScrollToNode(hasTestTag("category-Genres"))

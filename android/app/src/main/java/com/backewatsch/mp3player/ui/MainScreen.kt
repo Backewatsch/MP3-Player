@@ -84,8 +84,22 @@ class AppNavigation {
 
     fun pop(): Boolean {
         if (libraryStack.size <= 1) return false
-        libraryStack.removeAt(libraryStack.lastIndex)
+        val closed = libraryStack.removeAt(libraryStack.lastIndex)
+        // Suche vom Start-Tab aus geöffnet → „Zurück“ führt wieder dorthin
+        if (closed == LibRoute.Search && searchFromStart) { searchFromStart = false; tab = TAB_START }
         return true
+    }
+
+    /** Text im Suchfeld – bleibt erhalten, wenn man aus einem Treffer zurückkommt */
+    var searchQuery by mutableStateOf("")
+    private var searchFromStart = false
+
+    /** Suche öffnen (rundes Lupen-Symbol auf Start und Mediathek) */
+    fun openSearch() {
+        searchFromStart = tab == TAB_START
+        searchQuery = ""
+        libraryStack.retainAll(listOf(LibRoute.Root))
+        push(LibRoute.Search)
     }
 }
 

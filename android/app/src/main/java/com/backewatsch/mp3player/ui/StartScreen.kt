@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.graphics.Color
@@ -81,6 +82,10 @@ fun StartScreen() {
                     Text(greeting(), style = MaterialTheme.typography.headlineMedium)
                     Text("ILLEGAL FREEDOM MUSIC", style = MaterialTheme.typography.labelMedium, color = Accent,
                         fontFamily = CyberMono, letterSpacing = 2.sp)
+                }
+                androidx.compose.material3.FilledTonalIconButton(onClick = { nav.openSearch() },
+                    modifier = Modifier.padding(end = 10.dp).testTag("startSearch")) {
+                    Icon(androidx.compose.material.icons.Icons.Default.Search, "Suchen")
                 }
                 Box(Modifier.clickable { nav.showSettings = true }.testTag("startSettings")) { Artwork(null, 40.dp, 20.dp) }
             }
