@@ -601,7 +601,7 @@ final class AudioPlayerTests: XCTestCase {
     func testRestoresQueueAfterPreview() {
         player.play(Array(tracks.prefix(2)), startAt: 1)
         player.pause()
-        let saved = player.saveQueue()
+        let saved = player.snapshotQueue()
         player.play([tracks[2]], startAt: 0)
         XCTAssertEqual(player.current?.id, tracks[2].id)
         player.restoreQueue(saved)
@@ -611,7 +611,7 @@ final class AudioPlayerTests: XCTestCase {
 
         // Vorher lief nichts → danach ist die Wiedergabeliste wieder leer
         player.stop()
-        let empty = player.saveQueue()
+        let empty = player.snapshotQueue()
         player.play([tracks[2]], startAt: 0)
         player.restoreQueue(empty)
         XCTAssertTrue(player.queue.isEmpty)

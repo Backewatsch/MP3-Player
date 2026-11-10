@@ -421,7 +421,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         fileprivate let allTracks: Bool
     }
 
-    func saveQueue() -> SavedQueue {
+    func snapshotQueue() -> SavedQueue {
         SavedQueue(queue: queue, originalOrder: originalOrder, currentID: current?.id, time: currentTime, playing: isPlaying,
                    playlistID: sourcePlaylistID, allTracks: queueIsAllTracks)
     }

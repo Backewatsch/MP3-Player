@@ -295,7 +295,7 @@ struct TrimView: View {
     private func preview(from: Double, until: Double) {
         previewTask?.cancel()
         if player.current?.id != track.id {
-            if savedQueue == nil { savedQueue = player.saveQueue() }
+            if savedQueue == nil { savedQueue = player.snapshotQueue() }
             player.play([track], startAt: 0)
         }
         else if !player.isPlaying { player.resume() }

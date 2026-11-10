@@ -316,8 +316,12 @@ class MoreFeaturesTest {
     /** Probehören im Zuschneider: Wiedergabeliste wird gemerkt und danach wiederhergestellt */
     @Test fun restoresQueueAfterPreview() {
         val a = add("Liste1"); val b = add("Liste2"); val c = add("Probe")
-        instrumentation.runOnMainSync { app.player.play(listOf(a, b), 1) }
-        waitFor("Wiedergabe startet") { app.player.state.value.currentId == b.id }
+        // Titel wiederholen: die Testlieder sind nur wenige Sekunden lang und wären sonst mitten im Test zu Ende
+        instrumentation.runOnMainSync {
+            app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE)
+            app.player.play(listOf(a, b), 1)
+        }
+        waitFor("Wiedergabe startet") { app.player.state.value.let { it.currentId == b.id && it.isPlaying } }
         var saved: com.backewatsch.mp3player.player.PlayerConnection.SavedQueue? = null
         instrumentation.runOnMainSync { saved = app.player.saveQueue(); app.player.play(listOf(c), 0) }
         waitFor("Probehören läuft") { app.player.state.value.currentId == c.id }
@@ -326,6 +330,7 @@ class MoreFeaturesTest {
             val s = app.player.state.value
             s.currentId == b.id && s.queueIds == listOf(a.id, b.id) && s.isPlaying
         }
+        instrumentation.runOnMainSync { app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_OFF) }
 
         // Vorher lief nichts → danach ist die Wiedergabeliste wieder leer
         instrumentation.runOnMainSync { app.player.stop() }
