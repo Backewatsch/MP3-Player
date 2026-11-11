@@ -305,7 +305,8 @@ final class MP3PlayerUITests: XCTestCase {
         screenshot("13a-Einstellungen-Ordner")
         let create = app.buttons["backupCreate"].firstMatch
         XCTAssertTrue(reveal(create), "Sicherung fehlt")
-        XCTAssertTrue(app.buttons["backupRestore"].firstMatch.waitForExistence(timeout: 5), "Wiederherstellen fehlt")
+        // Listen legen Zeilen erst an, wenn sie zu sehen sind – deshalb auch hierhin scrollen
+        XCTAssertTrue(reveal(app.buttons["backupRestore"].firstMatch), "Wiederherstellen fehlt")
         screenshot("13b-Einstellungen-Sicherung")
         XCTAssertTrue(reveal(app.buttons["convertAllButton"].firstMatch), "Konverter fehlt")
         // „Sicherung erstellen“ fragt: mit Musik oder nur die Listen
