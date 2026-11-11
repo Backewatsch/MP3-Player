@@ -253,6 +253,68 @@ final class FullBackupTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(library.playCount(testlied), 7)
     }
 
+    /// Die Android-App sichert zwei Lieder mit gleichem Dateinamen (aus verschiedenen Ordnern) als „Name“ und „<id>__Name“.
+    /// Beide müssen zurückkommen – auch wenn auf dem iPhone schon eine andere Datei mit diesem Namen liegt.
+    func testRestoresTwoSongsWithTheSameFileName() async throws {
+        let tag = String(UUID().uuidString.prefix(6))
+        let name = "Test-\(tag) Intro.mp3"
+        // Auf dem iPhone liegt schon ein anderes Lied mit demselben Dateinamen
+        let local = try await library.importAudio(from: try Fixture.tempCopy("untagged.mp3", as: name), move: true)
+        let localData = try Data(contentsOf: local.fileURL)
+
+        let a = Track(id: UUID(), fileName: name, title: "Intro A \(tag)", artist: "Band A", duration: 3.03,
+                      addedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let b = Track(id: UUID(), fileName: name, title: "Intro B \(tag)", artist: "Band B", duration: 2.04,
+                      addedAt: Date(timeIntervalSince1970: 1_700_000_100))
+        let playlist = Playlist(id: UUID(), name: "Test-Intros", trackIDs: [b.id, a.id])
+        let state = LibraryState(tracks: [a, b], playlists: [playlist], pinned: [], favorites: [b.id])
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Doppelt-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("sicherung.zip")
+        let zip = try ZipWriter(url: url)
+        try zip.add(name: "library.json", data: try PortableBackup.encode(state))
+        try zip.add(name: "music/" + name, fileAt: Fixture.url("tagged.mp3"))
+        try zip.add(name: "music/" + b.id.uuidString.lowercased() + "__" + name, fileAt: Fixture.url("long.mp3"))
+        try zip.finish()
+
+        let result = try await library.restoreFull(from: url)
+        XCTAssertEqual(result.restored, 2, "beide Lieder kommen aus der Sicherung")
+        XCTAssertEqual(result.missing, 0)
+        let backA = try XCTUnwrap(library.tracks.first { $0.title == "Intro A \(tag)" })
+        let backB = try XCTUnwrap(library.tracks.first { $0.title == "Intro B \(tag)" })
+        XCTAssertNotEqual(backA.id, local.id)
+        XCTAssertNotEqual(backB.id, local.id)
+        XCTAssertNotEqual(backA.id, backB.id)
+        XCTAssertEqual(try Data(contentsOf: backA.fileURL), try Data(contentsOf: Fixture.url("tagged.mp3")))
+        XCTAssertEqual(try Data(contentsOf: backB.fileURL), try Data(contentsOf: Fixture.url("long.mp3")))
+        XCTAssertEqual(try Data(contentsOf: local.fileURL), localData, "das vorhandene Lied bleibt unverändert")
+        XCTAssertTrue(library.isFavorite(backB))
+        XCTAssertFalse(library.isFavorite(backA))
+        XCTAssertEqual(library.playlists.first { $0.name == "Test-Intros" }?.trackIDs, [backB.id, backA.id])
+    }
+
+    /// Eine Sicherung auf demselben iPhone wiederherstellen: Verlauf und Statistik zählen nichts doppelt
+    func testRestoringOnTheSamePhoneDoublesNothing() async throws {
+        let tag = String(UUID().uuidString.prefix(6))
+        let song = try await library.importAudio(from: try Fixture.tempCopy("tagged.mp3", as: "Test-Gleich-\(tag).mp3"), move: true)
+        library.recordStart(song.id)
+        library.recordPlay(song.id)
+        let beforeState = library.stateSnapshot
+        let url = try await library.makeFullBackup()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let result = try await library.restoreFull(from: url)
+        XCTAssertEqual(result.restored, 0, "alle Lieder sind schon da")
+        let afterState = library.stateSnapshot
+        XCTAssertEqual(afterState.tracks.count, beforeState.tracks.count)
+        XCTAssertEqual(afterState.plays.filter { $0.trackID == song.id }.count, 1)
+        XCTAssertEqual(afterState.history.filter { $0.trackID == song.id }.count,
+                       beforeState.history.filter { $0.trackID == song.id }.count)
+        XCTAssertEqual(afterState.plays.count, beforeState.plays.count)
+        XCTAssertEqual(library.playCount(song), 1)
+    }
+
     func testRefusesFilesThatAreNoBackup() async throws {
         do {
             _ = try await library.restoreFull(from: Fixture.url("zip64.zip"))
@@ -314,7 +376,7 @@ final class FolderScannerTests: XCTestCase {
         let scanner = FolderScanner(storeURL: store)
         scanner.library = library
         let added = await scanner.add(root)
-        XCTAssertEqual(added, 2, scanner.status ?? "")
+        XCTAssertEqual(added, .scanned(.init(added: 2, failed: 0)), scanner.status ?? "")
         XCTAssertEqual(scanner.folders.count, 1)
         XCTAssertEqual(scanner.folders.first?.seen.count, 2)
         XCTAssertEqual(mine().count, 2)
@@ -323,7 +385,7 @@ final class FolderScannerTests: XCTestCase {
 
         // Zweite Suche: nichts doppelt. Denselben Ordner noch einmal hinzufügen: bleibt ein Eintrag.
         let second = await scanner.scan(force: true)
-        XCTAssertEqual(second, 0)
+        XCTAssertEqual(second?.added, 0)
         _ = await scanner.add(root)
         XCTAssertEqual(scanner.folders.count, 1)
         XCTAssertEqual(mine().count, 2)
@@ -331,7 +393,7 @@ final class FolderScannerTests: XCTestCase {
         // In der App gelöscht → kommt bei der nächsten Suche nicht zurück
         library.delete(mine()[0])
         let third = await scanner.scan(force: true)
-        XCTAssertEqual(third, 0)
+        XCTAssertEqual(third?.added, 0)
         XCTAssertEqual(mine().count, 1)
 
         // Neues Lied im Ordner → wird übernommen, auch nach einem Neustart (die Ordnerliste ist gespeichert)
@@ -340,10 +402,47 @@ final class FolderScannerTests: XCTestCase {
         restarted.library = library
         XCTAssertEqual(restarted.folders.count, 1)
         let fourth = await restarted.scan(force: true)
-        XCTAssertEqual(fourth, 1, restarted.status ?? "")
+        XCTAssertEqual(fourth?.added, 1, restarted.status ?? "")
         XCTAssertTrue(library.tracks.contains { $0.fileName == "Scan-\(tag)-c.mp3" })
 
         restarted.remove(restarted.folders[0])
         XCTAssertTrue(restarted.folders.isEmpty)
+    }
+
+    /// Ordner entfernt und neu hinzugefügt: Nichts kommt doppelt – auch kein Lied, das beim Übernehmen zu MP3 umgewandelt wurde
+    func testReaddedFolderBringsNoDuplicates() async throws {
+        let tag = String(UUID().uuidString.prefix(6))
+        try put("tagged.mp3", at: "Scan-\(tag)-a.mp3")
+        try put("short.m4a", at: "Alben/Scan-\(tag)-d.m4a")
+        func mine() -> [Track] { library.tracks.filter { $0.fileName.hasPrefix("Scan-\(tag)-") } }
+
+        let scanner = FolderScanner(storeURL: store)
+        scanner.library = library
+        let first = await scanner.add(root)
+        XCTAssertEqual(first, .scanned(.init(added: 2, failed: 0)), scanner.status ?? "")
+        XCTAssertTrue(mine().contains { $0.fileName == "Scan-\(tag)-d.mp3" }, "M4A wird als MP3 übernommen")
+
+        scanner.remove(scanner.folders[0])
+        let again = await scanner.add(root)
+        XCTAssertEqual(again, .scanned(.init(added: 0, failed: 0)), scanner.status ?? "")
+        XCTAssertEqual(mine().count, 2)
+    }
+
+    /// Eine Datei, die sich nicht übernehmen lässt, versucht die nächste Suche erneut – nach drei Fehlschlägen nicht mehr
+    func testFailedFilesAreRetriedThreeTimes() async throws {
+        let tag = String(UUID().uuidString.prefix(6))
+        try Data(repeating: 0x42, count: 4096).write(to: root.appendingPathComponent("Scan-\(tag)-kaputt.m4a"))
+        let scanner = FolderScanner(storeURL: store)
+        scanner.library = library
+        let first = await scanner.add(root)
+        XCTAssertEqual(first, .scanned(.init(added: 0, failed: 1)), scanner.status ?? "")
+        XCTAssertEqual(scanner.folders.first?.seen.count, 0, "nicht als erledigt vermerkt")
+        let second = await scanner.scan(force: true)
+        XCTAssertEqual(second?.failed, 1, "zweiter Versuch")
+        let third = await scanner.scan(force: true)
+        XCTAssertEqual(third?.failed, 1, "dritter Versuch")
+        let fourth = await scanner.scan(force: true)
+        XCTAssertEqual(fourth?.failed, 0, "nach drei Fehlschlägen gibt die App auf")
+        XCTAssertEqual(scanner.folders.first?.seen.count, 1)
     }
 }

@@ -49,7 +49,7 @@ struct MediathekView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     UpdateBanner { showSettings = true }
-                    if let status = library.conversionStatus ?? (folders.isScanning ? folders.status : nil) {
+                    if let status = library.conversionStatus ?? (folders.isImporting ? folders.status : nil) {
                         HStack(spacing: 10) {
                             ProgressView()
                             Text(status).font(.footnote).lineLimit(2)
@@ -103,8 +103,16 @@ struct MediathekView: View {
                         // Ordner merken und durchsuchen; der Fortschritt steht oben in der Mediathek
                         guard let folder = urls.first else { return }
                         Task {
-                            let added = await folders.add(folder)
-                            Notice.show(added == 0 ? "Keine neuen Lieder im Ordner" : "\(added) neue Lieder übernommen", symbol: "folder")
+                            switch await folders.add(folder) {
+                            case .scanned(let result):
+                                var text = result.added == 0 ? "Keine neuen Lieder im Ordner" : "\(result.added) neue Lieder übernommen"
+                                if result.failed > 0 { text += " · \(result.failed) Dateien ließen sich nicht übernehmen" }
+                                Notice.show(text, symbol: result.failed > 0 ? "exclamationmark.triangle.fill" : "folder")
+                            case .queued:
+                                Notice.show("Ordner gemerkt – er wird gleich mit durchsucht", symbol: "folder")
+                            case .failed(let reason):
+                                Notice.show(reason, symbol: "exclamationmark.triangle.fill")
+                            }
                         }
                         return
                     }

@@ -189,7 +189,11 @@ extension Library {
         guard let indexEntry = zip.entry(named: PortableBackup.index),
               let decoded = PortableBackup.decode(try zip.data(of: indexEntry)) else { throw BackupError.notABackup }
         let backup = decoded.state
+        // Nur Lieder, die schon vor dem Wiederherstellen da waren, gelten als „vorhanden“ –
+        // sonst würde ein gerade zurückgeholtes Lied ein zweites mit gleichem Dateinamen verschlucken
+        var matcher = RestoreMatcher(existing: tracks)
         var idMap: [UUID: UUID] = [:]
+        var restoredCovers: [UUID] = []
         var restored = 0
         var missing = 0
         let folder = Storage.makeIncomingDirectory()
@@ -197,14 +201,18 @@ extension Library {
 
         for (n, saved) in backup.tracks.enumerated() {
             progress(n + 1, backup.tracks.count)
-            if let existing = matchingTrack(for: saved) {
+            let raw = decoded.rawIDs[saved.id] ?? saved.id.uuidString.lowercased()
+            // Gibt es einen Dateinamen zweimal, schreibt die Android-App die Kennung davor („<id>__Name.mp3“) –
+            // dieser Eintrag gehört eindeutig zu diesem Lied und wird deshalb zuerst gesucht
+            let entry = zip.entry(named: PortableBackup.music + raw + "__" + saved.fileName)
+                ?? zip.entry(named: PortableBackup.music + saved.fileName)
+            if let existing = matcher.match(saved, archivedSize: entry?.size) {
                 idMap[saved.id] = existing.id
+                // Bei großen Mediatheken ab und zu Luft lassen, damit die Fortschrittsanzeige weiterläuft
+                if n % 200 == 199 { try? await Task.sleep(nanoseconds: 1_000_000) }
                 continue
             }
-            let raw = decoded.rawIDs[saved.id] ?? saved.id.uuidString.lowercased()
-            // Bei gleichem Dateinamen zweimal hängt die Android-App die Kennung davor
-            guard let entry = zip.entry(named: PortableBackup.music + saved.fileName)
-                    ?? zip.entry(named: PortableBackup.music + raw + "__" + saved.fileName) else {
+            guard let entry else {
                 missing += 1
                 continue
             }
@@ -215,10 +223,12 @@ extension Library {
                 let track = try await importAudio(from: temp, move: true)
                 idMap[saved.id] = track.id
                 restored += 1
+                let isCustom = backup.customCovers.contains(saved.id)
                 if let art = zip.entry(named: PortableBackup.artwork + raw + ".jpg"),
-                   backup.customCovers.contains(saved.id) || !FileManager.default.fileExists(atPath: track.artworkURL.path) {
-                    try? zip.extract(art, to: track.artworkURL)
+                   isCustom || !FileManager.default.fileExists(atPath: track.artworkURL.path),
+                   (try? zip.extract(art, to: track.artworkURL)) != nil {
                     ArtworkCache.shared.remove(track.id)
+                    if isCustom { restoredCovers.append(track.id) }
                 }
                 adoptBackupInfo(track.id, from: saved)
             } catch {
@@ -228,8 +238,45 @@ extension Library {
         }
 
         applyRestore(backup: backup, map: { ids in ids.compactMap { idMap[$0] } })
-        applyRestoreExtras(lyrics: backup.lyrics, customCovers: backup.customCovers, map: { idMap[$0] })
+        applyRestoreExtras(lyrics: backup.lyrics, map: { idMap[$0] }, restoredCovers: restoredCovers)
         return FullRestoreResult(restored: restored, matched: idMap.count - restored, missing: missing,
                                  playlists: backup.playlists.count)
+    }
+}
+
+/// Findet Lieder aus einer Sicherung unter den Liedern, die vor dem Wiederherstellen schon in der App waren:
+/// über die Kennung, über Titel + Interpret + Länge oder – nur wenn auch die Dateigröße stimmt – über den Dateinamen.
+/// Nachschlagetabellen statt Suchen, damit auch Mediatheken mit tausenden Liedern flott gehen.
+private struct RestoreMatcher {
+    private var byID: [UUID: Track] = [:]
+    private var byTitle: [String: [Track]] = [:]
+    private var byFileName: [String: Track] = [:]
+    /// Über den Dateinamen zugeordnete Lieder – jedes höchstens einmal
+    private var claimedByName = Set<UUID>()
+
+    init(existing: [Track]) {
+        for track in existing {
+            byID[track.id] = track
+            byTitle[Self.key(track), default: []].append(track)
+            if byFileName[track.fileName] == nil { byFileName[track.fileName] = track }
+        }
+    }
+
+    private static func key(_ track: Track) -> String {
+        track.title.lowercased() + "\u{1}" + track.artist.lowercased()
+    }
+
+    /// - Parameter archivedSize: Größe der Datei in der Sicherung (`nil`, wenn sie dort fehlt)
+    mutating func match(_ saved: Track, archivedSize: UInt64?) -> Track? {
+        if let track = byID[saved.id] { return track }
+        if let track = byTitle[Self.key(saved)]?.first(where: { abs($0.duration - saved.duration) < 2 }) { return track }
+        guard let track = byFileName[saved.fileName], !claimedByName.contains(track.id) else { return nil }
+        if let archivedSize {
+            // Gleicher Name, aber andere Datei (z. B. „Track 01.mp3“ aus einem anderen Album): aus der Sicherung holen
+            let attributes = try? FileManager.default.attributesOfItem(atPath: track.fileURL.path)
+            guard (attributes?[.size] as? NSNumber)?.uint64Value == archivedSize else { return nil }
+        }
+        claimedByName.insert(track.id)
+        return track
     }
 }

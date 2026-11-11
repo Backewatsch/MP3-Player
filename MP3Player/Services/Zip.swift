@@ -240,11 +240,14 @@ final class ZipReader: @unchecked Sendable {
         var crc: UInt32 = 0
         var remaining = entry.compressedSize
         while remaining > 0 {
-            let chunk = try handle.read(upToCount: Int(min(remaining, UInt64(Self.chunkSize)))) ?? Data()
-            guard !chunk.isEmpty else { throw ZipError.damaged(entry.name) }
-            remaining -= UInt64(chunk.count)
-            crc = CRC32.update(crc, chunk)
-            try sink(chunk)
+            // Jedes gelesene Stück gleich wieder freigeben – sonst sammeln sich bei großen Liedern viele MB im Speicher
+            try autoreleasepool { () throws -> Void in
+                let chunk = try handle.read(upToCount: Int(min(remaining, UInt64(Self.chunkSize)))) ?? Data()
+                guard !chunk.isEmpty else { throw ZipError.damaged(entry.name) }
+                remaining -= UInt64(chunk.count)
+                crc = CRC32.update(crc, chunk)
+                try sink(chunk)
+            }
         }
         return crc
     }
@@ -263,36 +266,44 @@ final class ZipReader: @unchecked Sendable {
 
         var crc: UInt32 = 0
         var remaining = entry.compressedSize
-        while true {
-            var chunk = Data()
-            if remaining > 0 {
-                chunk = try handle.read(upToCount: Int(min(remaining, UInt64(Self.chunkSize)))) ?? Data()
-                guard !chunk.isEmpty else { throw ZipError.damaged(entry.name) }
-                remaining -= UInt64(chunk.count)
+        var finished = false
+        while !finished {
+            // Jedes Stück gleich wieder freigeben – sonst sammeln sich bei großen Liedern viele MB im Speicher
+            try autoreleasepool { () throws -> Void in
+                var chunk = Data()
+                if remaining > 0 {
+                    chunk = try handle.read(upToCount: Int(min(remaining, UInt64(Self.chunkSize)))) ?? Data()
+                    guard !chunk.isEmpty else { throw ZipError.damaged(entry.name) }
+                    remaining -= UInt64(chunk.count)
+                }
+                let last = remaining == 0
+                var status = COMPRESSION_STATUS_OK
+                try chunk.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Void in
+                    stream.pointee.src_ptr = raw.bindMemory(to: UInt8.self).baseAddress ?? UnsafePointer(output)
+                    stream.pointee.src_size = raw.count
+                    repeat {
+                        stream.pointee.dst_ptr = output
+                        stream.pointee.dst_size = outputSize
+                        status = compression_stream_process(stream, last ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0)
+                        guard status != COMPRESSION_STATUS_ERROR else { throw ZipError.damaged(entry.name) }
+                        let produced = outputSize - stream.pointee.dst_size
+                        if produced > 0 {
+                            let block = Data(bytes: output, count: produced)
+                            crc = CRC32.update(crc, block)
+                            try sink(block)
+                        }
+                        // weiter, solange noch Eingabe da ist oder der Ausgabepuffer ganz voll war (dann wartet noch mehr)
+                    } while status == COMPRESSION_STATUS_OK && (stream.pointee.src_size > 0 || stream.pointee.dst_size == 0)
+                }
+                if status == COMPRESSION_STATUS_END {
+                    finished = true
+                } else if last {
+                    // Alle Daten gelesen, aber der gepackte Strom ist nicht zu Ende: abgeschnitten
+                    throw ZipError.damaged(entry.name)
+                }
             }
-            let last = remaining == 0
-            var status = COMPRESSION_STATUS_OK
-            try chunk.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Void in
-                stream.pointee.src_ptr = raw.bindMemory(to: UInt8.self).baseAddress ?? UnsafePointer(output)
-                stream.pointee.src_size = raw.count
-                repeat {
-                    stream.pointee.dst_ptr = output
-                    stream.pointee.dst_size = outputSize
-                    status = compression_stream_process(stream, last ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0)
-                    guard status != COMPRESSION_STATUS_ERROR else { throw ZipError.damaged(entry.name) }
-                    let produced = outputSize - stream.pointee.dst_size
-                    if produced > 0 {
-                        let block = Data(bytes: output, count: produced)
-                        crc = CRC32.update(crc, block)
-                        try sink(block)
-                    }
-                    // weiter, solange noch Eingabe da ist oder der Ausgabepuffer ganz voll war (dann wartet noch mehr)
-                } while status == COMPRESSION_STATUS_OK && (stream.pointee.src_size > 0 || stream.pointee.dst_size == 0)
-            }
-            if status == COMPRESSION_STATUS_END { return crc }
-            // Alle Daten gelesen, aber der gepackte Strom ist nicht zu Ende: abgeschnitten
-            if last { throw ZipError.damaged(entry.name) }
         }
+        return crc
     }
 }
 
@@ -326,7 +337,15 @@ final class ZipWriter {
         let source = try FileHandle(forReadingFrom: url)
         defer { try? source.close() }
         try add(name: name) { write in
-            while let chunk = try source.read(upToCount: 1 << 18), !chunk.isEmpty { try write(chunk) }
+            var more = true
+            while more {
+                // Jedes gelesene Stück gleich wieder freigeben – sonst wüchse der Speicher bis zur Größe der ganzen Mediathek
+                more = try autoreleasepool { () throws -> Bool in
+                    guard let chunk = try source.read(upToCount: 1 << 18), !chunk.isEmpty else { return false }
+                    try write(chunk)
+                    return true
+                }
+            }
         }
     }
 
@@ -396,7 +415,7 @@ final class ZipWriter {
             b.u16(0)                 // Kommentar
             b.u16(0)                 // Datenträger
             b.u16(0)                 // interne Merkmale
-            b.u32(0)                 // externe Merkmale
+            b.u32(UInt64(0o100644) << 16)   // externe Merkmale: normale Datei (rw-r--r--), sonst entpackt ein Mac sie gesperrt
             b.u32(big ? 0xFFFF_FFFF : entry.offset)
             b.data.append(entry.name)
             if big {

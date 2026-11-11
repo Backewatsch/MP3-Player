@@ -374,14 +374,16 @@ final class Library: ObservableObject {
         let accessing = source.startAccessingSecurityScopedResource()
         defer { if accessing { source.stopAccessingSecurityScopedResource() } }
 
-        let destination = Self.uniqueDestination(for: name)
-        importing.insert(destination.lastPathComponent)
+        let destination = reserveDestination(for: name)
         defer { importing.remove(destination.lastPathComponent) }
         let fm = FileManager.default
         if move {
             try fm.moveItem(at: source, to: destination)
         } else {
-            try fm.copyItem(at: source, to: destination)
+            // Kopieren abseits der Oberfläche: Ordner auf USB-Sticks, Netzlaufwerken oder in iCloud brauchen spürbar Zeit
+            try await Task.detached(priority: .userInitiated) {
+                try FileManager.default.copyItem(at: source, to: destination)
+            }.value
         }
 
         let track: Track
@@ -407,14 +409,6 @@ final class Library: ObservableObject {
         return track
     }
 
-    /// Liegt eine Datei mit diesem Namen und dieser Größe schon in der App? (Ordner-Suche: nicht doppelt übernehmen)
-    func hasFile(named name: String, size: Int) -> Bool {
-        let clean = Self.sanitize(name)
-        guard tracks.contains(where: { $0.fileName == clean }) else { return false }
-        let attributes = try? FileManager.default.attributesOfItem(atPath: Storage.documents.appendingPathComponent(clean).path)
-        return (attributes?[.size] as? NSNumber)?.intValue == size
-    }
-
     // MARK: Umwandeln in MP3
 
     /// Titel, die noch nicht im MP3-Format vorliegen (z. B. per Finder kopierte M4A/WAV)
@@ -432,8 +426,7 @@ final class Library: ObservableObject {
         let converted = try await AudioConverter.convertToMP3(oldURL, baseName: baseName)
         defer { try? FileManager.default.removeItem(at: converted.deletingLastPathComponent()) }
 
-        let destination = Self.uniqueDestination(for: "\(baseName).mp3")
-        importing.insert(destination.lastPathComponent)
+        let destination = reserveDestination(for: "\(baseName).mp3")
         defer { importing.remove(destination.lastPathComponent) }
         try FileManager.default.moveItem(at: converted, to: destination)
 
@@ -730,7 +723,10 @@ final class Library: ObservableObject {
             var seen = Set<String>()
             let mapped = b.compactMap { e in map([e.trackID]).first.map { PlayEvent(trackID: $0, at: e.at) } }
             var merged: [PlayEvent] = []
-            for e in a + mapped where seen.insert("\(e.trackID)-\(e.at.timeIntervalSince1970)").inserted { merged.append(e) }
+            // Auf die Millisekunde genau vergleichen: so genau speichert die Komplett-Sicherung (wie die Android-App) die Zeiten
+            for e in a + mapped where seen.insert("\(e.trackID)-\(Int64((e.at.timeIntervalSince1970 * 1000).rounded()))").inserted {
+                merged.append(e)
+            }
             merged.sort { x, y in x.at > y.at }
             return Array(merged.prefix(limit))
         }
@@ -750,14 +746,13 @@ final class Library: ObservableObject {
         save()
     }
 
-    /// Songtexte und eigene Cover aus einer Sicherung übernehmen (`map` ordnet die Kennungen zu)
-    func applyRestoreExtras(lyrics: [UUID: String], customCovers saved: [UUID], map: (UUID) -> UUID?) {
+    /// Songtexte aus einer Sicherung übernehmen (`map` ordnet die Kennungen zu) und Lieder als „eigenes Cover“ markieren,
+    /// deren Cover beim Wiederherstellen aus der Sicherung kam
+    func applyRestoreExtras(lyrics: [UUID: String], map: (UUID) -> UUID?, restoredCovers: [UUID]) {
         for (old, words) in lyrics {
             if let id = map(old), lyricsByID[id] == nil { lyricsByID[id] = words }
         }
-        for old in saved {
-            if let id = map(old), !customCovers.contains(id) { customCovers.append(id) }
-        }
+        for id in restoredCovers where !customCovers.contains(id) { customCovers.append(id) }
         coverVersion += 1
         save()
     }
@@ -813,16 +808,19 @@ final class Library: ObservableObject {
 
     }
 
-    nonisolated static func uniqueDestination(for name: String) -> URL {
+    /// Freier Dateiname im Musikordner, vorgemerkt für diesen Import – auch gegen einen gleichzeitigen Import
+    /// mit demselben Namen, dessen Datei noch nicht fertig kopiert ist
+    private func reserveDestination(for name: String) -> URL {
         let fm = FileManager.default
         let base = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
         var candidate = Storage.documents.appendingPathComponent(name)
         var n = 2
-        while fm.fileExists(atPath: candidate.path) {
-            candidate = Storage.documents.appendingPathComponent("\(base) (\(n)).\(ext)")
+        while fm.fileExists(atPath: candidate.path) || importing.contains(candidate.lastPathComponent) {
+            candidate = Storage.documents.appendingPathComponent(ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)")
             n += 1
         }
+        importing.insert(candidate.lastPathComponent)
         return candidate
     }
 

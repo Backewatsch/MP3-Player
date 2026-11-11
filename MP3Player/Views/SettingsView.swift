@@ -190,11 +190,19 @@ struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showSound) { SoundView(sound: player.sound) }
+            // Die Datei-Dialoge hängen an festen, unsichtbaren Ansichten: Zeilen einer Liste gibt es nur, solange sie
+            // zu sehen sind – ein Dialog an einer weggescrollten Zeile ginge nicht auf. Jeder Dialog hat seine eigene Ansicht.
+            .background { fileDialogs }
             .navigationTitle("Info & Updates")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { dismiss() }
+                        .disabled(backupBusy)
+                }
             }
+            // Während einer Sicherung oder Wiederherstellung offen lassen – sonst ginge das Ergebnis verloren
+            .interactiveDismissDisabled(backupBusy)
             .task {
                 if updates.state == .idle { await updates.check() }
             }
@@ -219,27 +227,13 @@ struct SettingsView: View {
                 Label("Ordner hinzufügen", systemImage: "folder.badge.plus")
             }
             .accessibilityIdentifier("addMusicFolder")
-            // Ein gemeinsamer Datei-Dialog: Ordner mit Musik wählen oder Sicherung öffnen.
-            // Jeder Datei-Dialog hängt an einer eigenen Zeile – mehrere an derselben Ansicht stören sich gegenseitig.
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: pickFolder ? [.folder] : [.json, .zip]) { result in
-                switch result {
-                case .success(let url):
-                    if pickFolder {
-                        Task { await folders.add(url) }
-                    } else {
-                        restore(from: url)
-                    }
-                case .failure(let error):
-                    if !pickFolder { backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)" }
-                }
-            }
             if !folders.folders.isEmpty {
                 Button { Task { await folders.scan(force: true) } } label: {
                     Label("Jetzt durchsuchen", systemImage: "arrow.clockwise")
                 }
                 .disabled(folders.isScanning)
             }
-            if let status = folders.status {
+            if let status = folders.status ?? (folders.isScanning ? "Suche nach neuen Liedern …" : nil) {
                 HStack(spacing: 10) {
                     if folders.isScanning { ProgressView() }
                     Text(status).font(.footnote).foregroundStyle(.secondary)
@@ -253,22 +247,31 @@ struct SettingsView: View {
         }
     }
 
-    /// Sicherung erstellen (mit oder ohne Musik) und wiederherstellen
-    @ViewBuilder private var backupSection: some View {
-        Section {
-            Button { confirmBackup = true } label: { Label("Sicherung erstellen", systemImage: "square.and.arrow.up") }
-                .disabled(backupBusy)
-                .accessibilityIdentifier("backupCreate")
-                .confirmationDialog("Was soll gesichert werden?", isPresented: $confirmBackup, titleVisibility: .visible) {
-                    Button("Alles mit Musik (große Datei)") { createFullBackup() }
-                    Button("Nur Playlists, Herzen und Statistik") {
-                        exportDocument = try? BackupDocument(state: library.stateSnapshot)
-                        showExporter = exportDocument != nil
+    /// Datei-Dialoge: Ordner oder Sicherung öffnen, kleine Sicherung speichern, Komplett-Sicherung ablegen
+    private var fileDialogs: some View {
+        ZStack {
+            Color.clear
+                .fileImporter(isPresented: $showImporter, allowedContentTypes: pickFolder ? [.folder] : [.json, .zip]) { result in
+                    switch result {
+                    case .success(let url):
+                        if pickFolder {
+                            Task { await folders.add(url) }
+                        } else {
+                            restore(from: url)
+                        }
+                    case .failure(let error):
+                        if !pickFolder { backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)" }
                     }
-                    Button("Abbrechen", role: .cancel) {}
-                } message: {
-                    Text("„Alles mit Musik“ ist für ein neues Handy gedacht. Die Datei lässt sich auch in der Android-App wiederherstellen.")
                 }
+            Color.clear
+                .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .json,
+                              defaultFilename: "ILLEGAL-FREEDOM-MUSIC-Sicherung") { result in
+                    switch result {
+                    case .success: backupStatus = "✓ Sicherung gespeichert."
+                    case .failure(let error): backupStatus = "Sicherung fehlgeschlagen: \(error.localizedDescription)"
+                    }
+                }
+            Color.clear
                 // Die fertige Komplett-Sicherung an einen Ort in der Dateien-App legen
                 .modifier(BackupMover(isPresented: $showMover, file: fullBackupURL, onDone: { result in
                     switch result {
@@ -280,18 +283,45 @@ struct SettingsView: View {
                     backupStatus = "Sicherung nicht gespeichert."
                     discardFullBackup()
                 }))
+                .onChange(of: showMover) { shown in
+                    // iOS 16 meldet das Abbrechen nicht: Ist der Dialog zu und nichts gemeldet, war es ein Abbruch.
+                    // Die Datei bleibt bis zur nächsten Sicherung bzw. zum nächsten Start liegen (sie könnte noch verschoben werden).
+                    guard !shown, let url = fullBackupURL else { return }
+                    if #unavailable(iOS 17.0) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            if fullBackupURL == url, !FileManager.default.fileExists(atPath: url.path) {
+                                discardFullBackup()
+                            } else if fullBackupURL == url {
+                                backupStatus = "Sicherung nicht gespeichert."
+                            }
+                        }
+                    }
+                }
+        }
+    }
+
+    /// Sicherung erstellen (mit oder ohne Musik) und wiederherstellen
+    @ViewBuilder private var backupSection: some View {
+        Section {
+            Button { confirmBackup = true } label: { Label("Sicherung erstellen", systemImage: "square.and.arrow.up") }
+                .disabled(backupBusy)
+                .accessibilityIdentifier("backupCreate")
+                .confirmationDialog("Was soll gesichert werden?", isPresented: $confirmBackup, titleVisibility: .visible) {
+                    Button("Alles mit Musik (große Datei)") { createFullBackup() }
+                    Button("Nur Playlists, Herzen und Statistik") {
+                        exportDocument = try? BackupDocument(state: library.stateSnapshot)
+                        // Erst wenn diese Auswahl verschwunden ist, den Speichern-Dialog zeigen
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showExporter = exportDocument != nil }
+                    }
+                    Button("Abbrechen", role: .cancel) {}
+                } message: {
+                    Text("„Alles mit Musik“ ist für ein neues Handy gedacht. Die Datei lässt sich auch in der Android-App wiederherstellen.")
+                }
             Button { pickFolder = false; showImporter = true } label: {
                 Label("Sicherung wiederherstellen", systemImage: "arrow.counterclockwise")
             }
             .disabled(backupBusy)
             .accessibilityIdentifier("backupRestore")
-            .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .json,
-                          defaultFilename: "ILLEGAL-FREEDOM-MUSIC-Sicherung") { result in
-                switch result {
-                case .success: backupStatus = "✓ Sicherung gespeichert."
-                case .failure(let error): backupStatus = "Sicherung fehlgeschlagen: \(error.localizedDescription)"
-                }
-            }
             if let backupStatus {
                 HStack(spacing: 10) {
                     if backupBusy { ProgressView() }
@@ -309,6 +339,8 @@ struct SettingsView: View {
     /// Komplett-Sicherung erstellen und danach fragen, wohin sie soll
     private func createFullBackup() {
         guard !backupBusy else { return }
+        // Eine liegengebliebene Sicherung (nicht gespeichert) zuerst wegräumen – sie belegt sonst den Speicher
+        discardFullBackup()
         backupBusy = true
         backupStatus = "Sichere die Lieder …"
         Task {

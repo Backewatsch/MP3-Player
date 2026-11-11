@@ -906,8 +906,10 @@ final class FeatureLibraryTests: XCTestCase {
         library.addListened(90)
         let stats = library.stats
         XCTAssertGreaterThanOrEqual(stats.playsThisMonth, 3)
-        XCTAssertEqual(library.mostPlayed(limit: 1).first?.0.id, a.id)
-        XCTAssertEqual(library.history().first?.0.id, a.id)
+        // Nur die eigenen Testlieder betrachten: Im Simulator können Lieder anderer Tests liegen
+        let own = Set(tracks.map(\.id))
+        XCTAssertEqual(library.mostPlayed().first { own.contains($0.0.id) }?.0.id, a.id)
+        XCTAssertEqual(library.history().first { own.contains($0.0.id) }?.0.id, a.id)
 
         library.deleteAll([b])
         XCTAssertFalse(library.isFavorite(b))
