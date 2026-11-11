@@ -129,8 +129,8 @@ final class MP3PlayerUITests: XCTestCase {
         tab("Mediathek")
         XCTAssertTrue(app.staticTexts["Noch keine Musik"].waitForExistence(timeout: 10))
         screenshot("01-Mediathek-leer")
-        app.swipeUp()
-        XCTAssertTrue(app.staticTexts["Heruntergeladen"].waitForExistence(timeout: 5), "Playlists stehen in der Mediathek")
+        // iOS 26: Das erste Wischen schrumpft oft nur die Tab-Leiste – so lange wischen, bis die Playlists zu sehen sind
+        XCTAssertTrue(reveal(app.staticTexts["Heruntergeladen"].firstMatch), "Playlists stehen in der Mediathek")
         XCTAssertTrue(app.buttons["newPlaylistButton"].exists, "Neue Playlist in der Mediathek")
         screenshot("01b-Mediathek-Playlists")
 
