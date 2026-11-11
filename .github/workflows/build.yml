@@ -15,8 +15,6 @@ env:
 jobs:
   build:
     name: IPA bauen (iPhone)
-    # iPhone ist pausiert: Zeile entfernen, sobald es dort weitergeht
-    if: false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,8 +82,6 @@ jobs:
 
   test:
     name: Tests im iOS-Simulator
-    # iPhone ist pausiert: Zeile entfernen, sobald es dort weitergeht
-    if: false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,6 +105,8 @@ jobs:
           ')
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
+          # Warten, bis der Simulator ganz hochgefahren ist (sonst hängen die ersten Bildschirmfotos)
+          xcrun simctl bootstatus "$UDID" -b || true
 
       - name: Lokalen Testserver für Downloads starten
         run: |
@@ -284,12 +282,13 @@ jobs:
 
   release:
     name: Release veröffentlichen (für Updates)
-    needs: [build, test, android]
-    # Release, sobald Android grün ist (iPhone ist pausiert: IPA nur dabei, wenn sie gebaut wurde)
+    # Wartet nicht auf die iPhone-Tests im Simulator: die dauern lange und sollen keine Version aufhalten
+    needs: [build, android]
+    # Release, sobald beide Apps gebaut sind und die Android-Tests grün sind
     if: >-
       always() && github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc' || startsWith(github.ref, 'refs/tags/v')) &&
-      needs.android.result == 'success'
+      needs.android.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -304,7 +303,6 @@ jobs:
           echo "APP_BUILD=${V##*.}" >> "$GITHUB_ENV"
 
       - uses: actions/download-artifact@v4
-        if: needs.build.result == 'success'
         with:
           name: MP3Player-unsigned-ipa
 
@@ -313,7 +311,6 @@ jobs:
           name: MP3Player-apk
 
       - name: AltStore-/SideStore-Quelle erzeugen
-        if: needs.build.result == 'success'
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
@@ -329,10 +326,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          # Dateien fürs Release: APK immer, IPA nur wenn der iPhone-Build lief
-          FILES="MP3Player.apk"
-          [ -f MP3Player.ipa ] && FILES="MP3Player.ipa $FILES"
-          [ -f altstore-source.json ] && FILES="$FILES altstore-source.json"
+          # Dateien fürs Release: iPhone-App, Android-App und die AltStore-Quelle
+          FILES="MP3Player.ipa MP3Player.apk altstore-source.json"
           # Commit-Text ohne Signaturzeilen als Änderungsnotiz
           printf '%s\n' "$COMMIT_MESSAGE" | grep -v -E '^(Co-Authored-By|Claude-Session):' > notes.md
           [ -s notes.md ] || echo "Neue Version $APP_VERSION" > notes.md

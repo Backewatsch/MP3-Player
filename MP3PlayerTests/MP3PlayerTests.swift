@@ -1180,6 +1180,21 @@ final class SearchAndTagsTests: XCTestCase {
         XCTAssertEqual(LibrarySearch.remember(["alt"], "a"), ["alt"], "zu kurz")
     }
 
+    /// Suche in einer Liste: Titel, Interpret und Album zählen, die Reihenfolge der Liste bleibt
+    func testFilterKeepsListOrder() {
+        var a = Track(id: UUID(), fileName: "a.mp3", title: "Regen", artist: "Bella", duration: 3, addedAt: Date())
+        a.album = "Nachts"
+        var b = Track(id: UUID(), fileName: "b.mp3", title: "Bella Ciao", artist: "Marco", duration: 3, addedAt: Date())
+        b.album = "Sommer"
+        var c = Track(id: UUID(), fileName: "c.mp3", title: "Sonne", artist: "Andere", duration: 3, addedAt: Date())
+        c.album = "Tag"
+        let list = [a, b, c]
+        XCTAssertEqual(LibrarySearch.filter(list, query: "bella").map(\.title), ["Regen", "Bella Ciao"], "Reihenfolge der Liste bleibt")
+        XCTAssertEqual(LibrarySearch.filter(list, query: "SOMMER").map(\.title), ["Bella Ciao"], "Album zählt, Groß/Klein egal")
+        XCTAssertEqual(LibrarySearch.filter(list, query: "  "), list, "leere Suche zeigt alles")
+        XCTAssertTrue(LibrarySearch.filter(list, query: "xyz").isEmpty)
+    }
+
     func testWritesTagsIntoMP3() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("tags-\(UUID().uuidString).mp3")
         try FileManager.default.copyItem(at: Fixture.url("tagged.mp3"), to: url)

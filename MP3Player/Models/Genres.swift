@@ -101,6 +101,13 @@ enum LibrarySearch {
         return r
     }
 
+    /// Lieder einer Liste (Playlist, Album …) filtern – die Reihenfolge der Liste bleibt erhalten
+    static func filter(_ tracks: [Track], query: String) -> [Track] {
+        let q = Duplicates.normalize(query)
+        guard !q.isEmpty else { return tracks }
+        return tracks.filter { score($0.title, q) > 0 || score($0.artist, q) > 0 || score($0.album, q) > 0 }
+    }
+
     /// Letzte Suchen: neueste zuerst, ohne Doppelte, höchstens `max`
     static func remember(_ recent: [String], _ query: String, max: Int = 8) -> [String] {
         let q = query.trimmingCharacters(in: .whitespaces)

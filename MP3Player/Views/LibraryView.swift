@@ -33,85 +33,13 @@ struct MediathekView: View {
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
 
-    @AppStorage("recentSearches") private var recentRaw = ""
-    private var recentSearches: [String] { recentRaw.split(separator: "\n").map(String.init) }
-
-    private func rememberSearch() {
-        recentRaw = LibrarySearch.remember(recentSearches, search).joined(separator: "\n")
-    }
-
-    /// Suchergebnisse nach Art sortiert (wie in den Apple-Apps)
-    @ViewBuilder private var searchSections: some View {
-        let r = LibrarySearch.run(tracks: library.tracks, playlists: library.playlists, query: search)
-        if r.isEmpty {
-            Section {
-                Text("Keine Treffer für „\(search.trimmingCharacters(in: .whitespaces))“").foregroundStyle(.secondary)
-            }
-        }
-        if !r.artists.isEmpty {
-            Section {
-                ForEach(r.artists, id: \.self) { name in
-                    NavigationLink(value: LibraryRoute.artist(name)) {
-                        resultRow(name, "Interpret", art: ArtworkView(track: library.tracks(byArtist: name).first, size: 44, cornerRadius: 22))
-                    }
-                    .simultaneousGesture(TapGesture().onEnded { rememberSearch() })
-                }
-            } header: { Text("Interpreten") }
-        }
-        if !r.albums.isEmpty || !r.genres.isEmpty || !r.playlists.isEmpty {
-            Section {
-                ForEach(r.albums, id: \.self) { name in
-                    NavigationLink(value: LibraryRoute.album(name)) {
-                        resultRow(name, "Album", art: ArtworkView(track: library.tracks(inAlbum: name).first, size: 44, cornerRadius: 6))
-                    }
-                }
-                ForEach(r.genres, id: \.self) { name in
-                    NavigationLink(value: LibraryRoute.genre(name)) {
-                        resultRow(name, "Genre", art: symbolArt("guitars.fill"))
-                    }
-                }
-                ForEach(r.playlists) { p in
-                    NavigationLink(value: LibraryRoute.playlist(p.id)) {
-                        resultRow(p.name, "Playlist · \(p.trackIDs.count) Titel", art: PlaylistArtwork(playlist: p, first: library.tracks(in: p).first, size: 44, cornerRadius: 6))
-                    }
-                }
-            } header: { Text("Alben, Genres und Playlists") }
-        }
-        if !r.tracks.isEmpty {
-            Section {
-                ForEach(Array(r.tracks.enumerated()), id: \.element.id) { index, track in
-                    TrackListRow(track: track) { rememberSearch(); player.play(r.tracks, startAt: index) }
-                }
-            } header: { Text("Lieder (\(r.tracks.count))") }
-        }
-    }
-
-    private func resultRow<A: View>(_ title: String, _ subtitle: String, art: A) -> some View {
-        HStack(spacing: 12) {
-            art
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).lineLimit(1)
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func symbolArt(_ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.title3)
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .background(LinearGradient(colors: [Color.accentColor.opacity(0.7), Color.accentColor], startPoint: .top, endPoint: .bottom),
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
     var body: some View {
         NavigationStack(path: $path) {
             List {
                 if search.trimmingCharacters(in: .whitespaces).isEmpty {
                     overview
                 } else {
-                    searchSections
+                    LibrarySearchResults(search: search)
                 }
             }
             .listStyle(.insetGrouped)
@@ -132,16 +60,8 @@ struct MediathekView: View {
                 }
             }
             .navigationTitle("Mediathek")
-            .searchable(text: $search, prompt: "Lieder, Interpreten, Alben, Genres")
-            .searchSuggestions {
-                if search.isEmpty {
-                    ForEach(recentSearches, id: \.self) { q in
-                        Label(q, systemImage: "clock.arrow.circlepath").searchCompletion(q)
-                    }
-                }
-            }
-            .onSubmit(of: .search) { rememberSearch() }
-            .navigationDestination(for: LibraryRoute.self, destination: destination)
+            .librarySearch($search)
+            .navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -347,43 +267,6 @@ struct MediathekView: View {
         }
         return result.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
-
-    // MARK: Ziele
-
-    @ViewBuilder private func destination(_ route: LibraryRoute) -> some View {
-        switch route {
-        case .allTracks:
-            AllTracksView()
-        case .albums:
-            GroupListView(title: "Alben", names: albumNames, symbol: "square.stack") { .album($0) }
-                tracksFor: { library.tracks(inAlbum: $0) }
-        case .artists:
-            GroupListView(title: "Interpreten", names: artistNames, symbol: "music.mic") { .artist($0) }
-                tracksFor: { library.tracks(byArtist: $0) }
-        case .album(let name):
-            TrackCollectionList(title: name, subtitle: "Album", tracks: library.tracks(inAlbum: name))
-                .navigationTitle(name)
-        case .artist(let name):
-            TrackCollectionList(title: name, subtitle: "Interpret", tracks: library.tracks(byArtist: name))
-                .navigationTitle(name)
-        case .playlist(let id):
-            PlaylistDetailView(playlistID: id)
-        case .favorites:
-            FavoritesView()
-        case .stats:
-            StatsView()
-        case .smart(let name):
-            if let kind = SmartPlaylist(rawValue: name) { SmartPlaylistView(kind: kind) }
-        case .duplicates:
-            DuplicatesView()
-        case .genres:
-            GroupListView(title: "Genres", names: library.genreNames, symbol: "guitars") { .genre($0) }
-                tracksFor: { library.tracks(inGenre: $0) }
-        case .genre(let name):
-            TrackCollectionList(title: name, subtitle: "Genre", tracks: library.tracks(inGenre: name))
-                .navigationTitle(name)
-        }
-    }
 }
 
 struct PlaylistRow: View {
@@ -416,13 +299,16 @@ struct AllTracksView: View {
     @EnvironmentObject private var actions: TrackActions
     @AppStorage("trackSort") private var sortRaw = TrackSort.title.rawValue
     @StateObject private var selection = SelectionModel()
+    @State private var query = ""
 
     private var sort: TrackSort { TrackSort(rawValue: sortRaw) ?? .title }
 
     var body: some View {
         let tracks = library.tracksSorted(by: sort)
+        let shown = LibrarySearch.filter(tracks, query: query)
+        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
         List {
-            if !tracks.isEmpty {
+            if !tracks.isEmpty && !searching {
                 Section {
                     PlayShuffleRow(tracks: tracks, allTracks: true)
                 } footer: {
@@ -430,9 +316,10 @@ struct AllTracksView: View {
                 }
             }
             Section {
-                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                ForEach(shown) { track in
                     TrackListRow(track: track, selection: selection) {
-                        player.play(tracks, startAt: index, allTracks: true)
+                        // Abgespielt wird aus der ganzen Liste, damit es nach dem Treffer weitergeht
+                        player.play(tracks, startAt: tracks.firstIndex(where: { $0.id == track.id }) ?? 0, allTracks: true)
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { actions.requestDelete(track) } label: { Label("Entfernen", systemImage: "trash") }
@@ -447,11 +334,16 @@ struct AllTracksView: View {
                     }
                 }
             } footer: {
-                Text("\(tracks.count) Titel")
+                if searching {
+                    ListSearchFooter(query: query, shown: shown.count, total: tracks.count)
+                } else {
+                    Text("\(tracks.count) Titel")
+                }
             }
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Titel")
+        .listSearch($query, enabled: !tracks.isEmpty)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Menu {
@@ -470,7 +362,7 @@ struct AllTracksView: View {
             }
         }
         .safeAreaInset(edge: .top) {
-            if selection.active { SelectionBar(selection: selection, all: tracks) }
+            if selection.active { SelectionBar(selection: selection, all: shown) }
         }
     }
 }

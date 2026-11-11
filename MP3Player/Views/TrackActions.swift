@@ -358,16 +358,20 @@ struct TrackCollectionView: View {
     }
 }
 
-/// Kopf mit Cover + Titelliste (für Album- und Interpretenseiten)
+/// Kopf mit Cover + Titelliste (für Album-, Interpreten- und Genreseiten), mit Suche in der Liste
 struct TrackCollectionList: View {
     @EnvironmentObject private var player: AudioPlayer
     @StateObject private var selection = SelectionModel()
+    @State private var query = ""
     let title: String
     let subtitle: String
     let tracks: [Track]
 
     var body: some View {
-            List {
+        let shown = LibrarySearch.filter(tracks, query: query)
+        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
+        List {
+            if !searching {
                 Section {
                     VStack(spacing: 10) {
                         ArtworkView(track: tracks.first, size: 160, cornerRadius: 14)
@@ -391,21 +395,27 @@ struct TrackCollectionList: View {
                     .frame(maxWidth: .infinity)
                     .listRowBackground(Color.clear)
                 }
-                Section {
-                    ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                        TrackListRow(track: track, selection: selection) { player.play(tracks, startAt: index) }
+            }
+            Section {
+                ForEach(shown) { track in
+                    TrackListRow(track: track, selection: selection) {
+                        player.play(tracks, startAt: tracks.firstIndex(where: { $0.id == track.id }) ?? 0)
                     }
                 }
+            } footer: {
+                if searching { ListSearchFooter(query: query, shown: shown.count, total: tracks.count) }
             }
-            .listStyle(.insetGrouped)
-            .toolbar {
-                if !tracks.isEmpty {
-                    Button(selection.active ? "Fertig" : "Auswählen") { if selection.active { selection.clear() } else { selection.start() } }
-                }
+        }
+        .listStyle(.insetGrouped)
+        .listSearch($query, enabled: !tracks.isEmpty)
+        .toolbar {
+            if !tracks.isEmpty {
+                Button(selection.active ? "Fertig" : "Auswählen") { if selection.active { selection.clear() } else { selection.start() } }
             }
-            .safeAreaInset(edge: .top) {
-                if selection.active { SelectionBar(selection: selection, all: tracks) }
-            }
+        }
+        .safeAreaInset(edge: .top) {
+            if selection.active { SelectionBar(selection: selection, all: shown) }
+        }
     }
 }
 

@@ -34,7 +34,8 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 **Design**: dunkles, augenschonendes Cyberpunk – gedämpftes Magenta/Cyan/Gelb auf Schwarz, dezentes Raster, abgeschrägte Ecken, Terminal-Schrift und Glitch-Überschriften (Android)
 
 **Bibliothek & Playlists**
-- Suche nach Titel/Interpret, Titel-Infos bearbeiten, löschen
+- Suche über die ganze Mediathek (auf der Start-Seite und in der Mediathek) und **innerhalb einer Liste**: Playlist, Titel, Lieblingssongs, Album, Interpret, Genre und Mix haben ein eigenes Suchfeld
+- Titel-Infos bearbeiten, löschen
 - Eigene Playlists anlegen, umbenennen, sortieren (Bearbeiten → ziehen)
 - Import über die Dateien-App (＋ → „Aus Dateien importieren“) oder „Öffnen in … MP3 Player“
 - Dateien, die du per Finder (Mac) bzw. iTunes-Dateifreigabe (Windows) in den App-Ordner kopierst, werden automatisch erkannt

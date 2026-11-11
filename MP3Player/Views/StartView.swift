@@ -8,39 +8,38 @@ struct StartView: View {
     @State private var confirmClear = false
     @State private var showAllHistory = false
     @State private var recapYear: RecapYear?
+    @State private var search = ""
 
     var body: some View {
         NavigationStack {
             List {
-                if let year = library.recapDefaultYear {
-                    Section {
-                        RecapBanner(year: year) { recapYear = RecapYear(id: year) }
-                            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                            .listRowBackground(Color.clear)
-                    }
-                }
-
-                if library.tracks.isEmpty {
-                    Section {
-                        EmptyStateView(title: "Willkommen!", systemImage: "music.note",
-                                       message: "Importiere Musik in der Mediathek über ＋ (Dateien-App oder Link) oder teile eine MP3 aus Safari mit der App. Hier erscheinen dann deine meistgehörten Lieder und dein Verlauf.")
-                    }
+                if !search.trimmingCharacters(in: .whitespaces).isEmpty {
+                    // Suche über die ganze Mediathek, wie im Tab „Mediathek“
+                    LibrarySearchResults(search: search)
                 } else {
-                    content
+                    if let year = library.recapDefaultYear {
+                        Section {
+                            RecapBanner(year: year) { recapYear = RecapYear(id: year) }
+                                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                                .listRowBackground(Color.clear)
+                        }
+                    }
+
+                    if library.tracks.isEmpty {
+                        Section {
+                            EmptyStateView(title: "Willkommen!", systemImage: "music.note",
+                                           message: "Importiere Musik in der Mediathek über ＋ (Dateien-App oder Link) oder teile eine MP3 aus Safari mit der App. Hier erscheinen dann deine meistgehörten Lieder und dein Verlauf.")
+                        }
+                    } else {
+                        content
+                    }
                 }
             }
             .listStyle(.insetGrouped)
             .accessibilityIdentifier("startScreen")
             .navigationTitle(greeting)
-            .navigationDestination(for: LibraryRoute.self) { route in
-                switch route {
-                case .stats: StatsView()
-                case .favorites: FavoritesView()
-                case .smart(let name): if let kind = SmartPlaylist(rawValue: name) { SmartPlaylistView(kind: kind) }
-                case .playlist(let id): PlaylistDetailView(playlistID: id)
-                default: EmptyView()
-                }
-            }
+            .librarySearch($search)
+            .navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
             .fullScreenCover(item: $recapYear) { RecapView(year: $0.id) }
             .confirmationDialog("Verlauf löschen?", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("Löschen", role: .destructive) { library.clearHistory() }
@@ -236,9 +235,12 @@ struct FavoritesView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: AudioPlayer
     @StateObject private var selection = SelectionModel()
+    @State private var query = ""
 
     var body: some View {
         let tracks = library.favoriteTracks
+        let shown = LibrarySearch.filter(tracks, query: query)
+        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
         Group {
             if tracks.isEmpty {
                 EmptyStateView(title: "Noch keine Lieblingssongs", systemImage: "heart",
@@ -246,17 +248,26 @@ struct FavoritesView: View {
                     .background(Color(.systemGroupedBackground).ignoresSafeArea())
             } else {
                 List {
-                    Section {
-                        PlayShuffleRow(tracks: tracks)
+                    if !searching {
+                        Section {
+                            PlayShuffleRow(tracks: tracks)
+                        }
                     }
                     Section {
-                        ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                            TrackListRow(track: track, selection: selection) { player.play(tracks, startAt: index) }
+                        ForEach(shown) { track in
+                            TrackListRow(track: track, selection: selection) {
+                                player.play(tracks, startAt: tracks.firstIndex(where: { $0.id == track.id }) ?? 0)
+                            }
                         }
                     } footer: {
-                        Text("\(tracks.count) Titel · \(tracks.reduce(0) { $0 + $1.duration }.formattedTime)")
+                        if searching {
+                            ListSearchFooter(query: query, shown: shown.count, total: tracks.count)
+                        } else {
+                            Text("\(tracks.count) Titel · \(tracks.reduce(0) { $0 + $1.duration }.formattedTime)")
+                        }
                     }
                 }
+                .listSearch($query)
             }
         }
         .navigationTitle("Lieblingssongs")
@@ -267,7 +278,7 @@ struct FavoritesView: View {
             }
         }
         .safeAreaInset(edge: .top) {
-            if selection.active { SelectionBar(selection: selection, all: tracks) }
+            if selection.active { SelectionBar(selection: selection, all: shown) }
         }
     }
 }

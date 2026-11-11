@@ -4,6 +4,8 @@ final class MP3PlayerUITests: XCTestCase {
     /// Test-MP3s vom lokalen Testserver des Workflows (python3 -m http.server auf dem Mac; der Simulator erreicht ihn über localhost)
     private let mp3URL1 = "http://localhost:8765/tagged.mp3"
     private let mp3URL2 = "http://localhost:8765/untagged.mp3"
+    /// 30 Sekunden lang: damit „läuft“ und „pausiert“ sicher zu sehen sind (das kurze Testlied ist nach 3 s zu Ende)
+    private let longMp3URL = "http://localhost:8765/long.mp3"
 
     private var app: XCUIApplication!
 
@@ -15,7 +17,18 @@ final class MP3PlayerUITests: XCTestCase {
     }
 
     private func screenshot(_ name: String) {
-        let shot = XCUIScreen.main.screenshot()
+        // Bildschirmfotos sind nur Beiwerk: Im Simulator läuft die Aufnahme manchmal in eine Zeitüberschreitung.
+        // Das darf den Test nicht scheitern lassen.
+        let options = XCTExpectedFailure.Options()
+        options.isStrict = false
+        let stopAtFailure = continueAfterFailure
+        continueAfterFailure = true
+        var taken: XCUIScreenshot?
+        XCTExpectFailure("Bildschirmfoto im Simulator nicht möglich", options: options) {
+            taken = XCUIScreen.main.screenshot()
+        }
+        continueAfterFailure = stopAtFailure
+        guard let shot = taken, !shot.pngRepresentation.isEmpty else { return }
         let attachment = XCTAttachment(screenshot: shot)
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -35,6 +48,18 @@ final class MP3PlayerUITests: XCTestCase {
             if button.isSelected { break }
             Thread.sleep(forTimeInterval: 1)
         }
+    }
+
+    /// Wartet, bis ein Element die erwartete Beschriftung hat
+    private func waitForLabel(_ element: XCUIElement, _ label: String, timeout: TimeInterval = 8) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// Suchfeld mit diesem Platzhalter; falls der Simulator es anders benennt, das erste Suchfeld
+    private func searchField(_ placeholder: String) -> XCUIElement {
+        let named = app.searchFields[placeholder].firstMatch
+        return named.waitForExistence(timeout: 5) ? named : app.searchFields.firstMatch
     }
 
     /// Mediathek → ＋ → „Von Link herunterladen“
@@ -131,7 +156,7 @@ final class MP3PlayerUITests: XCTestCase {
         let field = app.textFields["downloadLinkField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        field.typeText(mp3URL1)
+        field.typeText(longMp3URL)
         app.buttons["downloadStartButton"].tap()
         screenshot("05-Download-laeuft")
         waitForFinishedDownload(timeout: 120)
@@ -152,8 +177,7 @@ final class MP3PlayerUITests: XCTestCase {
         let play = app.buttons["playAllButton"].firstMatch
         XCTAssertTrue(play.waitForExistence(timeout: 5))
         play.tap()
-        XCTAssertEqual(miniButton.label, "Pause", "Wiedergabe läuft nicht")
-        // Das Testlied ist nur ~2 s lang – danach springt der Player pausiert an den Anfang (kein Fehler)
+        XCTAssertTrue(waitForLabel(miniButton, "Pause"), "Wiedergabe läuft nicht")
         screenshot("07-Playlist-spielt")
 
         // Großer Player
@@ -161,14 +185,12 @@ final class MP3PlayerUITests: XCTestCase {
         let big = app.buttons["bigPlayPause"].firstMatch
         XCTAssertTrue(big.waitForExistence(timeout: 5))
         screenshot("08-Player")
-        // Umschalten muss funktionieren (das kurze Testlied kann schon zu Ende sein)
-        // Das Testlied ist nur 2 s lang: endet es genau beim Tippen, springt die Anzeige zurück → bis zu 3 Versuche
+        // Umschalten muss funktionieren: aus „läuft“ wird „pausiert“ und umgekehrt (bis zu 3 Versuche, falls ein Tippen verloren geht)
         var toggled = false
         for _ in 0..<3 where !toggled {
             let before = big.label
             big.tap()
-            let changed = NSPredicate(format: "label != %@", before)
-            toggled = XCTWaiter.wait(for: [expectation(for: changed, evaluatedWith: big)], timeout: 2) == .completed
+            toggled = waitForLabel(big, before == "Pause" ? "Abspielen" : "Pause", timeout: 5)
         }
         XCTAssertTrue(toggled, "Play/Pause funktioniert nicht")
         app.buttons["Schließen"].tap()
@@ -312,5 +334,42 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(reveal(stats) || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Diesen Monat")).firstMatch.exists,
                       "Statistik fehlt auf der Startseite")
         screenshot("27-Start")
+    }
+
+    /// Suche innerhalb einer Playlist: filtert die Lieder und meldet, wenn nichts passt
+    func test8_SearchInPlaylist() {
+        downloadTestSong(mp3URL1)
+        tab("Mediathek")
+        let downloadsRow = app.staticTexts["Heruntergeladen"].firstMatch
+        XCTAssertTrue(reveal(downloadsRow), "Playlist „Heruntergeladen“ fehlt")
+        downloadsRow.tap()
+        let field = searchField("In dieser Liste suchen")
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Suchfeld fehlt in der Playlist")
+        field.tap()
+        field.typeText("xyz")
+        let none = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Keine Treffer")).firstMatch
+        XCTAssertTrue(none.waitForExistence(timeout: 10), "Suche ohne Treffer zeigt keinen Hinweis")
+        XCTAssertFalse(app.buttons["trackMore"].exists, "Lied wird trotz unpassender Suche angezeigt")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3))
+        field.typeText("test")
+        XCTAssertTrue(app.buttons["trackMore"].firstMatch.waitForExistence(timeout: 10), "Suche findet das Lied nicht")
+        let count = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "1 von 1")).firstMatch
+        XCTAssertTrue(count.waitForExistence(timeout: 10), "Trefferzahl fehlt")
+        screenshot("28-Suche-in-Playlist")
+    }
+
+    /// Suche auf der Startseite über die ganze Mediathek
+    func test9_SearchOnStart() {
+        downloadTestSong(mp3URL1)
+        tab("Start")
+        // Das Suchfeld sitzt unter dem Titel und kann weggescrollt sein
+        let anyField = app.searchFields.firstMatch
+        if !(anyField.exists && anyField.isHittable) { app.swipeDown() }
+        let field = searchField("Lieder, Interpreten, Alben, Genres")
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Suchfeld fehlt auf der Startseite")
+        field.tap()
+        field.typeText("test")
+        XCTAssertTrue(app.buttons["trackMore"].firstMatch.waitForExistence(timeout: 10), "Start-Suche findet das Lied nicht")
+        screenshot("29-Start-Suche")
     }
 }

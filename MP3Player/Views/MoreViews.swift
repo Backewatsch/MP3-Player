@@ -129,32 +129,42 @@ struct SmartPlaylistView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: AudioPlayer
     @StateObject private var selection = SelectionModel()
+    @State private var query = ""
     let kind: SmartPlaylist
 
     var body: some View {
         let tracks = library.smartTracks(kind)
+        let shown = LibrarySearch.filter(tracks, query: query)
+        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
         List {
-            Section {
-                CollectionHeader(title: kind.title, subtitle: "\(kind.subtitle) · \(tracks.count) Titel", color: kind.colors[0], tracks: tracks) {
-                    ZStack {
-                        LinearGradient(colors: kind.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                        Image(systemName: "sparkles").font(.system(size: 60)).foregroundStyle(.white)
+            if !searching {
+                Section {
+                    CollectionHeader(title: kind.title, subtitle: "\(kind.subtitle) · \(tracks.count) Titel", color: kind.colors[0], tracks: tracks) {
+                        ZStack {
+                            LinearGradient(colors: kind.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                            Image(systemName: "sparkles").font(.system(size: 60)).foregroundStyle(.white)
+                        }
+                        .frame(width: 180, height: 180)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(width: 180, height: 180)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .frame(maxWidth: .infinity)
                 }
             }
             Section {
                 if tracks.isEmpty { Text("Hier erscheinen Lieder, sobald es passende gibt.").foregroundStyle(.secondary) }
-                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                    TrackListRow(track: track, selection: selection) { player.play(tracks, startAt: index) }
+                ForEach(shown) { track in
+                    TrackListRow(track: track, selection: selection) {
+                        player.play(tracks, startAt: tracks.firstIndex(where: { $0.id == track.id }) ?? 0)
+                    }
                 }
+            } footer: {
+                if searching { ListSearchFooter(query: query, shown: shown.count, total: tracks.count) }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .listSearch($query, enabled: !tracks.isEmpty)
         .safeAreaInset(edge: .top) {
-            if selection.active { SelectionBar(selection: selection, all: tracks) }
+            if selection.active { SelectionBar(selection: selection, all: shown) }
         }
     }
 }

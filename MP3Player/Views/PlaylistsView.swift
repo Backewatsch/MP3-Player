@@ -8,6 +8,7 @@ struct PlaylistDetailView: View {
     @State private var showAddTracks = false
     @State private var showRename = false
     @State private var renameText = ""
+    @State private var query = ""
     @StateObject private var selection = SelectionModel()
 
     var body: some View {
@@ -20,8 +21,12 @@ struct PlaylistDetailView: View {
 
     private func content(_ playlist: Playlist) -> some View {
         let tracks = library.tracks(in: playlist)
+        let shown = LibrarySearch.filter(tracks, query: query)
+        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
+        // Beim Suchen stimmen die Zeilen nicht mit der Reihenfolge der Playlist überein: dann nicht umsortieren
+        let move: ((IndexSet, Int) -> Void)? = searching ? nil : { library.moveTracks(from: $0, to: $1, in: playlist) }
         return List {
-            if !tracks.isEmpty {
+            if !tracks.isEmpty && !searching {
                 Section {
                     HStack(spacing: 12) {
                         Button {
@@ -39,18 +44,24 @@ struct PlaylistDetailView: View {
                 }
             }
             Section {
-                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                ForEach(shown) { track in
                     TrackListRow(track: track, playlist: playlist, selection: selection) {
-                        player.play(tracks, startAt: index, playlistID: playlist.id)
+                        // Abgespielt wird aus der ganzen Playlist, damit es nach dem Treffer weitergeht
+                        player.play(tracks, startAt: tracks.firstIndex(where: { $0.id == track.id }) ?? 0, playlistID: playlist.id)
                     }
                 }
-                .onDelete { library.removeTracks(at: $0, from: playlist) }
-                .onMove { library.moveTracks(from: $0, to: $1, in: playlist) }
+                .onDelete { offsets in
+                    let doomed = offsets.compactMap { shown.indices.contains($0) ? shown[$0] : nil }
+                    doomed.forEach { library.remove($0, from: playlist) }
+                }
+                .onMove(perform: move)
             } footer: {
                 if tracks.isEmpty {
                     Text(playlist.id == Library.downloadsPlaylistID
                          ? "Titel, die du per Link herunterlädst, erscheinen automatisch hier."
                          : "Füge über ＋ Titel hinzu.")
+                } else if searching {
+                    ListSearchFooter(query: query, shown: shown.count, total: tracks.count)
                 } else {
                     Text("\(tracks.count) Titel · \(tracks.reduce(0) { $0 + $1.duration }.formattedTime)")
                 }
@@ -58,8 +69,9 @@ struct PlaylistDetailView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle(playlist.name)
+        .listSearch($query, enabled: !tracks.isEmpty)
         .safeAreaInset(edge: .top) {
-            if selection.active { SelectionBar(selection: selection, all: tracks, playlist: playlist) }
+            if selection.active { SelectionBar(selection: selection, all: shown, playlist: playlist) }
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
