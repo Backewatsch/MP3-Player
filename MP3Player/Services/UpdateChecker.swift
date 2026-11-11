@@ -2,8 +2,10 @@ import Foundation
 
 /// Prüft über GitHub-Releases, ob es eine neuere Version der App gibt.
 ///
-/// Neue Versionen erstellt der GitHub-Workflow automatisch (Tag `v1.0.<Build>`), sobald alle Tests bestehen.
-/// Installiert werden sie über AltStore/SideStore (die App kann sich unter iOS nicht selbst ersetzen).
+/// Neue Versionen veröffentlicht der GitHub-Workflow automatisch. Maßgeblich ist die AltStore-Quelle am neuesten
+/// Release: Sie nennt die neueste iPhone-Version – auch wenn das Release selbst eine ältere Nummer trägt
+/// (solange Android pausiert, wird die iPhone-App ans neueste Release angehängt, damit Android kein Update sieht).
+/// Installiert werden Updates über AltStore/SideStore (die App kann sich unter iOS nicht selbst ersetzen).
 @MainActor
 final class UpdateChecker: ObservableObject {
     nonisolated static let repository = "Backewatsch/MP3-Player"
@@ -64,31 +66,59 @@ final class UpdateChecker: ObservableObject {
     func check() async {
         guard state != .checking else { return }
         state = .checking
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repository)/releases/latest")!)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 20
         do {
-            let (data, response) = try await session.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            lastChecked = Date()
-            defaults.set(lastChecked, forKey: Self.lastCheckKey)
-            if status == 404 {
+            let release = try await latestRelease()
+            markChecked()
+            guard let release else {
                 state = .noReleases
                 return
             }
-            guard (200..<300).contains(status) else {
-                state = .failed("GitHub antwortet mit Fehler \(status).")
-                return
-            }
-            guard let release = Self.parseRelease(data) else {
-                state = .failed("Die Release-Daten konnten nicht gelesen werden.")
-                return
-            }
             state = Self.isNewer(release, thanBuild: currentBuild) ? .available(release) : .upToDate
+        } catch let error as CheckError {
+            markChecked()
+            state = .failed(error.message)
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    private struct CheckError: Error {
+        let message: String
+    }
+
+    private func markChecked() {
+        lastChecked = Date()
+        defaults.set(lastChecked, forKey: Self.lastCheckKey)
+    }
+
+    /// Neueste iPhone-Version; `nil`, wenn es noch kein Release gibt
+    private func latestRelease() async throws -> Release? {
+        // 1. Die AltStore-Quelle am neuesten Release nennt die neueste iPhone-Version
+        if let data = try await load(Self.sourceURL), let release = Self.parseSource(data) {
+            return release
+        }
+        // 2. Keine Quelle am Release: wie bisher über die Nummer des neuesten Release
+        let api = URL(string: "https://api.github.com/repos/\(Self.repository)/releases/latest")!
+        guard let data = try await load(api, accept: "application/vnd.github+json") else { return nil }
+        guard let release = Self.parseRelease(data) else {
+            throw CheckError(message: "Die Release-Daten konnten nicht gelesen werden.")
+        }
+        return release
+    }
+
+    /// Lädt eine Adresse; `nil` bei „nicht gefunden“ (404)
+    private func load(_ url: URL, accept: String? = nil) async throws -> Data? {
+        var request = URLRequest(url: url)
+        if let accept { request.setValue(accept, forHTTPHeaderField: "Accept") }
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 404 { return nil }
+        guard (200..<300).contains(status) else {
+            throw CheckError(message: "GitHub antwortet mit Fehler \(status).")
+        }
+        return data
     }
 
     // MARK: Reine Logik (getestet)
@@ -105,6 +135,20 @@ final class UpdateChecker: ObservableObject {
         let date = (json["published_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         return Release(version: version, build: build, notes: (json["body"] as? String) ?? "",
+                       ipaURL: ipaURL, pageURL: page, date: date)
+    }
+
+    /// Liest die AltStore-/SideStore-Quelle (`altstore-source.json`): die neueste Version der ersten App.
+    nonisolated static func parseSource(_ data: Data) -> Release? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let app = (json["apps"] as? [[String: Any]])?.first,
+              let latest = (app["versions"] as? [[String: Any]])?.first,
+              let version = latest["version"] as? String,
+              let build = (latest["buildVersion"] as? String).flatMap({ Int($0) }) ?? buildNumber(fromTag: version),
+              let page = URL(string: "https://github.com/\(repository)/releases") else { return nil }
+        let ipaURL = (latest["downloadURL"] as? String).flatMap(URL.init(string:))
+        let date = (latest["date"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+        return Release(version: version, build: build, notes: (latest["localizedDescription"] as? String) ?? "",
                        ipaURL: ipaURL, pageURL: page, date: date)
     }
 

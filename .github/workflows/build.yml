@@ -160,6 +160,9 @@ jobs:
 
   android:
     name: Android-App bauen und im Emulator testen
+    # Android ist fertig und pausiert: iPhone-Änderungen sollen kein Android-Update auslösen.
+    # Zeile entfernen, sobald es bei Android weitergeht – dann entsteht wieder ein Release mit beiden Apps.
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -284,11 +287,12 @@ jobs:
     name: Release veröffentlichen (für Updates)
     # Wartet nicht auf die iPhone-Tests im Simulator: die dauern lange und sollen keine Version aufhalten
     needs: [build, android]
-    # Release, sobald beide Apps gebaut sind und die Android-Tests grün sind
+    # Android aktiv: neues Release mit beiden Apps, sobald beide gebaut und die Android-Tests grün sind.
+    # Android pausiert (übersprungen): nur die iPhone-App wird veröffentlicht, ohne neue Versionsnummer für Android.
     if: >-
       always() && github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc' || startsWith(github.ref, 'refs/tags/v')) &&
-      needs.android.result == 'success' && needs.build.result == 'success'
+      needs.build.result == 'success' && (needs.android.result == 'success' || needs.android.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -307,10 +311,41 @@ jobs:
           name: MP3Player-unsigned-ipa
 
       - uses: actions/download-artifact@v4
+        if: needs.android.result == 'success'
         with:
           name: MP3Player-apk
 
+      - name: Nur iPhone – App ans neueste Release hängen (kein Android-Update)
+        if: needs.android.result == 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          # Die Android-App sucht Updates über das „neueste Release“ und dessen Nummer.
+          # Deshalb entsteht hier kein neues Release: iPhone-App und AltStore-Quelle werden am neuesten Release ausgetauscht.
+          # Die Adresse der Quelle (…/releases/latest/download/altstore-source.json) bleibt dadurch gleich.
+          TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          echo "Neuestes Release: $TAG – iPhone-Version $APP_VERSION wird angehängt"
+          python3 scripts/make_altstore_source.py \
+            --ipa MP3Player.ipa \
+            --version "$APP_VERSION" --build "$APP_BUILD" \
+            --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" \
+            --notes "$COMMIT_MESSAGE" \
+            --release-tag "$TAG" \
+            --out altstore-source.json
+          # GitHub lehnt Schreibzugriffe gelegentlich mit HTTP 403 ab – daher mehrere Versuche
+          for attempt in 1 2 3 4 5 6; do
+            if gh release upload "$TAG" MP3Player.ipa altstore-source.json --clobber --repo "$GITHUB_REPOSITORY"; then
+              echo "iPhone-Version $APP_VERSION veröffentlicht (Versuch $attempt)"
+              exit 0
+            fi
+            echo "Versuch $attempt fehlgeschlagen – warte $((attempt * 30)) Sekunden"
+            sleep $((attempt * 30))
+          done
+          exit 1
+
       - name: AltStore-/SideStore-Quelle erzeugen
+        if: needs.android.result == 'success'
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
@@ -322,6 +357,7 @@ jobs:
             --out altstore-source.json
 
       - name: GitHub-Release erstellen
+        if: needs.android.result == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}

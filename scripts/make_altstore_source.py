@@ -17,6 +17,9 @@ parser.add_argument("--build", required=True)
 parser.add_argument("--repo", required=True)
 parser.add_argument("--sha", required=True)
 parser.add_argument("--notes", default="")
+# Release, an dem die IPA hängt. Standard: das Release dieser Version. Solange Android pausiert, wird die
+# iPhone-App ans bestehende neueste Release gehängt – dann steht hier dessen Tag.
+parser.add_argument("--release-tag", default="")
 parser.add_argument("--out", required=True)
 args = parser.parse_args()
 
@@ -24,7 +27,7 @@ args = parser.parse_args()
 notes = "\n".join(l for l in args.notes.splitlines()
                   if not l.startswith(("Co-Authored-By:", "Claude-Session:"))).strip()
 
-tag = f"v{args.version}"
+tag = args.release_tag or f"v{args.version}"
 base = f"https://github.com/{args.repo}"
 source = {
     "name": "ILLEGAL FREEDOM MUSIC",

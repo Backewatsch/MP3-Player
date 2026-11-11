@@ -737,6 +737,35 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertNotNil(release.date)
     }
 
+    /// Die AltStore-Quelle nennt die iPhone-Version – unabhängig von der Nummer des Release, an dem sie hängt
+    func testParseAltStoreSource() throws {
+        let source = """
+        {
+          "name": "ILLEGAL FREEDOM MUSIC",
+          "apps": [
+            { "name": "ILLEGAL FREEDOM MUSIC", "bundleIdentifier": "com.backewatsch.mp3player",
+              "versions": [
+                { "version": "1.0.107", "buildVersion": "107", "date": "2026-11-11T08:00:00Z",
+                  "localizedDescription": "Suche in Playlists",
+                  "downloadURL": "https://github.com/Backewatsch/MP3-Player/releases/download/v1.0.105/MP3Player.ipa",
+                  "size": 123 }
+              ] }
+          ]
+        }
+        """
+        let release = try XCTUnwrap(UpdateChecker.parseSource(Data(source.utf8)))
+        XCTAssertEqual(release.version, "1.0.107")
+        XCTAssertEqual(release.build, 107)
+        XCTAssertEqual(release.notes, "Suche in Playlists")
+        XCTAssertEqual(release.ipaURL?.lastPathComponent, "MP3Player.ipa")
+        XCTAssertNotNil(release.date)
+        XCTAssertTrue(UpdateChecker.isNewer(release, thanBuild: 105), "neuer als das Release, an dem die Quelle hängt")
+        XCTAssertFalse(UpdateChecker.isNewer(release, thanBuild: 107))
+        XCTAssertNil(UpdateChecker.parseSource(Data("{}".utf8)))
+        XCTAssertNil(UpdateChecker.parseSource(Data(#"{"apps":[{"versions":[]}]}"#.utf8)))
+        XCTAssertNil(UpdateChecker.parseSource(Data("kein json".utf8)))
+    }
+
     func testParseRejectsGarbage() {
         XCTAssertNil(UpdateChecker.parseRelease(Data("{}".utf8)))
         XCTAssertNil(UpdateChecker.parseRelease(Data("kein json".utf8)))
