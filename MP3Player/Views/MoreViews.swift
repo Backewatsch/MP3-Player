@@ -163,7 +163,7 @@ struct SmartPlaylistView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .listSearch($query, enabled: !tracks.isEmpty)
-        .safeAreaInset(edge: .top) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if selection.active { SelectionBar(selection: selection, all: shown) }
         }
     }

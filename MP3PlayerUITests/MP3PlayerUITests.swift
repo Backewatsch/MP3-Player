@@ -41,6 +41,12 @@ final class MP3PlayerUITests: XCTestCase {
 
     private func tab(_ name: String) {
         let button = app.tabBars.buttons[name].firstMatch
+        if !button.waitForExistence(timeout: 5) || !button.isHittable {
+            // iOS 26: Nach dem Herunterscrollen ist die Tab-Leiste geschrumpft – Zurückscrollen klappt sie wieder auf
+            for _ in 0..<3 where !(button.exists && button.isHittable) { app.swipeDown() }
+            // Letzter Ausweg: die geschrumpfte Leiste antippen
+            if !(button.exists && button.isHittable), app.tabBars.firstMatch.exists { app.tabBars.firstMatch.tap() }
+        }
         XCTAssertTrue(button.waitForExistence(timeout: 10), "Tab \(name) fehlt")
         // Direkt nach dem Start geht ein Tippen im Simulator manchmal verloren – dann noch einmal
         for _ in 0..<3 {
@@ -54,6 +60,11 @@ final class MP3PlayerUITests: XCTestCase {
     private func waitForLabel(_ element: XCUIElement, _ label: String, timeout: TimeInterval = 8) -> Bool {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// Kurzer Hinweis oben auf dem Bildschirm („An Kurzwahl angepinnt“ …)
+    private func notice(_ text: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
     /// Suchfeld mit diesem Platzhalter; falls der Simulator es anders benennt, das erste Suchfeld
@@ -127,7 +138,18 @@ final class MP3PlayerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Noch keine Musik"].waitForExistence(timeout: 5), "Tab „Bearbeiten“ fehlt")
         screenshot("03-Bearbeiten-leer")
 
-        openDownloads()
+        // ＋-Menü: Ordner nach Liedern durchsuchen, Download per Link
+        tab("Mediathek")
+        let add = app.buttons["addMenu"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5), "＋-Menü fehlt")
+        add.tap()
+        XCTAssertTrue(app.buttons["Ordner nach Liedern durchsuchen"].waitForExistence(timeout: 5),
+                      "Menüpunkt „Ordner nach Liedern durchsuchen“ fehlt")
+        screenshot("01c-Hinzufuegen-Menue")
+        let link = app.buttons["Von Link herunterladen"].firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 5), "Menüpunkt „Von Link herunterladen“ fehlt")
+        link.tap()
+        XCTAssertTrue(app.buttons["closeDownloads"].waitForExistence(timeout: 5), "Download-Liste öffnet sich nicht")
         XCTAssertTrue(app.textFields["downloadLinkField"].waitForExistence(timeout: 5))
         screenshot("04-Downloads-leer")
         app.buttons["closeDownloads"].tap()
@@ -176,9 +198,17 @@ final class MP3PlayerUITests: XCTestCase {
         downloadsRow.tap()
         let play = app.buttons["playAllButton"].firstMatch
         XCTAssertTrue(play.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["playlistCover"].firstMatch.exists, "Großes Cover fehlt auf der Playlist-Seite")
         play.tap()
         XCTAssertTrue(waitForLabel(miniButton, "Pause"), "Wiedergabe läuft nicht")
         screenshot("07-Playlist-spielt")
+        // Menü der Playlist: Cover ändern
+        app.buttons["playlistMenu"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Cover ändern"].firstMatch.waitForExistence(timeout: 5), "Menüpunkt „Cover ändern“ fehlt")
+        screenshot("07b-Playlist-Menue")
+        app.buttons["Cover ändern"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Bild auswählen"].firstMatch.waitForExistence(timeout: 5), "Cover-Auswahl öffnet sich nicht")
+        app.buttons["Abbrechen"].firstMatch.tap()
 
         // Großer Player
         app.otherElements["miniPlayer"].firstMatch.tap()
@@ -219,9 +249,14 @@ final class MP3PlayerUITests: XCTestCase {
         let pin = app.buttons["action-An Kurzwahl anpinnen"]
         XCTAssertTrue(pin.waitForExistence(timeout: 5))
         pin.tap()
+        // Kurze Rückmeldung oben auf dem Bildschirm
+        XCTAssertTrue(notice("An Kurzwahl angepinnt").waitForExistence(timeout: 6), "Hinweis nach dem Anpinnen fehlt")
+        screenshot("15b-Hinweis")
         goBackToRoot()
         // Kurzwahl steht ganz oben – die Liste ist evtl. noch nach unten gescrollt
-        let pinned = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "Kurzwahl")).firstMatch
+        // (der Hinweis „An Kurzwahl angepinnt“ zählt nicht)
+        let pinned = app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@ AND NOT (label CONTAINS %@)",
+                                                            "Kurzwahl", "angepinnt")).firstMatch
         for _ in 0..<6 where !(pinned.exists && pinned.isHittable) { app.swipeDown() }
         XCTAssertTrue(pinned.waitForExistence(timeout: 5), "Kurzwahl erscheint nicht")
         screenshot("16-Mediathek-Kurzwahl")
@@ -264,13 +299,24 @@ final class MP3PlayerUITests: XCTestCase {
                                "neueste Version", "Update verfügbar", "Keine öffentliche Version", "Fehler")
         _ = app.staticTexts.containing(done).firstMatch.waitForExistence(timeout: 20)
         screenshot("13-Info-Updates")
-        app.swipeUp()
-        XCTAssertTrue(app.buttons["backupCreate"].waitForExistence(timeout: 5), "Sicherung fehlt")
-        XCTAssertTrue(app.buttons["openSound"].exists, "Klang fehlt")
-        if !app.buttons["convertAllButton"].exists { app.swipeUp() }
-        XCTAssertTrue(app.buttons["convertAllButton"].waitForExistence(timeout: 5), "Konverter fehlt")
+        // Die Abschnitte stehen in dieser Reihenfolge untereinander: Klang, Ordner mit Musik, Sicherung, Umwandeln
+        XCTAssertTrue(reveal(app.buttons["openSound"].firstMatch), "Klang fehlt")
+        XCTAssertTrue(reveal(app.buttons["addMusicFolder"].firstMatch), "Ordner mit Musik fehlt")
+        screenshot("13a-Einstellungen-Ordner")
+        let create = app.buttons["backupCreate"].firstMatch
+        XCTAssertTrue(reveal(create), "Sicherung fehlt")
+        XCTAssertTrue(app.buttons["backupRestore"].firstMatch.waitForExistence(timeout: 5), "Wiederherstellen fehlt")
         screenshot("13b-Einstellungen-Sicherung")
-        app.buttons["Fertig"].firstMatch.tap()
+        XCTAssertTrue(reveal(app.buttons["convertAllButton"].firstMatch), "Konverter fehlt")
+        // „Sicherung erstellen“ fragt: mit Musik oder nur die Listen
+        if !(create.exists && create.isHittable) { app.swipeDown() }
+        if create.exists && create.isHittable {
+            create.tap()
+            XCTAssertTrue(app.buttons["Alles mit Musik (große Datei)"].firstMatch.waitForExistence(timeout: 5),
+                          "Auswahl „Alles mit Musik“ fehlt")
+            XCTAssertTrue(app.buttons["Nur Playlists, Herzen und Statistik"].firstMatch.exists, "Kleine Sicherung fehlt")
+            screenshot("13c-Sicherung-Auswahl")
+        }
     }
 
     /// Lieblingssongs, Sortieren, Mehrfachauswahl, Statistik, Klang und Schlafmodus

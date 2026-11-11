@@ -285,14 +285,15 @@ jobs:
 
   release:
     name: Release veröffentlichen (für Updates)
-    # Wartet nicht auf die iPhone-Tests im Simulator: die dauern lange und sollen keine Version aufhalten
-    needs: [build, android]
+    needs: [build, test, android]
     # Android aktiv: neues Release mit beiden Apps, sobald beide gebaut und die Android-Tests grün sind.
-    # Android pausiert (übersprungen): nur die iPhone-App wird veröffentlicht, ohne neue Versionsnummer für Android.
+    # Android pausiert (übersprungen): nur die iPhone-App wird veröffentlicht, ohne neue Versionsnummer für Android –
+    # und nur, wenn die iPhone-Tests im Simulator grün sind (eine Version mit Fehlern soll nicht aufs iPhone kommen).
     if: >-
       always() && github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc' || startsWith(github.ref, 'refs/tags/v')) &&
-      needs.build.result == 'success' && (needs.android.result == 'success' || needs.android.result == 'skipped')
+      needs.build.result == 'success' &&
+      (needs.android.result == 'success' || (needs.android.result == 'skipped' && needs.test.result == 'success'))
     runs-on: ubuntu-latest
     permissions:
       contents: write

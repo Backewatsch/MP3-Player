@@ -71,6 +71,7 @@ private struct TrackActionsHost: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environmentObject(actions)
+            .noticeHost()
             .sheet(item: $actions.sheet, onDismiss: actions.sheetDismissed) { sheet in
                 Group {
                     switch sheet {
@@ -134,6 +135,7 @@ struct TrackActionsSheet: View {
                     tile("Als Nächstes abspielen", "text.line.first.and.arrowtriangle.forward") {
                         player.playNext(current)
                         actions.close()
+                        Notice.show("Als Nächstes: \(current.title)", symbol: "text.line.first.and.arrowtriangle.forward")
                     }
                     tile("Zu Playlist hinzufügen", "text.badge.plus") {
                         actions.show(.addToPlaylist(current))
@@ -148,8 +150,11 @@ struct TrackActionsSheet: View {
 
                 row(library.isFavorite(current) ? "Aus Lieblingssongs entfernen" : "Zu Lieblingssongs hinzufügen",
                     library.isFavorite(current) ? "heart.slash" : "heart") {
+                    let wasFavorite = library.isFavorite(current)
                     library.toggleFavorite(current)
                     actions.close()
+                    Notice.show(wasFavorite ? "Aus Lieblingssongs entfernt" : "Zu Lieblingssongs hinzugefügt",
+                                symbol: wasFavorite ? "heart.slash" : "heart.fill")
                 }
                 row("Mix starten", "dot.radiowaves.left.and.right") {
                     player.startMix(with: current, from: library.tracks)
@@ -158,6 +163,7 @@ struct TrackActionsSheet: View {
                 row("In die Wiedergabeliste", "text.append") {
                     player.addToQueue(current)
                     actions.close()
+                    Notice.show("Zur Wiedergabeliste hinzugefügt", symbol: "text.append")
                 }
                 if !current.album.isEmpty {
                     row("Album anzeigen", "opticaldisc") { actions.show(.album(current.album)) }
@@ -168,8 +174,10 @@ struct TrackActionsSheet: View {
                 row("Mitwirkende an Song anzeigen", "person.2") { actions.show(.info(current)) }
                 row(library.isPinned(current) ? "Von Kurzwahl lösen" : "An Kurzwahl anpinnen",
                     library.isPinned(current) ? "pin.slash" : "pin") {
+                    let wasPinned = library.isPinned(current)
                     library.togglePin(current)
                     actions.close()
+                    Notice.show(wasPinned ? "Von der Kurzwahl gelöst" : "An Kurzwahl angepinnt", symbol: wasPinned ? "pin.slash" : "pin.fill")
                 }
                 row("Infos bearbeiten", "pencil") { actions.show(.edit(current)) }
                 row("Zuschneiden", "scissors") {
@@ -211,6 +219,7 @@ struct TrackActionsSheet: View {
                     row("Aus Playlist entfernen", "trash") {
                         library.remove(current, from: playlist)
                         actions.close()
+                        Notice.show("Aus „\(playlist.name)“ entfernt", symbol: "minus.circle")
                     }
                 }
                 if !player.queue.isEmpty {
@@ -413,7 +422,7 @@ struct TrackCollectionList: View {
                 Button(selection.active ? "Fertig" : "Auswählen") { if selection.active { selection.clear() } else { selection.start() } }
             }
         }
-        .safeAreaInset(edge: .top) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if selection.active { SelectionBar(selection: selection, all: shown) }
         }
     }
@@ -541,8 +550,14 @@ private struct PlainTrackRow: View {
             if let selection {
                 Button { selection.start(with: track.id) } label: { Label("Auswählen", systemImage: "checkmark.circle") }
             }
-            Button { player.playNext(track) } label: { Label("Als Nächstes abspielen", systemImage: "text.line.first.and.arrowtriangle.forward") }
-            Button { player.addToQueue(track) } label: { Label("In die Wiedergabeliste", systemImage: "text.append") }
+            Button {
+                player.playNext(track)
+                Notice.show("Als Nächstes: \(track.title)", symbol: "text.line.first.and.arrowtriangle.forward")
+            } label: { Label("Als Nächstes abspielen", systemImage: "text.line.first.and.arrowtriangle.forward") }
+            Button {
+                player.addToQueue(track)
+                Notice.show("Zur Wiedergabeliste hinzugefügt", symbol: "text.append")
+            } label: { Label("In die Wiedergabeliste", systemImage: "text.append") }
             Button { library.toggleFavorite(track) } label: {
                 Label(library.isFavorite(track) ? "Aus Lieblingssongs entfernen" : "Zu Lieblingssongs",
                       systemImage: library.isFavorite(track) ? "heart.slash" : "heart")

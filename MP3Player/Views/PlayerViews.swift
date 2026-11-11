@@ -64,6 +64,62 @@ struct MiniPlayerBar: View {
     }
 }
 
+/// Mini-Player im festen Platz über der Tab-Leiste (ab iOS 26): ohne eigenen Hintergrund, das Glas liefert das System.
+@available(iOS 26.0, *)
+struct MiniPlayerAccessory: View {
+    @EnvironmentObject private var player: AudioPlayer
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+    @Binding var showNowPlaying: Bool
+
+    var body: some View {
+        if let track = player.current {
+            HStack(spacing: 10) {
+                ArtworkView(track: track, size: 30, cornerRadius: 6)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(track.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    // Neben der geschrumpften Tab-Leiste ist nur Platz für den Titel
+                    if placement != .inline {
+                        Text(track.artist.isEmpty ? "Unbekannter Interpret" : track.artist)
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                Button(action: player.togglePlayPause) {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title3)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(player.isPlaying ? "Pause" : "Abspielen")
+                .accessibilityIdentifier("miniPlayPause")
+                if placement != .inline {
+                    Button(action: player.next) {
+                        Image(systemName: "forward.fill")
+                            .font(.body)
+                            .frame(width: 36, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Nächster Titel")
+                }
+            }
+            .foregroundStyle(.primary)
+            .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .padding(.trailing, 6)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture { showNowPlaying = true }
+            // Wischen: links = nächster Titel, rechts = vorheriger
+            .gesture(DragGesture(minimumDistance: 30).onEnded { value in
+                if value.translation.width < -60 { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.next() }
+                else if value.translation.width > 60 { UIImpactFeedbackGenerator(style: .light).impactOccurred(); player.previous() }
+            })
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("miniPlayer")
+        }
+    }
+}
+
 struct NowPlayingView: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var actions: TrackActions

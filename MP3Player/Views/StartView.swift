@@ -277,7 +277,7 @@ struct FavoritesView: View {
                     .accessibilityIdentifier("selectButton")
             }
         }
-        .safeAreaInset(edge: .top) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if selection.active { SelectionBar(selection: selection, all: shown) }
         }
     }

@@ -7,6 +7,7 @@ struct PlaylistDetailView: View {
 
     @State private var showAddTracks = false
     @State private var showRename = false
+    @State private var showCoverPicker = false
     @State private var renameText = ""
     @State private var query = ""
     @StateObject private var selection = SelectionModel()
@@ -28,19 +29,7 @@ struct PlaylistDetailView: View {
         return List {
             if !tracks.isEmpty && !searching {
                 Section {
-                    HStack(spacing: 12) {
-                        Button {
-                            player.shuffle = false
-                            player.play(tracks, startAt: 0, playlistID: playlist.id)
-                        } label: { Label("Abspielen", systemImage: "play.fill").frame(maxWidth: .infinity) }
-                            .accessibilityIdentifier("playAllButton")
-                        Button {
-                            player.shuffle = true
-                            player.play(tracks, startAt: Int.random(in: 0..<tracks.count), playlistID: playlist.id)
-                        } label: { Label("Zufällig", systemImage: "shuffle").frame(maxWidth: .infinity) }
-                    }
-                    .buttonStyle(.bordered)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    header(playlist, tracks)
                 }
             }
             Section {
@@ -70,7 +59,7 @@ struct PlaylistDetailView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(playlist.name)
         .listSearch($query, enabled: !tracks.isEmpty)
-        .safeAreaInset(edge: .top) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if selection.active { SelectionBar(selection: selection, all: shown, playlist: playlist) }
         }
         .toolbar {
@@ -84,18 +73,62 @@ struct PlaylistDetailView: View {
                     if playlist.id != Library.downloadsPlaylistID {
                         Button { renameText = playlist.name; showRename = true } label: { Label("Umbenennen", systemImage: "pencil") }
                     }
+                    Button { showCoverPicker = true } label: { Label("Cover ändern", systemImage: "photo") }
+                    if library.hasPlaylistCover(playlist) {
+                        Button(role: .destructive) {
+                            library.removePlaylistCover(playlist)
+                            Notice.show("Eigenes Cover entfernt", symbol: "photo")
+                        } label: { Label("Eigenes Cover entfernen", systemImage: "trash") }
+                    }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel("Mehr")
+                .accessibilityIdentifier("playlistMenu")
             }
         }
         .sheet(isPresented: $showAddTracks) {
             AddTracksSheet(playlist: playlist)
+        }
+        .sheet(isPresented: $showCoverPicker) {
+            CoverPicker { image in
+                library.setPlaylistCover(playlist, image: image)
+                Notice.show("Cover geändert", symbol: "photo")
+            }
         }
         .alert("Playlist umbenennen", isPresented: $showRename) {
             TextField("Name", text: $renameText)
             Button("Abbrechen", role: .cancel) {}
             Button("Sichern") { library.renamePlaylist(playlist, to: renameText) }
         }
+    }
+
+    /// Kopf wie bei Alben und Mixen: großes Cover (antippen zum Ändern), darunter „Abspielen“ und „Zufällig“
+    private func header(_ playlist: Playlist, _ tracks: [Track]) -> some View {
+        VStack(spacing: 14) {
+            Button { showCoverPicker = true } label: {
+                PlaylistArtwork(playlist: playlist, first: tracks.first, size: 180, cornerRadius: 12)
+                    .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cover der Playlist")
+            .accessibilityHint("Tippen, um ein eigenes Cover zu wählen")
+            .accessibilityIdentifier("playlistCover")
+            HStack(spacing: 12) {
+                Button {
+                    player.shuffle = false
+                    player.play(tracks, startAt: 0, playlistID: playlist.id)
+                } label: { Label("Abspielen", systemImage: "play.fill").frame(maxWidth: .infinity) }
+                    .accessibilityIdentifier("playAllButton")
+                Button {
+                    player.shuffle = true
+                    player.play(tracks, startAt: Int.random(in: 0..<tracks.count), playlistID: playlist.id)
+                } label: { Label("Zufällig", systemImage: "shuffle").frame(maxWidth: .infinity) }
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 }
 

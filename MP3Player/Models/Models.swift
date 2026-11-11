@@ -41,6 +41,7 @@ enum Storage {
         try? fm.createDirectory(at: artwork, withIntermediateDirectories: true)
         LibrarySaver.shared.discard()
         try? fm.removeItem(at: indexFile)
+        try? fm.removeItem(at: support.appendingPathComponent(FolderScanner.storeName))
     }
 
     static func isAudioFile(_ name: String) -> Bool {

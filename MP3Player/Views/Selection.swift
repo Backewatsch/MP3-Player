@@ -21,7 +21,8 @@ final class SelectionModel: ObservableObject {
     }
 }
 
-/// Leiste unten während der Auswahl: Als Nächstes · Zu Playlist · Herz · (Entfernen) · Löschen
+/// Leiste unten während der Auswahl (wie in den Apple-Apps): Als Nächstes · Zu Playlist · Herz · (Entfernen) · Löschen.
+/// Sie sitzt unten, damit die große Überschrift der Liste stehen bleibt.
 struct SelectionBar: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var player: AudioPlayer
@@ -51,18 +52,24 @@ struct SelectionBar: View {
             }
             HStack {
                 action("Als Nächstes", "text.line.first.and.arrowtriangle.forward", "sel-next") {
+                    let count = chosen.count
                     chosen.forEach { player.playNext($0) }
                     selection.clear()
+                    Notice.show("\(count) Titel als Nächstes", symbol: "text.line.first.and.arrowtriangle.forward")
                 }
                 action("Zu Playlist", "text.badge.plus", "sel-playlist") { showAdd = true }
                 action("Herz", "heart.fill", "sel-fav") {
+                    let count = chosen.count
                     library.addFavorites(chosen)
                     selection.clear()
+                    Notice.show("\(count) Titel zu Lieblingssongs", symbol: "heart.fill")
                 }
                 if let playlist {
                     action("Entfernen", "minus.circle", "sel-remove") {
+                        let count = chosen.count
                         chosen.forEach { library.remove($0, from: playlist) }
                         selection.clear()
+                        Notice.show("\(count) Titel aus „\(playlist.name)“ entfernt", symbol: "minus.circle")
                     }
                 }
                 action("Löschen", "trash", "sel-delete", destructive: true) { confirmDelete = true }
@@ -71,14 +78,16 @@ struct SelectionBar: View {
         }
         .padding(12)
         .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
+        .overlay(alignment: .top) { Divider() }
         .sheet(isPresented: $showAdd) {
             AddManyToPlaylistSheet(tracks: chosen) { selection.clear() }
         }
         .confirmationDialog("\(chosen.count) Titel löschen?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Löschen", role: .destructive) {
+                let count = chosen.count
                 library.deleteAll(chosen)
                 selection.clear()
+                Notice.show("\(count) Titel gelöscht", symbol: "trash")
             }
         } message: {
             Text("Die Dateien werden vom iPhone gelöscht und aus allen Playlists entfernt.")
@@ -117,6 +126,7 @@ struct AddManyToPlaylistSheet: View {
                     Button {
                         library.addAll(tracks, to: playlist)
                         dismiss(); onDone()
+                        Notice.show("\(tracks.count) Titel zu „\(playlist.name)“ hinzugefügt", symbol: "text.badge.plus")
                     } label: { PlaylistRow(playlist: playlist) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("addTo-\(playlist.name)")
@@ -132,6 +142,7 @@ struct AddManyToPlaylistSheet: View {
                     let playlist = library.createPlaylist(named: newName)
                     library.addAll(tracks, to: playlist)
                     dismiss(); onDone()
+                    Notice.show("\(tracks.count) Titel zu „\(playlist.name)“ hinzugefügt", symbol: "text.badge.plus")
                 }
             }
         }

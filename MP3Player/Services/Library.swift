@@ -272,6 +272,16 @@ final class Library: ObservableObject {
         coverVersion += 1
     }
 
+    func hasPlaylistCover(_ playlist: Playlist) -> Bool {
+        FileManager.default.fileExists(atPath: playlistCoverURL(playlist).path)
+    }
+
+    /// Eigenes Cover der Playlist entfernen – dann zeigt sie wieder das Cover ihres ersten Liedes
+    func removePlaylistCover(_ playlist: Playlist) {
+        try? FileManager.default.removeItem(at: playlistCoverURL(playlist))
+        coverVersion += 1
+    }
+
     var duplicateGroups: [[Track]] { Duplicates.groups(tracks) }
 
     private var analyzing = false
@@ -395,6 +405,14 @@ final class Library: ObservableObject {
         save()
         onTrackAdded?(track, targetPlaylist)
         return track
+    }
+
+    /// Liegt eine Datei mit diesem Namen und dieser Größe schon in der App? (Ordner-Suche: nicht doppelt übernehmen)
+    func hasFile(named name: String, size: Int) -> Bool {
+        let clean = Self.sanitize(name)
+        guard tracks.contains(where: { $0.fileName == clean }) else { return false }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: Storage.documents.appendingPathComponent(clean).path)
+        return (attributes?[.size] as? NSNumber)?.intValue == size
     }
 
     // MARK: Umwandeln in MP3
@@ -647,6 +665,7 @@ final class Library: ObservableObject {
     func deletePlaylist(_ playlist: Playlist) {
         guard playlist.id != Self.downloadsPlaylistID else { return }
         playlists.removeAll { $0.id == playlist.id }
+        try? FileManager.default.removeItem(at: playlistCoverURL(playlist))
         save()
     }
 
@@ -717,6 +736,29 @@ final class Library: ObservableObject {
         }
         historyEvents = merge(historyEvents, backup.history, max: Self.maxHistory)
         plays = merge(plays, backup.plays, max: StatsSummary.maxPlays)
+        save()
+    }
+
+    /// Angaben eines Liedes aus einer Sicherung übernehmen (dort können sie von Hand geändert worden sein)
+    func adoptBackupInfo(_ id: UUID, from saved: Track) {
+        guard let i = tracks.firstIndex(where: { $0.id == id }) else { return }
+        if !saved.title.isEmpty { tracks[i].title = saved.title }
+        if !saved.artist.isEmpty { tracks[i].artist = saved.artist }
+        if !saved.album.isEmpty { tracks[i].album = saved.album }
+        if !saved.genre.isEmpty { tracks[i].genre = saved.genre }
+        if saved.addedAt.timeIntervalSince1970 > 0 { tracks[i].addedAt = saved.addedAt }
+        save()
+    }
+
+    /// Songtexte und eigene Cover aus einer Sicherung übernehmen (`map` ordnet die Kennungen zu)
+    func applyRestoreExtras(lyrics: [UUID: String], customCovers saved: [UUID], map: (UUID) -> UUID?) {
+        for (old, words) in lyrics {
+            if let id = map(old), lyricsByID[id] == nil { lyricsByID[id] = words }
+        }
+        for old in saved {
+            if let id = map(old), !customCovers.contains(id) { customCovers.append(id) }
+        }
+        coverVersion += 1
         save()
     }
 

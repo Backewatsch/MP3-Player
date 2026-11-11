@@ -23,10 +23,13 @@ struct MediathekView: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var downloads: DownloadManager
     @EnvironmentObject private var actions: TrackActions
+    @EnvironmentObject private var folders: FolderScanner
 
     @State private var path = NavigationPath()
     @State private var search = ""
     @State private var showImporter = false
+    /// Der Datei-Dialog wählt einen Ordner (zum Durchsuchen) statt einzelner Dateien
+    @State private var pickFolder = false
     @State private var showDownloads = false
     @State private var importError: String?
     @State private var showSettings = false
@@ -46,7 +49,7 @@ struct MediathekView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     UpdateBanner { showSettings = true }
-                    if let status = library.conversionStatus {
+                    if let status = library.conversionStatus ?? (folders.isScanning ? folders.status : nil) {
                         HStack(spacing: 10) {
                             ProgressView()
                             Text(status).font(.footnote).lineLimit(2)
@@ -73,9 +76,13 @@ struct MediathekView: View {
                         Button { newPlaylistName = ""; showNewPlaylist = true } label: {
                             Label("Neue Playlist", systemImage: "text.badge.plus")
                         }
-                        Button { showImporter = true } label: {
+                        Button { pickFolder = false; showImporter = true } label: {
                             Label("Aus Dateien importieren / Video umwandeln", systemImage: "folder")
                         }
+                        Button { pickFolder = true; showImporter = true } label: {
+                            Label("Ordner nach Liedern durchsuchen", systemImage: "folder.badge.gearshape")
+                        }
+                        .accessibilityIdentifier("menuScanFolder")
                         Button { showDownloads = true } label: {
                             Label("Von Link herunterladen", systemImage: "link")
                         }
@@ -88,10 +95,19 @@ struct MediathekView: View {
                 }
             }
             .fileImporter(isPresented: $showImporter,
-                          allowedContentTypes: [.audio, .mp3Audio, .movie, .mpeg4Movie, .quickTimeMovie],
-                          allowsMultipleSelection: true) { result in
+                          allowedContentTypes: pickFolder ? [.folder] : [.audio, .mp3Audio, .movie, .mpeg4Movie, .quickTimeMovie],
+                          allowsMultipleSelection: !pickFolder) { result in
                 switch result {
                 case .success(let urls):
+                    if pickFolder {
+                        // Ordner merken und durchsuchen; der Fortschritt steht oben in der Mediathek
+                        guard let folder = urls.first else { return }
+                        Task {
+                            let added = await folders.add(folder)
+                            Notice.show(added == 0 ? "Keine neuen Lieder im Ordner" : "\(added) neue Lieder übernommen", symbol: "folder")
+                        }
+                        return
+                    }
                     Task {
                         var failures: [String] = []
                         for url in urls {
@@ -323,11 +339,17 @@ struct AllTracksView: View {
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { actions.requestDelete(track) } label: { Label("Entfernen", systemImage: "trash") }
-                        Button { player.addToQueue(track) } label: { Label("Wiedergabeliste", systemImage: "text.append") }
+                        Button {
+                            player.addToQueue(track)
+                            Notice.show("Zur Wiedergabeliste hinzugefügt", symbol: "text.append")
+                        } label: { Label("Wiedergabeliste", systemImage: "text.append") }
                             .tint(.indigo)
                     }
                     .swipeActions(edge: .leading) {
-                        Button { player.playNext(track) } label: { Label("Als Nächstes", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                        Button {
+                            player.playNext(track)
+                            Notice.show("Als Nächstes: \(track.title)", symbol: "text.line.first.and.arrowtriangle.forward")
+                        } label: { Label("Als Nächstes", systemImage: "text.line.first.and.arrowtriangle.forward") }
                             .tint(Color.accentColor)
                         Button { library.toggleFavorite(track) } label: { Label("Herz", systemImage: library.isFavorite(track) ? "heart.slash" : "heart") }
                             .tint(.pink)
@@ -361,7 +383,7 @@ struct AllTracksView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .top) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if selection.active { SelectionBar(selection: selection, all: shown) }
         }
     }

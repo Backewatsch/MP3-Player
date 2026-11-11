@@ -36,8 +36,11 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 **Bibliothek & Playlists**
 - Suche über die ganze Mediathek (auf der Start-Seite und in der Mediathek) und **innerhalb einer Liste**: Playlist, Titel, Lieblingssongs, Album, Interpret, Genre und Mix haben ein eigenes Suchfeld
 - Titel-Infos bearbeiten, löschen
-- Eigene Playlists anlegen, umbenennen, sortieren (Bearbeiten → ziehen)
+- Eigene Playlists anlegen, umbenennen, sortieren (Bearbeiten → ziehen); jede Playlist zeigt oben ihr Cover – antippen oder „…“ → **Cover ändern** setzt ein eigenes Bild
+- Mehrfachauswahl („Auswählen“): Die Aktionen (Als Nächstes, Zu Playlist, Herz, Löschen) stehen in einer Leiste unten; nach jeder Aktion erscheint kurz ein Hinweis, was passiert ist
 - Import über die Dateien-App (＋ → „Aus Dateien importieren“) oder „Öffnen in … MP3 Player“
+- **Ordner nach Liedern durchsuchen** (iPhone: ＋ → „Ordner nach Liedern durchsuchen“ oder *Info & Updates → Ordner mit Musik*): Ordner aus der Dateien-App einmal auswählen – die App übernimmt alle Lieder daraus samt Unterordnern und schaut bei jedem Start nach neuen. Die Originale bleiben, wo sie sind; in der App gelöschte Lieder kommen nicht wieder. Das ganze iPhone auf einmal zu durchsuchen erlaubt iOS keiner App
+- **Sicherung** (*Info & Updates → Sicherung*): „Alles mit Musik“ packt Lieder, Cover, Playlists, Herzen, Kurzwahl, Verlauf und Statistik in eine ZIP-Datei – im selben Format wie die Android-App. Eine Sicherung vom Android-Handy lässt sich auf dem iPhone wiederherstellen und umgekehrt. Die kleine Sicherung enthält alles außer den Liedern
 - Dateien, die du per Finder (Mac) bzw. iTunes-Dateifreigabe (Windows) in den App-Ordner kopierst, werden automatisch erkannt
 
 **Browser & Downloads**
@@ -119,7 +122,7 @@ Deine Musik und Playlists bleiben bei einem Update erhalten, solange du die App 
 
 Bei jedem Push laufen auf GitHub (macOS, aktueller iPhone-Simulator):
 
-- **Unit-Tests** (`MP3PlayerTests`): ID3-Tags und Cover lesen, Import/Ablehnung von Dateien, doppelte Dateinamen, Ordner-Scan ohne Duplikate, Playlists (anlegen, sortieren, entfernen, speichern), Downloads → Playlist „Heruntergeladen“, Player (Weiter/Zurück, automatischer Titelwechsel, Wiederholen, Zufall, Warteschlange, gelöschte Titel)
+- **Unit-Tests** (`MP3PlayerTests`): ID3-Tags und Cover lesen, Import/Ablehnung von Dateien, doppelte Dateinamen, Ordner-Scan ohne Duplikate, Playlists (anlegen, sortieren, entfernen, speichern), Downloads → Playlist „Heruntergeladen“, Player (Weiter/Zurück, automatischer Titelwechsel, Wiederholen, Zufall, Warteschlange, gelöschte Titel), Komplett-Sicherung (ZIP schreiben und lesen, Sicherung aus der Android-App wiederherstellen), Ordner-Suche
 - **UI-Tests** (`MP3PlayerUITests`): bedienen die App wie ein Mensch – MP3 per Link laden, in der Playlist finden und abspielen, MP3 über den internen Browser laden, YouTube-Hinweis. Die Screenshots liegen im Artefakt *test-screenshots*.
 
 Lokal auf dem Mac: `xcodegen generate`, dann in Xcode **⌘U**.
@@ -134,6 +137,9 @@ MP3Player/
   Services/Library.swift     Bibliothek, Playlists, Import, ID3-Metadaten
   Services/AudioPlayer.swift Wiedergabe, Warteschlange, Sperrbildschirm-Steuerung
   Services/DownloadManager.swift  Downloads (Browser + Link) → Bibliothek
+  Services/FolderScanner.swift    Ordner aus der Dateien-App nach Liedern durchsuchen
+  Services/FullBackup.swift       Komplett-Sicherung mit Musik (Format der Android-App)
+  Services/Zip.swift              ZIP lesen und schreiben
   Services/BrowserModel.swift     WKWebView, Download-Erkennung, Startseite
   Views/                     SwiftUI-Oberfläche
 ThirdParty/lame/             LAME-MP3-Encoder (LGPL), von iPhone- und Android-App gemeinsam genutzt

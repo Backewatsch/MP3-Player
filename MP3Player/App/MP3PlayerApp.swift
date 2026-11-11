@@ -7,6 +7,7 @@ struct MP3PlayerApp: App {
     @StateObject private var player = AudioPlayer()
     @StateObject private var downloads = DownloadManager()
     @StateObject private var updates = UpdateChecker()
+    @StateObject private var folders = FolderScanner()
     @Environment(\.scenePhase) private var scenePhase
     @State private var openError: String?
 
@@ -26,6 +27,7 @@ struct MP3PlayerApp: App {
                 .environmentObject(player)
                 .environmentObject(downloads)
                 .environmentObject(updates)
+                .environmentObject(folders)
                 .onAppear(perform: connect)
                 .onOpenURL { url in
                     // Tipp auf das Startbildschirm-Widget
@@ -52,6 +54,8 @@ struct MP3PlayerApp: App {
                 (Appearance(rawValue: UserDefaults.standard.string(forKey: Appearance.key) ?? "") ?? .dark).apply()
                 Task { await library.rescan() }
                 Task { await updates.checkIfDue() }
+                // Gemerkte Ordner nach neuen Liedern durchsuchen
+                Task { await folders.scan() }
             }
         }
     }
@@ -83,6 +87,7 @@ struct MP3PlayerApp: App {
 
     private func connect() {
         downloads.library = library
+        folders.library = library
         library.onTrackAdded = { [weak player = player] track, playlistID in
             player?.libraryDidAdd(track, playlistID: playlistID)
             Task { @MainActor in await self.library.analyzeLoudness() }

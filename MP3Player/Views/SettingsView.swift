@@ -20,6 +20,13 @@ struct SettingsView: View {
     @State private var showExporter = false
     @State private var showImporter = false
     @State private var backupStatus: String?
+    @EnvironmentObject private var folders: FolderScanner
+    /// Der Datei-Dialog öffnet eine Sicherung oder wählt einen Ordner mit Musik
+    @State private var pickFolder = false
+    @State private var confirmBackup = false
+    @State private var backupBusy = false
+    @State private var fullBackupURL: URL?
+    @State private var showMover = false
 
     var body: some View {
         NavigationStack {
@@ -122,46 +129,9 @@ struct SettingsView: View {
                     .accessibilityIdentifier("openSound")
                 } header: { Text("Klang") }
 
-                Section {
-                    Button {
-                        exportDocument = try? BackupDocument(state: library.stateSnapshot)
-                        showExporter = exportDocument != nil
-                    } label: { Label("Sicherung erstellen", systemImage: "square.and.arrow.up") }
-                        .accessibilityIdentifier("backupCreate")
-                    Button { showImporter = true } label: { Label("Sicherung wiederherstellen", systemImage: "arrow.counterclockwise") }
-                        .accessibilityIdentifier("backupRestore")
-                    if let backupStatus {
-                        Text(backupStatus).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("backupStatus")
-                    }
-                } header: {
-                    Text("Sicherung")
-                } footer: {
-                    Text("Sichert Playlists, Herzen, Kurzwahl, Verlauf und Statistik. Die Musikdateien selbst findest du in der Dateien-App unter „Auf meinem iPhone › ILLEGAL FREEDOM MUSIC“ – kopiere sie z. B. nach iCloud Drive. Beim Wiederherstellen geht nichts verloren.")
-                }
-                .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .json,
-                              defaultFilename: "ILLEGAL-FREEDOM-MUSIC-Sicherung") { result in
-                    switch result {
-                    case .success: backupStatus = "✓ Sicherung gespeichert."
-                    case .failure(let error): backupStatus = "Sicherung fehlgeschlagen: \(error.localizedDescription)"
-                    }
-                }
-                .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json]) { result in
-                    switch result {
-                    case .success(let url):
-                        let accessing = url.startAccessingSecurityScopedResource()
-                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                        do {
-                            let data = try Data(contentsOf: url)
-                            let r = library.restore(from: try Library.decodeBackup(data))
-                            backupStatus = "✓ Wiederhergestellt: \(r.matched) Lieder erkannt, \(r.playlists) Playlists"
-                                + (r.missing > 0 ? " · \(r.missing) Lieder fehlen auf diesem iPhone." : ".")
-                        } catch {
-                            backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
-                        }
-                    case .failure(let error):
-                        backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
-                    }
-                }
+                folderSection
+
+                backupSection
 
                 Section {
                     if let status = library.conversionStatus {
@@ -231,6 +201,172 @@ struct SettingsView: View {
         }
     }
 
+    /// Ordner aus der Dateien-App, die nach Liedern durchsucht werden
+    @ViewBuilder private var folderSection: some View {
+        Section {
+            ForEach(folders.folders) { folder in
+                HStack {
+                    Label(folder.name, systemImage: "folder")
+                    Spacer()
+                    Text("\(folder.seen.count) Lieder").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .onDelete { offsets in
+                let doomed = offsets.compactMap { folders.folders.indices.contains($0) ? folders.folders[$0] : nil }
+                doomed.forEach { folders.remove($0) }
+            }
+            Button { pickFolder = true; showImporter = true } label: {
+                Label("Ordner hinzufügen", systemImage: "folder.badge.plus")
+            }
+            .accessibilityIdentifier("addMusicFolder")
+            // Ein gemeinsamer Datei-Dialog: Ordner mit Musik wählen oder Sicherung öffnen.
+            // Jeder Datei-Dialog hängt an einer eigenen Zeile – mehrere an derselben Ansicht stören sich gegenseitig.
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: pickFolder ? [.folder] : [.json, .zip]) { result in
+                switch result {
+                case .success(let url):
+                    if pickFolder {
+                        Task { await folders.add(url) }
+                    } else {
+                        restore(from: url)
+                    }
+                case .failure(let error):
+                    if !pickFolder { backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)" }
+                }
+            }
+            if !folders.folders.isEmpty {
+                Button { Task { await folders.scan(force: true) } } label: {
+                    Label("Jetzt durchsuchen", systemImage: "arrow.clockwise")
+                }
+                .disabled(folders.isScanning)
+            }
+            if let status = folders.status {
+                HStack(spacing: 10) {
+                    if folders.isScanning { ProgressView() }
+                    Text(status).font(.footnote).foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("folderStatus")
+            }
+        } header: {
+            Text("Ordner mit Musik")
+        } footer: {
+            Text("Wähle einen Ordner aus der Dateien-App, zum Beispiel „Auf meinem iPhone“ oder einen Ordner in iCloud Drive. Die App durchsucht ihn samt Unterordnern nach Liedern und übernimmt alle – auch später bei jedem Start, wenn neue dazukommen. Die Lieder werden in die App kopiert; die Originale bleiben, wo sie sind. Das ganze iPhone auf einmal zu durchsuchen erlaubt Apple keiner App.")
+        }
+    }
+
+    /// Sicherung erstellen (mit oder ohne Musik) und wiederherstellen
+    @ViewBuilder private var backupSection: some View {
+        Section {
+            Button { confirmBackup = true } label: { Label("Sicherung erstellen", systemImage: "square.and.arrow.up") }
+                .disabled(backupBusy)
+                .accessibilityIdentifier("backupCreate")
+                .confirmationDialog("Was soll gesichert werden?", isPresented: $confirmBackup, titleVisibility: .visible) {
+                    Button("Alles mit Musik (große Datei)") { createFullBackup() }
+                    Button("Nur Playlists, Herzen und Statistik") {
+                        exportDocument = try? BackupDocument(state: library.stateSnapshot)
+                        showExporter = exportDocument != nil
+                    }
+                    Button("Abbrechen", role: .cancel) {}
+                } message: {
+                    Text("„Alles mit Musik“ ist für ein neues Handy gedacht. Die Datei lässt sich auch in der Android-App wiederherstellen.")
+                }
+                // Die fertige Komplett-Sicherung an einen Ort in der Dateien-App legen
+                .modifier(BackupMover(isPresented: $showMover, file: fullBackupURL, onDone: { result in
+                    switch result {
+                    case .success: backupStatus = "✓ Sicherung mit Musik gespeichert."
+                    case .failure(let error): backupStatus = "Sicherung fehlgeschlagen: \(error.localizedDescription)"
+                    }
+                    discardFullBackup()
+                }, onCancel: {
+                    backupStatus = "Sicherung nicht gespeichert."
+                    discardFullBackup()
+                }))
+            Button { pickFolder = false; showImporter = true } label: {
+                Label("Sicherung wiederherstellen", systemImage: "arrow.counterclockwise")
+            }
+            .disabled(backupBusy)
+            .accessibilityIdentifier("backupRestore")
+            .fileExporter(isPresented: $showExporter, document: exportDocument, contentType: .json,
+                          defaultFilename: "ILLEGAL-FREEDOM-MUSIC-Sicherung") { result in
+                switch result {
+                case .success: backupStatus = "✓ Sicherung gespeichert."
+                case .failure(let error): backupStatus = "Sicherung fehlgeschlagen: \(error.localizedDescription)"
+                }
+            }
+            if let backupStatus {
+                HStack(spacing: 10) {
+                    if backupBusy { ProgressView() }
+                    Text(backupStatus).font(.footnote).foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("backupStatus")
+            }
+        } header: {
+            Text("Sicherung")
+        } footer: {
+            Text("„Alles mit Musik“ sichert Lieder, Cover, Playlists, Herzen, Kurzwahl, Verlauf und Statistik in eine Datei. Die kleine Sicherung enthält alles außer den Liedern. Wiederherstellen lässt sich beides, auch eine Sicherung aus der Android-App – dabei geht nichts Vorhandenes verloren.")
+        }
+    }
+
+    /// Komplett-Sicherung erstellen und danach fragen, wohin sie soll
+    private func createFullBackup() {
+        guard !backupBusy else { return }
+        backupBusy = true
+        backupStatus = "Sichere die Lieder …"
+        Task {
+            do {
+                let url = try await library.makeFullBackup { done, total in
+                    // Nachzügler nicht über die Fertig-Meldung schreiben
+                    if fullBackupURL == nil { backupStatus = "Sichere Lied \(min(done + 1, total)) von \(total) …" }
+                }
+                backupStatus = "Die Sicherung ist fertig – wähle, wo sie gespeichert werden soll."
+                fullBackupURL = url
+                showMover = true
+            } catch {
+                backupStatus = "Sicherung fehlgeschlagen: \(error.localizedDescription)"
+            }
+            backupBusy = false
+        }
+    }
+
+    /// Räumt die Komplett-Sicherung aus dem Zwischenspeicher: nach dem Verschieben liegt dort nur noch der leere Ordner,
+    /// nach dem Abbrechen die nicht gespeicherte Datei.
+    private func discardFullBackup() {
+        guard let url = fullBackupURL else { return }
+        fullBackupURL = nil
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
+    /// Sicherung wiederherstellen: Komplett-Sicherung (ZIP, auch von Android) oder kleine Sicherung (JSON)
+    private func restore(from url: URL) {
+        let accessing = url.startAccessingSecurityScopedResource()
+        guard ZipReader.isZip(url) else {
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let r = library.restore(from: try Library.decodeBackup(data))
+                backupStatus = "✓ Wiederhergestellt: \(r.matched) Lieder erkannt, \(r.playlists) Playlists"
+                    + (r.missing > 0 ? " · \(r.missing) Lieder fehlen auf diesem iPhone." : ".")
+            } catch {
+                backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
+            }
+            return
+        }
+        backupBusy = true
+        backupStatus = "Lese die Sicherung …"
+        Task {
+            do {
+                let r = try await library.restoreFull(from: url) { done, total in
+                    backupStatus = "Stelle Lied \(done) von \(total) wieder her …"
+                }
+                backupStatus = "✓ Wiederhergestellt: \(r.restored) Lieder zurückgeholt, \(r.matched) waren schon da, \(r.playlists) Playlists"
+                    + (r.missing > 0 ? " · \(r.missing) Lieder fehlen in der Sicherung." : ".")
+            } catch {
+                backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
+            }
+            if accessing { url.stopAccessingSecurityScopedResource() }
+            backupBusy = false
+        }
+    }
+
     @ViewBuilder private var statusRow: some View {
         switch updates.state {
         case .idle:
@@ -287,6 +423,23 @@ struct UpdateBanner: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("updateBanner")
+        }
+    }
+}
+
+/// Dialog „Wohin mit der Komplett-Sicherung?“. Ab iOS 17 meldet er auch das Abbrechen – dann wird die fertige Datei
+/// gleich wieder gelöscht. Unter iOS 16 räumt der nächste Start der App den Zwischenspeicher auf.
+private struct BackupMover: ViewModifier {
+    @Binding var isPresented: Bool
+    let file: URL?
+    let onDone: (Result<URL, Error>) -> Void
+    let onCancel: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.fileMover(isPresented: $isPresented, file: file, onCompletion: onDone, onCancellation: onCancel)
+        } else {
+            content.fileMover(isPresented: $isPresented, file: file, onCompletion: onDone)
         }
     }
 }

@@ -11,26 +11,7 @@ struct ContentView: View {
     enum Tab: Hashable { case start, library, editor }
 
     var body: some View {
-        TabView(selection: $tab) {
-            StartView(showNowPlaying: $showNowPlaying)
-                .miniPlayer($showNowPlaying)
-                .trackActionsHost()
-                .tabItem { Label("Start", systemImage: "house.fill") }
-                .tag(Tab.start)
-
-            MediathekView()
-                .miniPlayer($showNowPlaying)
-                .trackActionsHost()
-                .tabItem { Label("Mediathek", systemImage: "square.stack.fill") }
-                .badge(downloads.activeCount)
-                .tag(Tab.library)
-
-            EditorView(path: $editorPath)
-                .miniPlayer($showNowPlaying)
-                .trackActionsHost()
-                .tabItem { Label("Bearbeiten", systemImage: "scissors") }
-                .tag(Tab.editor)
-        }
+        tabs
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
                 .trackActionsHost()
@@ -58,19 +39,62 @@ struct ContentView: View {
     }
 }
 
+extension ContentView {
+    /// Ab iOS 26.1 sitzt der Mini-Player im festen Platz über der Tab-Leiste (wie in Apple Music):
+    /// Beim Herunterscrollen schrumpft die Tab-Leiste und der Mini-Player rückt daneben.
+    /// Ältere iOS-Versionen behalten den eigenen Mini-Player über der Tab-Leiste.
+    @ViewBuilder fileprivate var tabs: some View {
+        if #available(iOS 26.1, *) {
+            TabView(selection: $tab) { pages(ownMiniPlayer: false) }
+                .tabBarMinimizeBehavior(.onScrollDown)
+                .tabViewBottomAccessory(isEnabled: player.current != nil) {
+                    MiniPlayerAccessory(showNowPlaying: $showNowPlaying)
+                }
+        } else {
+            TabView(selection: $tab) { pages(ownMiniPlayer: true) }
+        }
+    }
+
+    @ViewBuilder private func pages(ownMiniPlayer: Bool) -> some View {
+        StartView(showNowPlaying: $showNowPlaying)
+            .miniPlayer($showNowPlaying, enabled: ownMiniPlayer)
+            .trackActionsHost()
+            .tabItem { Label("Start", systemImage: "house.fill") }
+            .tag(Tab.start)
+
+        MediathekView()
+            .miniPlayer($showNowPlaying, enabled: ownMiniPlayer)
+            .trackActionsHost()
+            .tabItem { Label("Mediathek", systemImage: "square.stack.fill") }
+            .badge(downloads.activeCount)
+            .tag(Tab.library)
+
+        EditorView(path: $editorPath)
+            .miniPlayer($showNowPlaying, enabled: ownMiniPlayer)
+            .trackActionsHost()
+            .tabItem { Label("Bearbeiten", systemImage: "scissors") }
+            .tag(Tab.editor)
+    }
+}
+
 private struct MiniPlayerModifier: ViewModifier {
     @Binding var showNowPlaying: Bool
+    let enabled: Bool
 
     func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .bottom, spacing: 0) {
-            MiniPlayerBar(showNowPlaying: $showNowPlaying)
+        if enabled {
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                MiniPlayerBar(showNowPlaying: $showNowPlaying)
+            }
+        } else {
+            content
         }
     }
 }
 
 extension View {
-    func miniPlayer(_ show: Binding<Bool>) -> some View {
-        modifier(MiniPlayerModifier(showNowPlaying: show))
+    func miniPlayer(_ show: Binding<Bool>, enabled: Bool = true) -> some View {
+        modifier(MiniPlayerModifier(showNowPlaying: show, enabled: enabled))
     }
 }
 

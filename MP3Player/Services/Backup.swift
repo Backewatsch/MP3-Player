@@ -1,8 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Sicherung von Playlists, Herzen, Kurzwahl, Verlauf und Statistik als JSON-Datei.
-/// Die Musikdateien selbst liegen sichtbar in der Dateien-App („Auf meinem iPhone › ILLEGAL FREEDOM MUSIC“).
+/// Kleine Sicherung von Playlists, Herzen, Kurzwahl, Verlauf und Statistik als JSON-Datei (ohne Musik).
+/// Die Komplett-Sicherung samt Liedern steht in FullBackup.swift.
 struct BackupDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
 
@@ -26,8 +26,17 @@ struct BackupDocument: FileDocument {
 
 enum BackupError: LocalizedError {
     case notABackup
+    case notEnoughSpace(Int64)
 
-    var errorDescription: String? { "Das ist keine Sicherung von ILLEGAL FREEDOM MUSIC." }
+    var errorDescription: String? {
+        switch self {
+        case .notABackup:
+            return "Das ist keine Sicherung von ILLEGAL FREEDOM MUSIC."
+        case .notEnoughSpace(let bytes):
+            let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+            return "Zu wenig freier Speicher: Die Sicherung braucht etwa \(size)."
+        }
+    }
 }
 
 struct RestoreResult {
@@ -37,6 +46,18 @@ struct RestoreResult {
 }
 
 extension Library {
+    /// Findet ein Lied aus einer Sicherung in der Mediathek: über die Kennung, über Titel + Interpret + Länge
+    /// oder über den Dateinamen.
+    func matchingTrack(for saved: Track) -> Track? {
+        track(id: saved.id)
+            ?? tracks.first(where: {
+                $0.title.localizedCaseInsensitiveCompare(saved.title) == .orderedSame
+                    && $0.artist.localizedCaseInsensitiveCompare(saved.artist) == .orderedSame
+                    && abs($0.duration - saved.duration) < 2
+            })
+            ?? tracks.first(where: { $0.fileName == saved.fileName })
+    }
+
     static func decodeBackup(_ data: Data) throws -> LibraryState {
         guard let state = try? JSONDecoder().decode(LibraryState.self, from: data) else { throw BackupError.notABackup }
         return state
@@ -49,13 +70,7 @@ extension Library {
         var idMap: [UUID: UUID] = [:]
         var missing = 0
         for bt in backup.tracks {
-            if let existing = track(id: bt.id)
-                ?? tracks.first(where: {
-                    $0.title.localizedCaseInsensitiveCompare(bt.title) == .orderedSame
-                        && $0.artist.localizedCaseInsensitiveCompare(bt.artist) == .orderedSame
-                        && abs($0.duration - bt.duration) < 2
-                })
-                ?? tracks.first(where: { $0.fileName == bt.fileName }) {
+            if let existing = matchingTrack(for: bt) {
                 idMap[bt.id] = existing.id
             } else {
                 missing += 1
