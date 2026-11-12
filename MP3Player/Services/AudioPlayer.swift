@@ -125,6 +125,20 @@ final class AudioPlayer: NSObject, ObservableObject {
         observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.engineConfigurationChanged() }
         })
+        // App in der App-Übersicht weggewischt → Musik aus. Sofort und nicht erst später als Task:
+        // iOS lässt der App dafür nur wenige Sekunden.
+        observers.append(center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.appWillTerminate() }
+        })
+    }
+
+    /// Die App wird beendet: Wiedergabe anhalten (Warteschlange und Stelle bleiben fürs Weiterhören gespeichert),
+    /// Sperrbildschirm-Anzeige entfernen und den Ton freigeben
+    func appWillTerminate() {
+        // pause() hält Player und Audio-Engine an und speichert die Stelle
+        if isPlaying { pause() }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     // MARK: Steuerung

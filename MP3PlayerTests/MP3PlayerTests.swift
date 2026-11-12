@@ -589,6 +589,18 @@ final class AudioPlayerTests: XCTestCase {
         XCTAssertTrue(player.isPlaying)
     }
 
+    /// App in der App-Übersicht weggewischt: Die Musik hört auf, Warteschlange und Stelle bleiben fürs Weiterhören
+    func testMusicStopsWhenAppIsClosed() {
+        player.play(tracks, startAt: 1)
+        XCTAssertTrue(player.isPlaying)
+        NotificationCenter.default.post(name: UIApplication.willTerminateNotification, object: nil)
+        XCTAssertFalse(player.isPlaying, "Nach dem Beenden der App darf keine Musik mehr laufen")
+        XCTAssertEqual(player.current?.id, tracks[1].id, "Der Titel bleibt zum Weiterhören gemerkt")
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: "playback.index"), 1)
+        player.togglePlayPause()
+        XCTAssertTrue(player.isPlaying, "Danach lässt sich normal weiterspielen")
+    }
+
     func testAutoAdvanceWhenTrackEnds() async {
         player.play(tracks, startAt: 0)
         player.seek(to: max(0, player.duration - 0.3))

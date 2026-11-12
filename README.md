@@ -6,7 +6,7 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 
 **Player**
 - Spielt MP3, M4A/AAC, WAV, AIFF, CAF und FLAC
-- Wiedergabe im Hintergrund und bei gesperrtem Bildschirm, Steuerung im Sperrbildschirm / Kontrollzentrum / mit Kopfhörer-Tasten
+- Wiedergabe im Hintergrund und bei gesperrtem Bildschirm, Steuerung im Sperrbildschirm / Kontrollzentrum / mit Kopfhörer-Tasten. Wird die App in der App-Übersicht weggewischt, hört die Musik auf (iPhone)
 - Liest Titel, Interpret und Cover aus den ID3-Tags
 - Zufallswiedergabe, Wiederholen (alle / einen), Warteschlange („Als Nächstes“, „Zur Warteschlange“)
 - Pausiert bei Anrufen und wenn Kopfhörer abgezogen werden
