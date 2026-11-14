@@ -41,6 +41,7 @@ Eine native iOS-App (SwiftUI, iOS 16+) zum Abspielen von MP3- und anderen Audiod
 - Import über die Dateien-App (＋ → „Aus Dateien importieren“) oder „Öffnen in … MP3 Player“
 - **Ordner nach Liedern durchsuchen** (iPhone: ＋ → „Ordner nach Liedern durchsuchen“ oder *Info & Updates → Ordner mit Musik*): Ordner aus der Dateien-App einmal auswählen – die App übernimmt alle Lieder daraus samt Unterordnern und schaut bei jedem Start nach neuen. Die Originale bleiben, wo sie sind; in der App gelöschte Lieder kommen nicht wieder. Das ganze iPhone auf einmal zu durchsuchen erlaubt iOS keiner App
 - **Sicherung** (*Info & Updates → Sicherung*): „Alles mit Musik“ packt Lieder, Cover, Playlists, Herzen, Kurzwahl, Verlauf und Statistik in eine ZIP-Datei – im selben Format wie die Android-App. Eine Sicherung vom Android-Handy lässt sich auf dem iPhone wiederherstellen und umgekehrt. Die kleine Sicherung enthält alles außer den Liedern
+- **Neues Handy – Lieder selbst aussuchen** (*Info & Updates → Neues Handy*, Android und iPhone): Auf dem alten Handy „Alle Lieder exportieren“, die Datei aufs neue Handy bringen und dort „Lieder importieren“. Die Lieder landen nicht in der Titel-Liste, sondern im Ordner **„Importierte Lieder“** (in der Mediathek ganz oben). Dort kannst du reinhören, suchen und einzeln, mehrere oder alle in die Titel-Liste übernehmen – oder löschen. Lieder, die schon da sind, werden erkannt und nicht doppelt abgelegt. Playlists und Herzen holt weiterhin „Sicherung wiederherstellen“ zurück
 - Dateien, die du per Finder (Mac) bzw. iTunes-Dateifreigabe (Windows) in den App-Ordner kopierst, werden automatisch erkannt
 
 **Browser & Downloads**
@@ -104,7 +105,11 @@ iOS erlaubt nicht, dass eine selbst installierte App sich selbst ersetzt. Update
 > **Voraussetzung:** Das GitHub-Repository muss **öffentlich** sein. Aus einem privaten Repository können iPhone und AltStore die Releases nicht herunterladen (GitHub → *Settings → General → Danger Zone → Change visibility*).
 
 **So funktioniert es:**
-1. Bei jedem Push baut und testet GitHub die iPhone-App. **Android ist zurzeit pausiert** (fertig): Deshalb entsteht kein neues Release. Stattdessen werden `MP3Player.ipa` und die AltStore-Quelle am bestehenden neuesten Release ausgetauscht. Die Android-App sucht Updates über die Nummer des neuesten Release und sieht so kein Update; die iPhone-App liest ihre Version aus der AltStore-Quelle. (Sobald Android weitergeht – `if: false` beim Android-Schritt in `.github/workflows/build.yml` entfernen –, veröffentlicht GitHub wieder ein Release `v1.0.<Build>` mit `MP3Player.apk` und `MP3Player.ipa`. GitHub lehnt Schreibzugriffe gelegentlich mit HTTP 403 ab; der Workflow versucht es dann mehrmals.)
+1. Bei jedem Push baut und testet GitHub die iPhone-App. Die Android-App wird nur gebaut, **wenn sich seit dem letzten Release etwas an ihr geändert hat** (Ordner `android/` oder der gemeinsame MP3-Encoder in `ThirdParty/`):
+   - **Android geändert:** GitHub veröffentlicht ein neues Release `v1.0.<Build>` mit `MP3Player.apk` und `MP3Player.ipa` – aber nur, wenn die Tests beider Apps grün sind. Beide Apps melden dann ein Update.
+   - **Nur iPhone geändert:** Es entsteht kein neues Release. `MP3Player.ipa` und die AltStore-Quelle werden am bestehenden neuesten Release ausgetauscht (nur bei grünen iPhone-Tests). Die Android-App sucht Updates über die Nummer des neuesten Release und sieht so kein Update; die iPhone-App liest ihre Version aus der AltStore-Quelle.
+
+   GitHub lehnt Schreibzugriffe gelegentlich mit HTTP 403 ab; der Workflow versucht es dann mehrmals.
 2. Zu jedem Release gehört eine AltStore-/SideStore-Quelle. Ihre Adresse bleibt immer gleich:
    ```
    https://github.com/Backewatsch/MP3-Player/releases/latest/download/altstore-source.json

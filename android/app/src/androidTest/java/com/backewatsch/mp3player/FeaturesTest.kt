@@ -313,6 +313,35 @@ class MoreFeaturesTest {
         waitFor("nach Schließen gelöscht") { prefs.getString("queue", null) == null }
     }
 
+    /** Nach einem Neustart der App liegt die letzte Wiedergabeliste wieder pausiert bereit („Weiterhören“) */
+    @Test fun restoresQueueAfterAppRestart() {
+        val a = add("Eins"); val b = add("Zwei")
+        val prefs = context.getSharedPreferences("playback", android.content.Context.MODE_PRIVATE)
+        instrumentation.runOnMainSync { app.player.stop() }
+        waitFor("Wiedergabeliste leer") { app.player.state.value.queueIds.isEmpty() && prefs.getString("queue", null) == null }
+        // Stand wie beim letzten Schließen der App
+        prefs.edit().putString("queue", "${a.id},${b.id}").putString("original", "${a.id},${b.id}")
+            .putInt("index", 1).putLong("position", 400).commit()
+
+        // Neustart: Ein neuer Player verbindet sich; die Mediathek meldet sich – wie beim Start der App – schon vorher
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        var restarted: com.backewatsch.mp3player.player.PlayerConnection? = null
+        instrumentation.runOnMainSync {
+            restarted = com.backewatsch.mp3player.player.PlayerConnection(context, app.library, scope)
+            restarted!!.libraryChanged(app.library.tracks)
+        }
+        try {
+            waitFor("Wiedergabeliste wiederhergestellt") {
+                restarted!!.state.value.queueIds == listOf(a.id, b.id) && restarted!!.state.value.currentId == b.id
+            }
+            assertFalse("liegt pausiert bereit und spielt nicht von selbst", restarted!!.state.value.isPlaying)
+            assertEquals("${a.id},${b.id}", prefs.getString("queue", null))
+        } finally {
+            instrumentation.runOnMainSync { restarted!!.releaseForTests() }
+            scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
+    }
+
     /** Probehören im Zuschneider: Wiedergabeliste wird gemerkt und danach wiederhergestellt */
     @Test fun restoresQueueAfterPreview() {
         val a = add("Liste1"); val b = add("Liste2"); val c = add("Probe")

@@ -62,6 +62,11 @@ data class LibraryState(
     val customCovers: List<String> = emptyList(),
     /** Genres der vorhandenen Titel wurden einmal aus den Dateien gelesen */
     val genresScanned: Boolean = false,
+    /**
+     * „Importierte Lieder“: von einem anderen Handy importiert, aber noch nicht in die Titel-Liste übernommen.
+     * Ihre Dateien liegen im Unterordner „Importierte Lieder“ des Musikordners; sie tauchen sonst nirgends auf.
+     */
+    val imported: List<Track> = emptyList(),
 ) {
     companion object {
         const val CURRENT_VERSION = 4

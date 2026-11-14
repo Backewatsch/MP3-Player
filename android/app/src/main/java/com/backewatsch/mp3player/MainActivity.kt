@@ -14,6 +14,7 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
+import com.backewatsch.mp3player.data.syncImportedFolder
 import com.backewatsch.mp3player.ui.MainScreen
 import com.backewatsch.mp3player.ui.MP3Theme
 import kotlinx.coroutines.launch
@@ -54,6 +55,7 @@ class MainActivity : ComponentActivity() {
             // Zurück aus „Apps installieren erlauben“ → Update automatisch fortsetzen
             app.updates.resumeAfterPermission()
             app.library.rescan()
+            app.library.syncImportedFolder()
             // Downloads, die geladen wurden, während die App zu war
             app.downloadWatcher.start()
             app.updates.checkIfDue()

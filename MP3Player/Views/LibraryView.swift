@@ -15,6 +15,8 @@ enum LibraryRoute: Hashable {
     case duplicates
     case genres
     case genre(String)
+    /// „Importierte Lieder“ – noch nicht in der Titel-Liste
+    case imported
 }
 
 /// Tab „Mediathek“: Kurzwahl, Titel/Alben/Interpreten und Playlists (inkl. neue Playlist erstellen).
@@ -208,6 +210,13 @@ struct MediathekView: View {
         }
 
         Section {
+            // Von einem anderen Handy importiert und noch nicht in der Titel-Liste: ganz oben, solange welche da sind
+            if !library.importedTracks.isEmpty {
+                NavigationLink(value: LibraryRoute.imported) {
+                    categoryRow("Importierte Lieder", "tray.and.arrow.down.fill", count: library.importedTracks.count)
+                }
+                .accessibilityIdentifier("category-Importierte Lieder")
+            }
             NavigationLink(value: LibraryRoute.favorites) {
                 categoryRow("Lieblingssongs", "heart.fill", count: library.favoriteTracks.count)
             }

@@ -308,6 +308,10 @@ final class MP3PlayerUITests: XCTestCase {
         // Listen legen Zeilen erst an, wenn sie zu sehen sind – deshalb auch hierhin scrollen
         XCTAssertTrue(reveal(app.buttons["backupRestore"].firstMatch), "Wiederherstellen fehlt")
         screenshot("13b-Einstellungen-Sicherung")
+        // „Neues Handy“: alle Lieder exportieren bzw. in den Ordner „Importierte Lieder“ holen
+        XCTAssertTrue(reveal(app.buttons["exportSongs"].firstMatch), "„Alle Lieder exportieren“ fehlt")
+        XCTAssertTrue(reveal(app.buttons["importSongs"].firstMatch), "„Lieder importieren“ fehlt")
+        screenshot("13d-Neues-Handy")
         XCTAssertTrue(reveal(app.buttons["convertAllButton"].firstMatch), "Konverter fehlt")
         // „Sicherung erstellen“ fragt: mit Musik oder nur die Listen
         if !(create.exists && create.isHittable) { app.swipeDown() }

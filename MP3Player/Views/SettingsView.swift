@@ -21,8 +21,22 @@ struct SettingsView: View {
     @State private var showImporter = false
     @State private var backupStatus: String?
     @EnvironmentObject private var folders: FolderScanner
-    /// Der Datei-Dialog öffnet eine Sicherung oder wählt einen Ordner mit Musik
-    @State private var pickFolder = false
+    /// Wofür der gemeinsame Datei-Dialog gerade geöffnet wird
+    private enum FilePurpose {
+        /// Ordner mit Musik wählen
+        case folder
+        /// Sicherung wiederherstellen
+        case restore
+        /// Lieder in den Ordner „Importierte Lieder“ holen
+        case songs
+    }
+    @State private var filePurpose = FilePurpose.restore
+    /// Fortschritt oder Ergebnis von „Lieder importieren“
+    @State private var transferStatus: String?
+    /// Läuft gerade „Lieder importieren“?
+    @State private var importingSongs = false
+    /// „Alle Lieder exportieren“ läuft bzw. lief zuletzt: Seine Meldungen stehen auch im Abschnitt „Neues Handy“
+    @State private var exportForNewPhone = false
     @State private var confirmBackup = false
     @State private var backupBusy = false
     @State private var fullBackupURL: URL?
@@ -133,6 +147,8 @@ struct SettingsView: View {
 
                 backupSection
 
+                transferSection
+
                 Section {
                     if let status = library.conversionStatus {
                         HStack(spacing: 10) {
@@ -223,7 +239,7 @@ struct SettingsView: View {
                 let doomed = offsets.compactMap { folders.folders.indices.contains($0) ? folders.folders[$0] : nil }
                 doomed.forEach { folders.remove($0) }
             }
-            Button { pickFolder = true; showImporter = true } label: {
+            Button { filePurpose = .folder; showImporter = true } label: {
                 Label("Ordner hinzufügen", systemImage: "folder.badge.plus")
             }
             .accessibilityIdentifier("addMusicFolder")
@@ -247,20 +263,33 @@ struct SettingsView: View {
         }
     }
 
+    /// Welche Dateien der gemeinsame Datei-Dialog anbietet
+    private var importerTypes: [UTType] {
+        switch filePurpose {
+        case .folder: return [.folder]
+        case .restore: return [.json, .zip]
+        case .songs: return [.zip]
+        }
+    }
+
     /// Datei-Dialoge: Ordner oder Sicherung öffnen, kleine Sicherung speichern, Komplett-Sicherung ablegen
     private var fileDialogs: some View {
         ZStack {
             Color.clear
-                .fileImporter(isPresented: $showImporter, allowedContentTypes: pickFolder ? [.folder] : [.json, .zip]) { result in
+                .fileImporter(isPresented: $showImporter, allowedContentTypes: importerTypes) { result in
                     switch result {
                     case .success(let url):
-                        if pickFolder {
-                            Task { await folders.add(url) }
-                        } else {
-                            restore(from: url)
+                        switch filePurpose {
+                        case .folder: Task { await folders.add(url) }
+                        case .restore: restore(from: url)
+                        case .songs: importSongs(from: url)
                         }
                     case .failure(let error):
-                        if !pickFolder { backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)" }
+                        switch filePurpose {
+                        case .folder: break
+                        case .restore: backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
+                        case .songs: transferStatus = "Import fehlgeschlagen: \(error.localizedDescription)"
+                        }
                     }
                 }
             Color.clear
@@ -303,7 +332,7 @@ struct SettingsView: View {
     /// Sicherung erstellen (mit oder ohne Musik) und wiederherstellen
     @ViewBuilder private var backupSection: some View {
         Section {
-            Button { confirmBackup = true } label: { Label("Sicherung erstellen", systemImage: "square.and.arrow.up") }
+            Button { exportForNewPhone = false; confirmBackup = true } label: { Label("Sicherung erstellen", systemImage: "square.and.arrow.up") }
                 .disabled(backupBusy)
                 .accessibilityIdentifier("backupCreate")
                 .confirmationDialog("Was soll gesichert werden?", isPresented: $confirmBackup, titleVisibility: .visible) {
@@ -317,14 +346,14 @@ struct SettingsView: View {
                 } message: {
                     Text("„Alles mit Musik“ ist für ein neues Handy gedacht. Die Datei lässt sich auch in der Android-App wiederherstellen.")
                 }
-            Button { pickFolder = false; showImporter = true } label: {
+            Button { exportForNewPhone = false; filePurpose = .restore; showImporter = true } label: {
                 Label("Sicherung wiederherstellen", systemImage: "arrow.counterclockwise")
             }
             .disabled(backupBusy)
             .accessibilityIdentifier("backupRestore")
             if let backupStatus {
                 HStack(spacing: 10) {
-                    if backupBusy { ProgressView() }
+                    if backupBusy && !importingSongs { ProgressView() }
                     Text(backupStatus).font(.footnote).foregroundStyle(.secondary)
                 }
                 .accessibilityIdentifier("backupStatus")
@@ -333,6 +362,58 @@ struct SettingsView: View {
             Text("Sicherung")
         } footer: {
             Text("„Alles mit Musik“ sichert Lieder, Cover, Playlists, Herzen, Kurzwahl, Verlauf und Statistik in eine Datei. Die kleine Sicherung enthält alles außer den Liedern. Wiederherstellen lässt sich beides, auch eine Sicherung aus der Android-App – dabei geht nichts Vorhandenes verloren.")
+        }
+    }
+
+    /// „Neues Handy“: alle Lieder in eine Datei exportieren bzw. Lieder in den Ordner „Importierte Lieder“ holen
+    @ViewBuilder private var transferSection: some View {
+        Section {
+            Button {
+                exportForNewPhone = true
+                createFullBackup()
+            } label: { Label("Alle Lieder exportieren", systemImage: "square.and.arrow.up.on.square") }
+                .disabled(backupBusy)
+                .accessibilityIdentifier("exportSongs")
+            Button {
+                exportForNewPhone = false
+                filePurpose = .songs
+                showImporter = true
+            } label: { Label("Lieder importieren", systemImage: "square.and.arrow.down.on.square") }
+                .disabled(backupBusy)
+                .accessibilityIdentifier("importSongs")
+            if let status = exportForNewPhone ? backupStatus : transferStatus {
+                HStack(spacing: 10) {
+                    if importingSongs || (backupBusy && exportForNewPhone) { ProgressView() }
+                    Text(status).font(.footnote).foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("importStatus")
+            }
+        } header: {
+            Text("Neues Handy")
+        } footer: {
+            Text("So ziehen deine Lieder um: Auf dem alten Handy „Alle Lieder exportieren“ antippen und die Datei aufs neue Handy bringen (über den Computer oder eine Cloud wie iCloud Drive oder Google Drive). Auf dem neuen Handy „Lieder importieren“ wählen. Die Lieder landen in der Mediathek unter „Importierte Lieder“ – dort suchst du aus, welche in deine Titel-Liste kommen. Playlists und Herzen holt „Sicherung wiederherstellen“ zurück.")
+        }
+    }
+
+    /// „Lieder importieren“: Lieder aus einer Export-Datei in den Ordner „Importierte Lieder“ holen
+    private func importSongs(from url: URL) {
+        guard !backupBusy else { return }
+        let accessing = url.startAccessingSecurityScopedResource()
+        backupBusy = true
+        importingSongs = true
+        transferStatus = "Lese die Datei …"
+        Task {
+            do {
+                let result = try await library.importSongs(from: url) { done, total in
+                    transferStatus = "Importiere Lied \(done) von \(total) …"
+                }
+                transferStatus = result.summary
+            } catch {
+                transferStatus = "Import fehlgeschlagen: \(error.localizedDescription)"
+            }
+            if accessing { url.stopAccessingSecurityScopedResource() }
+            importingSongs = false
+            backupBusy = false
         }
     }
 

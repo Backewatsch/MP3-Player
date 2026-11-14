@@ -30,6 +30,13 @@ final class Library: ObservableObject {
         didSet { Self.customCoverIDs = Set(customCovers) }
     }
     nonisolated(unsafe) static var customCoverIDs = Set<UUID>()
+    /// „Importierte Lieder“: von einem anderen Handy importiert, aber noch nicht in der Titel-Liste.
+    /// Ihre Dateien liegen im Ordner „Importierte Lieder“; sie tauchen sonst nirgends auf (Abläufe: ImportedSongs.swift).
+    @Published private(set) var importedTracks: [Track] = []
+    /// Läuft gerade „Lieder importieren“? Dann ruht der Abgleich des Ordners „Importierte Lieder“.
+    var isImportingSongs = false
+    /// Läuft gerade der Abgleich des Ordners „Importierte Lieder“?
+    var isSyncingImported = false
     /// Zählt hoch, wenn sich ein Cover geändert hat (Anzeige lädt neu)
     @Published private(set) var coverVersion = 0
     nonisolated static let maxHistory = 300
@@ -775,13 +782,68 @@ final class Library: ObservableObject {
         lyricsByID = state.lyrics
         customCovers = state.customCovers
         Self.customCoverIDs = Set(state.customCovers)
+        importedTracks = state.imported
         // Alben wurden ab Version 2 gespeichert
         needsMetadataUpgrade = state.version < 2
     }
 
     /// Speichert im Hintergrund (das Kodieren großer Statistiken würde sonst kurz die Bedienung bremsen)
     private func save() {
-        LibrarySaver.shared.save(stateSnapshot)
+        // Die importierten Lieder gehören nur in die gespeicherte Mediathek – `stateSnapshot` (für Sicherungen) kennt sie nicht
+        var state = stateSnapshot
+        state.imported = importedTracks
+        LibrarySaver.shared.save(state)
+    }
+
+    // MARK: Importierte Lieder (Zustand – die Abläufe stehen in ImportedSongs.swift)
+
+    /// Ändert die Liste der importierten Lieder und speichert
+    func updateImported(_ change: (inout [Track]) -> Void) {
+        change(&importedTracks)
+        save()
+    }
+
+    /// Übernimmt ein importiertes Lied in die Titel-Liste: Die Datei wandert in den Musikordner, das Lied behält
+    /// Angaben und Cover. `false`, wenn die Datei fehlt oder sich nicht verschieben lässt.
+    @discardableResult
+    func adoptImported(_ id: UUID) -> Bool {
+        guard let index = importedTracks.firstIndex(where: { $0.id == id }) else { return false }
+        let staged = importedTracks[index]
+        let fm = FileManager.default
+        let source = Storage.importedDirectory.appendingPathComponent(staged.fileName)
+        let idInUse = tracks.contains { $0.id == id }
+        guard fm.fileExists(atPath: source.path) else {
+            // Datei fehlt (z. B. in der Dateien-App gelöscht) → der Eintrag hat keinen Sinn mehr
+            importedTracks.remove(at: index)
+            if !idInUse {
+                try? fm.removeItem(at: staged.artworkURL)
+                ArtworkCache.shared.remove(id)
+            }
+            save()
+            return false
+        }
+        // Namen im Musikordner vormerken, damit der Abgleich die Datei nicht gleichzeitig als „neu“ aufnimmt
+        let destination = reserveDestination(for: staged.fileName)
+        defer { importing.remove(destination.lastPathComponent) }
+        do {
+            try fm.moveItem(at: source, to: destination)
+        } catch {
+            // z. B. Speicher voll: Das Lied bleibt bei den importierten
+            return false
+        }
+        // Kennung schon in der Titel-Liste vergeben (z. B. durch „Sicherung wiederherstellen“) → neue Kennung
+        var track = Track(id: idInUse ? UUID() : id, fileName: destination.lastPathComponent, title: staged.title,
+                          artist: staged.artist, duration: staged.duration, addedAt: staged.addedAt)
+        track.album = staged.album
+        track.genre = staged.genre
+        if idInUse, fm.fileExists(atPath: staged.artworkURL.path) {
+            try? fm.copyItem(at: staged.artworkURL, to: track.artworkURL)
+        }
+        importedTracks.remove(at: index)
+        tracks.append(track)
+        save()
+        onTrackAdded?(track, nil)
+        return true
     }
 
     private func ensureDownloadsPlaylist() {

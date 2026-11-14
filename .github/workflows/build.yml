@@ -18,6 +18,46 @@ env:
   APP_BUILD: ${{ github.run_number }}
 
 jobs:
+  changes:
+    name: Braucht Android ein Update?
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.check.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # ganze Geschichte samt Tags, um mit dem letzten Release vergleichen zu können
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Android-Änderungen seit dem letzten Release suchen
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Android bekommt nur dann ein Update, wenn sich seit dem letzten Release etwas an der Android-App geändert hat.
+          # iPhone-Versionen werden ans letzte Release angehängt und erzeugen kein neues – dessen Tag markiert also
+          # immer den Stand der letzten Android-Version.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Versions-Tag oder von Hand gestartet – Android wird gebaut"
+            echo "android=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          git fetch --tags --quiet origin || true
+          if [ -z "$TAG" ] || ! git rev-parse -q --verify "refs/tags/$TAG^{commit}" > /dev/null; then
+            echo "Letztes Release nicht gefunden (Tag: '$TAG') – Android wird sicherheitshalber gebaut"
+            echo "android=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Die Android-App besteht aus android/ und dem gemeinsamen MP3-Encoder in ThirdParty/
+          CHANGED=$(git diff --name-only "$TAG" HEAD -- android ThirdParty)
+          if [ -n "$CHANGED" ]; then
+            echo "Seit $TAG geändert:"; echo "$CHANGED" | head -40
+            echo "android=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Seit $TAG hat sich an der Android-App nichts geändert – kein Android-Update"
+            echo "android=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: IPA bauen (iPhone)
     runs-on: macos-latest
@@ -167,10 +207,13 @@ jobs:
 
   android:
     name: Android-App bauen und im Emulator testen
-    # Android ist fertig und pausiert: iPhone-Änderungen sollen kein Android-Update auslösen.
-    # Zeile entfernen, sobald es bei Android weitergeht – dann entsteht wieder ein Release mit beiden Apps.
-    if: false
+    # Läuft nur, wenn sich seit dem letzten Release etwas an der Android-App geändert hat:
+    # Reine iPhone-Änderungen sollen kein Android-Update auslösen.
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
+    # Ein hängender Emulator soll nicht stundenlang laufen
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -292,13 +335,13 @@ jobs:
 
   release:
     name: Release veröffentlichen (für Updates)
-    # Android aktiv: neues Release mit beiden Apps, sobald beide gebaut und die Android-Tests grün sind.
-    # Wartet nicht auf die iPhone-Tests im Simulator: die dauern lange und sollen keine Version aufhalten.
-    needs: [build, android]
+    # Android hat sich geändert: neues Release mit beiden Apps – aber nur, wenn die Tests beider Apps grün sind
+    # (Android im Emulator, iPhone im Simulator). Eine Version mit Fehlern soll auf kein Handy kommen.
+    needs: [build, test, android]
     if: >-
       always() && github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'claude/beautiful-planck-b2gbcc' || startsWith(github.ref, 'refs/tags/v')) &&
-      needs.build.result == 'success' && needs.android.result == 'success'
+      needs.build.result == 'success' && needs.android.result == 'success' && needs.test.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -367,9 +410,9 @@ jobs:
           exit 1
 
   release-ios:
-    name: Nur iPhone veröffentlichen (Android pausiert)
-    # Android pausiert (übersprungen): nur die iPhone-App wird veröffentlicht, ohne neue Versionsnummer für Android –
-    # und nur, wenn die iPhone-Tests im Simulator grün sind (eine Version mit Fehlern soll nicht aufs iPhone kommen).
+    name: Nur iPhone veröffentlichen (Android unverändert)
+    # An der Android-App hat sich nichts geändert (Job übersprungen): nur die iPhone-App wird veröffentlicht,
+    # ohne neue Versionsnummer für Android – und nur, wenn die iPhone-Tests im Simulator grün sind.
     needs: [build, test, android]
     if: >-
       always() && github.event_name == 'push' &&

@@ -111,8 +111,11 @@ class PlayerConnection(
             runCatching { future.get() }.onSuccess { c ->
                 controller = c
                 c.addListener(listener)
-                // Nach einem Neustart: letzte Wiedergabeliste pausiert an gleicher Stelle bereitstellen
-                if (c.mediaItemCount == 0 && pending.isEmpty()) restoreQueue(c)
+                // Nach einem Neustart: letzte Wiedergabeliste pausiert an gleicher Stelle bereitstellen.
+                // Unabhängig davon, ob schon Aufträge warten: Beim Start meldet sich immer zuerst die Mediathek
+                // (libraryChanged) – früher wurde die Liste deshalb nie wiederhergestellt, sondern gelöscht.
+                // Ein wartender Auftrag „spiele X“ ersetzt die wiederhergestellte Liste einfach.
+                if (c.mediaItemCount == 0) restoreQueue(c)
                 pending.forEach { it(c) }
                 pending.clear()
                 refresh()
@@ -442,6 +445,16 @@ class PlayerConnection(
     }
 
     /** „Wiedergabeliste schließen“ */
+    /** Nur für automatische Tests: Verbindung zum Wiedergabe-Dienst wieder lösen */
+    internal fun releaseForTests() {
+        controller?.let { c ->
+            c.removeListener(listener)
+            c.release()
+        }
+        controller = null
+        pending.clear()
+    }
+
     fun stop() = withController {
         it.stop(); it.clearMediaItems()
         originalOrder = emptyList(); shuffled = false; nextUpCount = 0

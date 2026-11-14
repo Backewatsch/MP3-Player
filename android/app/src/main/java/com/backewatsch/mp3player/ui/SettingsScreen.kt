@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Upload
 
 import android.content.Intent
 import android.widget.Toast
@@ -105,6 +106,44 @@ fun SettingsSheet(onDismiss: () -> Unit) {
             } finally {
                 backupBusy = false
             }
+        }
+    }
+    // „Neues Handy“: alle Lieder in eine Datei exportieren bzw. Lieder in den Ordner „Importierte Lieder“ holen
+    var transferStatus by remember { mutableStateOf<String?>(null) }
+    val songExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupBusy = true
+        transferStatus = "Exportiere die Lieder …"
+        app.scope.launch {
+            transferStatus = try {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    app.backup.export(out, includeMusic = true) { done, total -> transferStatus = "Exportiere Lied $done von $total …" }
+                } ?: throw IllegalStateException("Datei konnte nicht geschrieben werden.")
+                "✓ Alle Lieder exportiert. Bring die Datei aufs neue Handy und wähle dort „Lieder importieren“."
+            } catch (e: Exception) {
+                "Export fehlgeschlagen: ${e.message}"
+            } finally {
+                backupBusy = false
+            }
+        }
+    }
+    val songImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupBusy = true
+        transferStatus = "Lese die Datei …"
+        app.scope.launch {
+            transferStatus = try {
+                val r = context.contentResolver.openInputStream(uri)?.use { input ->
+                    app.backup.importSongs(input) { done, total -> transferStatus = "Importiere Lied $done von $total …" }
+                } ?: throw IllegalStateException("Datei nicht lesbar.")
+                songImportSummary(r)
+            } catch (e: Exception) {
+                "Import fehlgeschlagen: ${e.message}"
+            } finally {
+                backupBusy = false
+            }
+            // Auch wenn die Einstellungen inzwischen geschlossen sind, soll das Ergebnis ankommen
+            transferStatus?.let { Notice.show(context, it) }
         }
     }
     LaunchedEffect(Unit) { if (update == UpdateChecker.State.Idle) app.updates.check() }
@@ -251,6 +290,22 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
 
+            SectionHeader("Neues Handy")
+            Card {
+                ActionLine("Alle Lieder exportieren", Icons.Default.Upload, "exportSongs", enabled = !backupBusy) {
+                    songExporter.launch("ILLEGAL-FREEDOM-MUSIC-Lieder-$dateTag.zip")
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ActionLine("Lieder importieren", Icons.Default.Download, "importSongs", enabled = !backupBusy) {
+                    songImporter.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                }
+                if (backupBusy && transferStatus != null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp), color = Accent)
+                transferStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp).testTag("importStatus")) }
+            }
+            Text("So ziehen deine Lieder um: Auf dem alten Handy „Alle Lieder exportieren“ antippen und die Datei aufs neue Handy bringen (Kabel, Cloud oder Quick Share). Auf dem neuen Handy „Lieder importieren“ wählen. Die Lieder landen in der Mediathek unter „Importierte Lieder“ – dort suchst du aus, welche in deine Titel-Liste kommen. Playlists und Herzen holt „Sicherung wiederherstellen“ zurück.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+
             SectionHeader("Konverter")
             Card {
                 if (conversion != null) {
@@ -297,6 +352,21 @@ private fun InfoRow(text: String, icon: ImageVector?, tint: Color = MaterialThem
         if (icon != null) { Icon(icon, null, tint = tint); Spacer(Modifier.width(10.dp)) }
         Text(text, color = tint)
     }
+}
+
+/** Ergebnis von „Lieder importieren“ in einem Satz */
+internal fun songImportSummary(r: Backup.SongImportResult): String {
+    val parts = mutableListOf<String>()
+    parts += when (r.staged) {
+        0 -> "Keine neuen Lieder importiert."
+        1 -> "✓ 1 Lied liegt jetzt in der Mediathek unter „Importierte Lieder“."
+        else -> "✓ ${r.staged} Lieder liegen jetzt in der Mediathek unter „Importierte Lieder“."
+    }
+    if (r.alreadyThere == 1) parts += "1 war schon da."
+    if (r.alreadyThere > 1) parts += "${r.alreadyThere} waren schon da."
+    if (r.failed == 1) parts += "1 ließ sich nicht lesen."
+    if (r.failed > 1) parts += "${r.failed} ließen sich nicht lesen."
+    return parts.joinToString(" ")
 }
 
 @Composable

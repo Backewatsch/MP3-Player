@@ -171,6 +171,8 @@ struct LibraryDestination: View {
         case .genre(let name):
             TrackCollectionList(title: name, subtitle: "Genre", tracks: library.tracks(inGenre: name))
                 .navigationTitle(name)
+        case .imported:
+            ImportedTracksView()
         }
     }
 }

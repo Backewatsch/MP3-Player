@@ -41,6 +41,8 @@ class Library(
 
     internal val mutex = Mutex()
     internal val importing = mutableSetOf<String>()
+    /** Läuft gerade „Lieder importieren“? Dann ruht der Abgleich des Ordners „Importierte Lieder“. */
+    @Volatile internal var songImportRunning = false
     @Volatile private var converting = false
 
     /** Speicher-Wünsche: werden gebündelt und im Hintergrund geschrieben */
@@ -63,6 +65,8 @@ class Library(
 
     val tracks get() = _state.value.tracks
     val playlists get() = _state.value.playlists
+    /** „Importierte Lieder“ – noch nicht in der Titel-Liste (siehe LibraryImported.kt) */
+    val imported get() = _state.value.imported
 
     fun track(id: String) = tracks.firstOrNull { it.id == id }
     fun playlist(id: String) = playlists.firstOrNull { it.id == id }
@@ -176,16 +180,20 @@ class Library(
 
     /** Gleicht die Bibliothek mit dem Musikordner ab (z. B. per USB kopierte Dateien). */
     suspend fun rescan() {
+        // Speicher (noch) nicht da – z. B. direkt nach dem Einschalten des Handys – oder Ordner nicht lesbar:
+        // nichts anfassen. Sonst gälten alle Lieder als gelöscht und verschwänden samt Playlist-Einträgen und Herzen.
+        if (!storage.musicStorageReady()) return
         val files = withContext(Dispatchers.IO) {
-            storage.musicDir.listFiles()?.filter { it.isFile && !it.name.startsWith(".") && FileNames.isAudio(it.name) }.orEmpty()
-        }
+            storage.musicDir.listFiles()?.filter { it.isFile && !it.name.startsWith(".") && FileNames.isAudio(it.name) }
+        } ?: return
         val present = files.map { it.name }.toSet()
         val busy = mutex.withLock { importing.toSet() }
         val known = tracks.filter { !it.isLinked }.map { it.fileName }.toSet()
         // Verknüpfte Originale, die es nicht mehr gibt (z. B. in Samsung Music gelöscht). Nur prüfen, wenn die App
         // überhaupt lesen darf – sonst wirkten alle Dateien „verschwunden“.
+        // Liegt das Original auf einem Speicher, der gerade fehlt (z. B. SD-Karte herausgenommen), bleibt das Lied.
         val linkedGone = if (storage.canReadSharedMusic()) withContext(Dispatchers.IO) {
-            tracks.filter { it.isLinked && !File(it.path).exists() }.map { it.id }.toSet()
+            tracks.filter { it.isLinked && File(it.path).let { f -> !f.exists() && storage.volumeMounted(f) } }.map { it.id }.toSet()
         } else emptySet()
         val newTracks = withContext(Dispatchers.IO) {
             files.filter { it.name !in known && it.name !in busy }.map { makeTrack(it) }
@@ -193,8 +201,11 @@ class Library(
         var changed = false
         mutex.withLock {
             _state.update { s ->
-                val missing = s.tracks.filter { !it.isLinked && it.fileName !in present && it.fileName !in importing }
-                    .map { it.id }.toSet() + linkedGone
+                // Die Ordner-Liste kann schon veraltet sein (z. B. wurde inzwischen ein importiertes Lied übernommen):
+                // nur streichen, was jetzt wirklich fehlt
+                val missing = s.tracks.filter {
+                    !it.isLinked && it.fileName !in present && it.fileName !in importing && !storage.fileFor(it.fileName).exists()
+                }.map { it.id }.toSet() + linkedGone
                 val fresh = newTracks.filter { t -> s.tracks.none { !it.isLinked && it.fileName == t.fileName } && t.fileName !in importing }
                 if (missing.isEmpty() && fresh.isEmpty()) return@update s
                 changed = true
@@ -270,9 +281,11 @@ class Library(
         return count to freed
     }
 
-    private fun makeTrack(file: File): Track {
+    /** Liest Angaben und Cover aus der Datei. [id]: feste Kennung (z. B. aus einer Sicherung), sonst eine neue. */
+    internal fun makeTrack(file: File, id: String = java.util.UUID.randomUUID().toString()): Track {
         val info = MetadataReader.read(file)
         val track = Track(
+            id = id,
             fileName = file.name,
             title = info.title?.takeIf { it.isNotBlank() } ?: FileNames.baseName(file.name),
             artist = info.artist.orEmpty(),
@@ -544,9 +557,26 @@ class Library(
 
     private fun load() {
         val file = storage.indexFile
-        if (!file.exists()) return
-        runCatching { json.decodeFromString(LibraryState.serializer(), file.readText()) }
-            .onSuccess { loaded -> _state.value = loaded.copy(pinned = loaded.pinned.filter { id -> loaded.tracks.any { it.id == id } }) }
+        // Reserve: die Fassung, die beim letzten Start lesbar war
+        val reserve = File(file.parentFile, file.name + ".bak")
+        fun read(f: File): LibraryState? =
+            if (f.exists()) runCatching { json.decodeFromString(LibraryState.serializer(), f.readText()) }.getOrNull() else null
+
+        val current = read(file)
+        val loaded = current ?: read(reserve)
+        if (loaded == null) {
+            // Datei da, aber nicht lesbar und keine Reserve: beiseitelegen statt beim nächsten Speichern überschreiben
+            if (file.exists()) runCatching { file.copyTo(File(file.parentFile, file.name + ".unlesbar"), overwrite = true) }
+            return
+        }
+        _state.value = loaded.copy(pinned = loaded.pinned.filter { id -> loaded.tracks.any { it.id == id } })
+        if (current != null) {
+            runCatching { file.copyTo(reserve, overwrite = true) }
+        } else {
+            // Aus der Reserve geladen: gleich wieder als Hauptdatei sichern
+            android.util.Log.w("Library", "library.json war nicht lesbar – letzte lesbare Fassung geladen")
+            save()
+        }
     }
 
     /** Änderung merken – geschrieben wird gebündelt im Hintergrund (nie im Haupt-Thread) */
@@ -556,6 +586,7 @@ class Library(
     }
 
     /** Sofort schreiben, falls etwas offen ist (z. B. wenn die App in den Hintergrund geht) */
+    @Synchronized
     fun flush() {
         if (dirty) writeNow()
     }

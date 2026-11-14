@@ -129,6 +129,7 @@ class App : Application() {
         scope.launch { library.state.collect { player.libraryChanged(it.tracks) } }
         scope.launch {
             library.rescan()
+            library.syncImportedFolder()
             library.scanGenresOnce()
             analyzeLoudness()
         }

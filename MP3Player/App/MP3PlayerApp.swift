@@ -52,7 +52,11 @@ struct MP3PlayerApp: App {
             if phase != .active { LibrarySaver.shared.wait() }
             if phase == .active {
                 (Appearance(rawValue: UserDefaults.standard.string(forKey: Appearance.key) ?? "") ?? .dark).apply()
-                Task { await library.rescan() }
+                Task {
+                    await library.rescan()
+                    // Ordner „Importierte Lieder“ abgleichen (z. B. über die Dateien-App hineinkopierte Lieder)
+                    await library.syncImportedFolder()
+                }
                 Task { await updates.checkIfDue() }
                 // Gemerkte Ordner nach neuen Liedern durchsuchen
                 Task { await folders.scan() }

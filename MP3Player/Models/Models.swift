@@ -22,6 +22,17 @@ enum Storage {
 
     static let indexFile: URL = support.appendingPathComponent("library.json")
 
+    /// Ordner für Lieder von einem anderen Handy, die noch nicht in der Titel-Liste sind
+    static let importedFolderName = "Importierte Lieder"
+
+    /// Ordner „Importierte Lieder“ im Musikordner (in der Dateien-App sichtbar). Wird bei Bedarf angelegt –
+    /// der Abgleich des Musikordners sieht nur dessen eigene Dateien, was hier liegt, bleibt außen vor.
+    static var importedDirectory: URL {
+        let url = documents.appendingPathComponent(importedFolderName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
     /// Neuer, leerer temporärer Ordner für eine eingehende Datei.
     static let incomingRoot: URL = FileManager.default.temporaryDirectory.appendingPathComponent("Incoming", isDirectory: true)
 
@@ -137,6 +148,9 @@ struct LibraryState: Codable {
     var lyrics: [UUID: String] = [:]
     /// Titel mit selbst gewähltem Cover
     var customCovers: [UUID] = []
+    /// „Importierte Lieder“: von einem anderen Handy importiert, aber noch nicht in die Titel-Liste übernommen.
+    /// Steht nur in der gespeicherten Mediathek – nie in einer Sicherung.
+    var imported: [Track] = []
 
     init(tracks: [Track], playlists: [Playlist], pinned: [UUID], favorites: [UUID] = [], playCounts: [UUID: Int] = [:],
          history: [PlayEvent] = [], plays: [PlayEvent] = [], listenedByMonth: [String: Double] = [:]) {
@@ -165,6 +179,7 @@ struct LibraryState: Codable {
         gains = try c.decodeIfPresent([UUID: Float].self, forKey: .gains) ?? [:]
         lyrics = try c.decodeIfPresent([UUID: String].self, forKey: .lyrics) ?? [:]
         customCovers = try c.decodeIfPresent([UUID].self, forKey: .customCovers) ?? []
+        imported = try c.decodeIfPresent([Track].self, forKey: .imported) ?? []
     }
 }
 

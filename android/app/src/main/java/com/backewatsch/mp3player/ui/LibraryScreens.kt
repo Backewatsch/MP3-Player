@@ -103,6 +103,8 @@ sealed interface LibRoute {
     data object Duplicates : LibRoute
     data object Genres : LibRoute
     data class Genre(val name: String) : LibRoute
+    /** „Importierte Lieder“ – noch nicht in der Titel-Liste */
+    data object Imported : LibRoute
 }
 
 @Composable
@@ -134,6 +136,7 @@ fun LibraryHost() {
             LibRoute.Duplicates -> DuplicatesScreen()
             LibRoute.Genres -> GenresScreen()
             is LibRoute.Genre -> CollectionScreen(route.name, "Genre")
+            LibRoute.Imported -> ImportedScreen()
         }
     }
 }

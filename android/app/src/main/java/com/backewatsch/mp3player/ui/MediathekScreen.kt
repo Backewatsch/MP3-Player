@@ -80,6 +80,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -211,6 +212,13 @@ fun MediathekRoot() {
             item { SectionHeader("Bibliothek") }
             item {
                 Card {
+                    // Von einem anderen Handy importiert und noch nicht in der Titel-Liste: ganz oben, solange welche da sind
+                    if (lib.imported.isNotEmpty()) {
+                        CategoryRow("Importierte Lieder", Icons.Default.Inbox, lib.imported.size, "category-imported") {
+                            nav.push(LibRoute.Imported)
+                        }
+                        HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    }
                     CategoryRow("Lieblingssongs", Icons.Default.Favorite, lib.favorites.count { id -> lib.tracks.any { it.id == id } },
                         "category-Lieblingssongs") { nav.push(LibRoute.Favorites) }
                     HorizontalDivider(Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant)

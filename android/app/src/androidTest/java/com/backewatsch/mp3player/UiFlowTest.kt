@@ -426,6 +426,51 @@ class UiFlowTest {
         org.junit.Assert.assertEquals(2, app.library.tracks.size)
     }
 
+    /** „Importierte Lieder“: Abschnitt in den Einstellungen, Zeile in der Mediathek, Lied in die Titel-Liste übernehmen */
+    @Test fun t9_importedSongs() {
+        val app = instrumentation.targetContext.app
+        // Eine zweite Mediathek spielt das alte Handy: ein Lied mit Musik exportieren …
+        val root = File(instrumentation.targetContext.cacheDir, "ui-imported").apply { deleteRecursively(); mkdirs() }
+        val oldPhone = Library(Storage(instrumentation.targetContext, root),
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default), autoConvert = false)
+        val file = File(root, "Urlaubslied.mp3")
+        instrumentation.context.assets.open("untagged.mp3").use { i -> file.outputStream().use { i.copyTo(it) } }
+        kotlinx.coroutines.runBlocking { oldPhone.import(file, move = true) }
+        val bytes = java.io.ByteArrayOutputStream()
+            .also { kotlinx.coroutines.runBlocking { Backup(oldPhone).export(it, includeMusic = true) } }.toByteArray()
+        // … und auf diesem Handy importieren
+        val result = kotlinx.coroutines.runBlocking { app.backup.importSongs(java.io.ByteArrayInputStream(bytes)) }
+        org.junit.Assert.assertEquals(1, result.staged)
+        org.junit.Assert.assertTrue(app.library.tracks.isEmpty())
+
+        // Einstellungen: Abschnitt „Neues Handy“
+        rule.onNodeWithTag("tab-library").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("settingsButton"), 5_000)
+        rule.onNodeWithTag("settingsButton").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("currentVersion"), 5_000)
+        rule.onNodeWithTag("exportSongs").assertExists()
+        rule.onNodeWithTag("importSongs").performScrollTo()
+        screenshot("a40-Neues-Handy")
+        back() // Info-Blatt schließen
+        backUntil("tab-library")
+
+        // Mediathek: „Importierte Lieder“ steht in der Bibliothek
+        rule.onNodeWithTag("tab-library").performClick()
+        rule.onNodeWithTag("libraryList").performScrollToNode(hasTestTag("category-imported"))
+        screenshot("a41-Mediathek-Importierte-Lieder")
+        rule.onNodeWithTag("category-imported").performClick()
+        rule.waitUntilAtLeastOneExists(hasTestTag("imported-Urlaubslied"), 5_000)
+        screenshot("a42-Importierte-Lieder")
+
+        // ＋ übernimmt das Lied in die Titel-Liste
+        rule.onNodeWithTag("importedAdd").performClick()
+        rule.waitUntil(5_000) { app.library.tracks.any { it.title == "Urlaubslied" } }
+        org.junit.Assert.assertTrue(app.library.imported.isEmpty())
+        rule.waitUntilAtLeastOneExists(hasText("Keine importierten Lieder mehr."), 5_000)
+        screenshot("a43-Importierte-Lieder-leer")
+        root.deleteRecursively()
+    }
+
     /** Suche nach Kategorien, letzte Suchen und Genres */
     @Test fun t7_searchAndGenres() {
         val app = instrumentation.targetContext.app
