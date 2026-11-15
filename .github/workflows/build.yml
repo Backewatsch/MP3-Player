@@ -313,6 +313,19 @@ jobs:
             adb logcat -d | grep -E "com\.backewatsch|lowmemorykiller|lmkd" | grep -iE "kill|died|crash|signal|anr|exception|fatal" | tail -60 || true
             adb logcat -d | grep -E "ExoPlayerImplInternal|PlaybackException|MediaCodec.*(rror|ail)|CCodec.*(rror|ail)" | tail -40 || true
             echo "===== ENDE CRASH-LOG ====="
+            # Starttest der veröffentlichten (verkleinerten) App: über den Test-Build installieren, öffnen, 20 s laufen lassen.
+            # Sie darf dabei nicht abstürzen – erst dann wird veröffentlicht.
+            echo "===== STARTTEST DER VERÖFFENTLICHTEN APP ====="
+            adb logcat -c || true
+            adb install -r app/build/outputs/apk/release/app-release.apk || touch ../android-test-failed
+            adb shell am start -W -n com.backewatsch.mp3player/.MainActivity || touch ../android-test-failed
+            sleep 20
+            adb shell pidof com.backewatsch.mp3player || touch ../android-test-failed
+            adb shell dumpsys package com.backewatsch.mp3player | grep -E "versionName|versionCode" | head -2 || true
+            adb logcat -d -b crash | grep -q "com.backewatsch.mp3player" && touch ../android-test-failed || true
+            adb logcat -d -b crash | tail -60 || true
+            ls -l app/build/outputs/apk/release/ || true
+            echo "===== ENDE STARTTEST ====="
             test ! -f ../android-test-failed
 
       - name: Screenshots als Vorschau ins Log schreiben

@@ -46,7 +46,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Unbenutzten Code der Bibliotheken weglassen (vor allem tausende nie gezeigte Symbole) – das macht die
+            // Update-Datei klein. Namen und der eigene Code der App bleiben unverändert (siehe proguard-rules.pro).
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
