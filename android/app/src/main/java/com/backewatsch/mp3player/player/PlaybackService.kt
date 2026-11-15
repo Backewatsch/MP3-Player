@@ -84,9 +84,13 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
+    /** App aus der Übersicht gewischt: Läuft Musik, spielt sie weiter – sonst wird der Dienst sauber beendet */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onTaskRemoved(rootIntent: android.content.Intent?) {
         val player = session?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) stopSelf()
+        if (player == null || !player.playWhenReady || player.mediaItemCount == 0 || !isPlaybackOngoing) {
+            pauseAllPlayersAndStopSelf()
+        }
     }
 
     override fun onDestroy() {

@@ -27,6 +27,8 @@ android {
         externalNativeBuild {
             cmake {
                 cFlags += listOf("-w", "-O2")
+                // MP3-Encoder auch für Handys mit 16-KB-Speicherseiten bauen (neuere Geräte)
+                arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
             }
         }
     }
@@ -88,8 +90,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("androidx.media3:media3-exoplayer:1.5.1")
-    implementation("androidx.media3:media3-session:1.5.1")
+    implementation("androidx.media3:media3-exoplayer:1.9.3")
+    implementation("androidx.media3:media3-session:1.9.3")
     // ListenableFuture/ImmutableList für die Mediathek (Android Auto)
     implementation("com.google.guava:guava:33.3.1-android")
     // Farbe aus dem Cover für Player-Hintergrund
