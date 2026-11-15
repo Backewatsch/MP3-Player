@@ -11,7 +11,8 @@ val appVersion = System.getenv("APP_VERSION") ?: "1.0"
 
 android {
     namespace = "com.backewatsch.mp3player"
-    compileSdk = 35
+    // Gebaut wird gegen Android 16 (verlangt die Wiedergabe-Bibliothek); das Verhalten der App (targetSdk) bleibt Android 15
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
@@ -93,8 +94,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("androidx.media3:media3-exoplayer:1.9.3")
-    implementation("androidx.media3:media3-session:1.9.3")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-session:1.11.1")
     // ListenableFuture/ImmutableList für die Mediathek (Android Auto)
     implementation("com.google.guava:guava:33.3.1-android")
     // Farbe aus dem Cover für Player-Hintergrund
