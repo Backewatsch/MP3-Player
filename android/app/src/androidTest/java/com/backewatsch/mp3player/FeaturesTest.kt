@@ -308,9 +308,11 @@ class MoreFeaturesTest {
         instrumentation.runOnMainSync { app.player.play(listOf(a, b), 1) }
         waitFor("Wiedergabe startet") { app.player.state.value.currentId == b.id }
         val prefs = context.getSharedPreferences("playback", android.content.Context.MODE_PRIVATE)
-        waitFor("Wiedergabeliste gespeichert") { prefs.getString("queue", null) == "${a.id},${b.id}" && prefs.getInt("index", -1) == 1 }
+        // Laufender Titel und Stelle stehen in einer eigenen kleinen Datei (wird beim Hören alle paar Sekunden geschrieben)
+        val place = context.getSharedPreferences("playbackPosition", android.content.Context.MODE_PRIVATE)
+        waitFor("Wiedergabeliste gespeichert") { prefs.getString("queue", null) == "${a.id},${b.id}" && place.getInt("index", -1) == 1 }
         instrumentation.runOnMainSync { app.player.stop() }
-        waitFor("nach Schließen gelöscht") { prefs.getString("queue", null) == null }
+        waitFor("nach Schließen gelöscht") { prefs.getString("queue", null) == null && !place.contains("index") }
     }
 
     /** Nach einem Neustart der App liegt die letzte Wiedergabeliste wieder pausiert bereit („Weiterhören“) */
