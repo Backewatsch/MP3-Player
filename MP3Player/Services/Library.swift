@@ -806,8 +806,12 @@ final class Library: ObservableObject {
     /// Übernimmt ein importiertes Lied in die Titel-Liste: Die Datei wandert in den Musikordner, das Lied behält
     /// Angaben und Cover. `false`, wenn die Datei fehlt oder sich nicht verschieben lässt.
     @discardableResult
-    func adoptImported(_ id: UUID) -> Bool {
-        guard let index = importedTracks.firstIndex(where: { $0.id == id }) else { return false }
+    func adoptImported(_ id: UUID) -> Bool { adoptImportedTrack(id) != nil }
+
+    /// Wie `adoptImported`, liefert aber das übernommene Lied (`nil`, wenn es nicht geklappt hat)
+    @discardableResult
+    func adoptImportedTrack(_ id: UUID) -> Track? {
+        guard let index = importedTracks.firstIndex(where: { $0.id == id }) else { return nil }
         let staged = importedTracks[index]
         let fm = FileManager.default
         let source = Storage.importedDirectory.appendingPathComponent(staged.fileName)
@@ -820,7 +824,7 @@ final class Library: ObservableObject {
                 ArtworkCache.shared.remove(id)
             }
             save()
-            return false
+            return nil
         }
         // Namen im Musikordner vormerken, damit der Abgleich die Datei nicht gleichzeitig als „neu“ aufnimmt
         let destination = reserveDestination(for: staged.fileName)
@@ -829,7 +833,7 @@ final class Library: ObservableObject {
             try fm.moveItem(at: source, to: destination)
         } catch {
             // z. B. Speicher voll: Das Lied bleibt bei den importierten
-            return false
+            return nil
         }
         // Kennung schon in der Titel-Liste vergeben (z. B. durch „Sicherung wiederherstellen“) → neue Kennung
         var track = Track(id: idInUse ? UUID() : id, fileName: destination.lastPathComponent, title: staged.title,
@@ -843,7 +847,7 @@ final class Library: ObservableObject {
         tracks.append(track)
         save()
         onTrackAdded?(track, nil)
-        return true
+        return track
     }
 
     private func ensureDownloadsPlaylist() {

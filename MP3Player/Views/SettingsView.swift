@@ -29,6 +29,8 @@ struct SettingsView: View {
         case restore
         /// Lieder in den Ordner „Importierte Lieder“ holen
         case songs
+        /// Playlists und Herzen für die Lieder holen, die schon in der Titel-Liste sind
+        case info
     }
     @State private var filePurpose = FilePurpose.restore
     /// Fortschritt oder Ergebnis von „Lieder importieren“
@@ -269,6 +271,7 @@ struct SettingsView: View {
         case .folder: return [.folder]
         case .restore: return [.json, .zip]
         case .songs: return [.zip]
+        case .info: return [.zip, .json]
         }
     }
 
@@ -283,12 +286,14 @@ struct SettingsView: View {
                         case .folder: Task { await folders.add(url) }
                         case .restore: restore(from: url)
                         case .songs: importSongs(from: url)
+                        case .info: restoreInfo(from: url)
                         }
                     case .failure(let error):
                         switch filePurpose {
                         case .folder: break
                         case .restore: backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"
                         case .songs: transferStatus = "Import fehlgeschlagen: \(error.localizedDescription)"
+                        case .info: transferStatus = "Übernehmen fehlgeschlagen: \(error.localizedDescription)"
                         }
                     }
                 }
@@ -381,6 +386,13 @@ struct SettingsView: View {
             } label: { Label("Lieder importieren", systemImage: "square.and.arrow.down.on.square") }
                 .disabled(backupBusy)
                 .accessibilityIdentifier("importSongs")
+            Button {
+                exportForNewPhone = false
+                filePurpose = .info
+                showImporter = true
+            } label: { Label("Playlists und Herzen übernehmen", systemImage: "heart.text.square") }
+                .disabled(backupBusy)
+                .accessibilityIdentifier("restoreInfo")
             if let status = exportForNewPhone ? backupStatus : transferStatus {
                 HStack(spacing: 10) {
                     if importingSongs || (backupBusy && exportForNewPhone) { ProgressView() }
@@ -391,7 +403,19 @@ struct SettingsView: View {
         } header: {
             Text("Neues Handy")
         } footer: {
-            Text("So ziehen deine Lieder um: Auf dem alten Handy „Alle Lieder exportieren“ antippen und die Datei aufs neue Handy bringen (über den Computer oder eine Cloud wie iCloud Drive oder Google Drive). Auf dem neuen Handy „Lieder importieren“ wählen. Die Lieder landen in der Mediathek unter „Importierte Lieder“ – dort suchst du aus, welche in deine Titel-Liste kommen. Playlists und Herzen holt „Sicherung wiederherstellen“ zurück.")
+            Text("So ziehen deine Lieder um: Auf dem alten Handy „Alle Lieder exportieren“ antippen und die Datei aufs neue Handy bringen (über den Computer oder eine Cloud wie iCloud Drive oder Google Drive). Auf dem neuen Handy „Lieder importieren“ wählen. Die Lieder landen in der Mediathek unter „Importierte Lieder“ – dort suchst du aus, welche in deine Titel-Liste kommen. Danach holt „Playlists und Herzen übernehmen“ mit derselben Datei Playlists, Herzen und Statistik für die ausgesuchten Lieder dazu – das kannst du wiederholen, wenn du später weitere Lieder übernimmst. „Sicherung wiederherstellen“ würde dagegen alle Lieder der Datei in die Titel-Liste holen.")
+        }
+    }
+
+    /// „Playlists und Herzen übernehmen“: gilt nur für Lieder, die schon in der Titel-Liste sind – es kommt kein Lied dazu
+    private func restoreInfo(from url: URL) {
+        guard !backupBusy else { return }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        do {
+            transferStatus = try library.restoreInfo(from: url).summary
+        } catch {
+            transferStatus = "Übernehmen fehlgeschlagen: \(error.localizedDescription)"
         }
     }
 
@@ -471,6 +495,7 @@ struct SettingsView: View {
                     backupStatus = "Stelle Lied \(done) von \(total) wieder her …"
                 }
                 backupStatus = "✓ Wiederhergestellt: \(r.restored) Lieder zurückgeholt, \(r.matched) waren schon da, \(r.playlists) Playlists"
+                    + (r.fromImported > 0 ? " · \(r.fromImported) aus „Importierte Lieder“ übernommen" : "")
                     + (r.missing > 0 ? " · \(r.missing) Lieder fehlen in der Sicherung." : ".")
             } catch {
                 backupStatus = "Wiederherstellen fehlgeschlagen: \(error.localizedDescription)"

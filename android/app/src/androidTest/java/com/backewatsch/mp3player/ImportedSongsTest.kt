@@ -8,6 +8,7 @@ import com.backewatsch.mp3player.data.Storage
 import com.backewatsch.mp3player.data.adoptImported
 import com.backewatsch.mp3player.data.deleteImported
 import com.backewatsch.mp3player.data.importedFile
+import com.backewatsch.mp3player.data.recordPlay
 import com.backewatsch.mp3player.data.syncImportedFolder
 import com.backewatsch.mp3player.model.LibraryState
 import com.backewatsch.mp3player.model.Track
@@ -249,7 +250,84 @@ class ImportedSongsTest {
         assertArrayEquals(second, newPhone.fileOf(newPhone.track(idB)!!).readBytes())
     }
 
+    @Test fun playlistsAndHeartsFollowTheChosenSongs() = runBlocking<Unit> {
+        val a = oldPhone.import(asset("tagged.mp3", "Sommer.mp3"), move = true)
+        val b = oldPhone.import(asset("untagged.mp3", "Winter.mp3"), move = true)
+        val mix = oldPhone.createPlaylist("Mix")
+        oldPhone.add(a, mix); oldPhone.add(b, mix)
+        val onlyWinter = oldPhone.createPlaylist("Nur Winter")
+        oldPhone.add(b, onlyWinter)
+        oldPhone.toggleFavorite(a); oldPhone.toggleFavorite(b)
+        oldPhone.recordPlay(a.id)
+        val bytes = export(oldPhone)
+
+        importInto(newPhone, bytes)
+        // Noch nichts übernommen: Es wird nichts angelegt
+        val nothing = Backup(newPhone).restoreInfo(ByteArrayInputStream(bytes))
+        assertEquals(0, nothing.tracksMatched)
+        assertEquals(2, nothing.tracksMissing)
+        assertTrue(newPhone.tracks.isEmpty())
+        assertTrue(newPhone.playlists.none { it.name == "Mix" || it.name == "Nur Winter" })
+        assertEquals(2, newPhone.imported.size)
+
+        // Nur „Sommer“ übernehmen: Playlist und Herz kommen nur für dieses Lied
+        assertEquals(1, newPhone.adoptImported(listOf(a.id)))
+        val first = Backup(newPhone).restoreInfo(ByteArrayInputStream(bytes))
+        assertEquals(0, first.tracksAdded)
+        assertEquals(1, first.tracksMatched)
+        assertEquals(1, first.tracksMissing)
+        assertEquals(1, first.playlistsFilled)
+        assertEquals(1, first.favorites)
+        assertEquals(listOf(a.id), newPhone.tracks.map { it.id })
+        assertEquals("das nicht ausgesuchte Lied wartet weiter", listOf(b.id), newPhone.imported.map { it.id })
+        assertTrue(newPhone.importedFile(newPhone.imported.single()).exists())
+        assertEquals(listOf(a.id), newPhone.playlists.single { it.name == "Mix" }.trackIds)
+        assertTrue("keine leere Playlist", newPhone.playlists.none { it.name == "Nur Winter" })
+        assertEquals(listOf(a.id), newPhone.state.value.favorites)
+        assertEquals(1, newPhone.state.value.playCounts[a.id])
+
+        // Später auch „Winter“ übernehmen und wiederholen: nichts doppelt, der Rest kommt dazu
+        assertEquals(1, newPhone.adoptImported(listOf(b.id)))
+        val second = Backup(newPhone).restoreInfo(ByteArrayInputStream(bytes))
+        assertEquals(2, second.tracksMatched)
+        assertEquals(0, second.tracksMissing)
+        assertEquals(listOf(a.id, b.id), newPhone.playlists.single { it.name == "Mix" }.trackIds)
+        assertEquals(listOf(b.id), newPhone.playlists.single { it.name == "Nur Winter" }.trackIds)
+        assertEquals(setOf(a.id, b.id), newPhone.state.value.favorites.toSet())
+        assertEquals(2, newPhone.state.value.favorites.size)
+        assertEquals(2, newPhone.tracks.size)
+        assertEquals(1, newPhone.state.value.playCounts[a.id])
+    }
+
+    @Test fun fullRestoreTakesWaitingSongsFromTheImportedFolder() = runBlocking<Unit> {
+        val a = oldPhone.import(asset("tagged.mp3", "Sommer.mp3"), move = true)
+        val b = oldPhone.import(asset("untagged.mp3", "Winter.mp3"), move = true)
+        val mix = oldPhone.createPlaylist("Mix")
+        oldPhone.add(a, mix); oldPhone.add(b, mix)
+        val bytes = export(oldPhone)
+
+        importInto(newPhone, bytes)
+        assertEquals(2, newPhone.imported.size)
+        // „Sicherung wiederherstellen“ mit derselben Datei: Die wartenden Lieder ziehen um, nichts liegt doppelt da
+        val result = Backup(newPhone).restore(ByteArrayInputStream(bytes))
+        assertEquals(2, result.fromImported)
+        assertEquals(0, result.tracksAdded)
+        assertEquals(0, result.tracksMatched)
+        assertEquals(0, result.tracksMissing)
+        assertEquals(setOf(a.id, b.id), newPhone.tracks.map { it.id }.toSet())
+        assertEquals(2, newPhone.tracks.size)
+        assertTrue(newPhone.imported.isEmpty())
+        assertTrue(newPhone.storage.importedDir.listFiles().orEmpty().none { it.isFile })
+        assertEquals(2, newPhone.storage.musicDir.listFiles().orEmpty().count { it.isFile })
+        assertEquals(setOf(a.id, b.id), newPhone.playlists.single { it.name == "Mix" }.trackIds.toSet())
+    }
+
     @Test fun wrongFilesGiveClearMessages() {
+        val noInfo = runCatching {
+            runBlocking { Backup(newPhone).restoreInfo(ByteArrayInputStream("kein Archiv".toByteArray())) }
+        }.exceptionOrNull()
+        assertEquals("Das ist keine Sicherung von ILLEGAL FREEDOM MUSIC.", noInfo?.message)
+
         val noBackup = runCatching { importInto(newPhone, "kein Archiv".toByteArray()) }.exceptionOrNull()
         assertEquals("Das ist keine Sicherung von ILLEGAL FREEDOM MUSIC.", noBackup?.message)
 

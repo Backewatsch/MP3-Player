@@ -9,6 +9,7 @@ final class ImportedSongsTests: XCTestCase {
     private var library: Library!
     private var tracksBefore = Set<UUID>()
     private var importedBefore = Set<UUID>()
+    private var playlistsBefore = Set<UUID>()
     private var folder: URL!
     /// Eigene Kennzeichnung je Testlauf: Im Simulator können Lieder anderer Tests liegen
     private var tag = ""
@@ -26,6 +27,7 @@ final class ImportedSongsTests: XCTestCase {
         library = Library(autoScan: false)
         tracksBefore = Set(library.tracks.map(\.id))
         importedBefore = Set(library.importedTracks.map(\.id))
+        playlistsBefore = Set(library.playlists.map(\.id))
         tag = String(UUID().uuidString.prefix(6))
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("Import-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -34,6 +36,7 @@ final class ImportedSongsTests: XCTestCase {
     override func tearDown() async throws {
         library.deleteImported(library.importedTracks.filter { !importedBefore.contains($0.id) }.map(\.id))
         library.deleteAll(library.tracks.filter { !tracksBefore.contains($0.id) })
+        for playlist in library.playlists where !playlistsBefore.contains(playlist.id) { library.deletePlaylist(playlist) }
         try? FileManager.default.removeItem(at: folder)
         library = nil
     }
@@ -44,11 +47,11 @@ final class ImportedSongsTests: XCTestCase {
     }
 
     /// Export-Datei wie vom alten Handy: library.json, Lieder und Cover
-    private func archive(_ songs: [Song], artworkFor: [UUID] = []) throws -> URL {
+    private func archive(_ songs: [Song], artworkFor: [UUID] = [], playlists: [Playlist] = []) throws -> URL {
         let url = folder.appendingPathComponent("lieder-\(UUID().uuidString).zip")
         let zip = try ZipWriter(url: url)
         // Herzen stehen mit in der Datei – sie dürfen beim Importieren nicht mitkommen
-        let state = LibraryState(tracks: songs.map(\.track), playlists: [], pinned: [], favorites: songs.map { $0.track.id })
+        let state = LibraryState(tracks: songs.map(\.track), playlists: playlists, pinned: [], favorites: songs.map { $0.track.id })
         try zip.add(name: "library.json", data: try PortableBackup.encode(state))
         for song in songs {
             try zip.add(name: "music/" + (song.entry ?? song.track.fileName), fileAt: Fixture.url(song.fixture))
@@ -111,6 +114,59 @@ final class ImportedSongsTests: XCTestCase {
         XCTAssertFalse(exists(library.importedFileURL(stagedB)))
         XCTAssertFalse(exists(stagedB.artworkURL))
         XCTAssertNotNil(library.track(id: a.id))
+    }
+
+    func testPlaylistsAndHeartsFollowTheChosenSongs() async throws {
+        let a = song("Sommer", artist: "Band A", duration: 3.03)
+        let b = song("Winter", artist: "Band B", duration: 2.04)
+        let mix = Playlist(id: UUID(), name: "Mix \(tag)", trackIDs: [a.id, b.id])
+        let onlyWinter = Playlist(id: UUID(), name: "Nur Winter \(tag)", trackIDs: [b.id])
+        let url = try archive([Song(track: a, fixture: "tagged.mp3"), Song(track: b, fixture: "untagged.mp3")],
+                              playlists: [mix, onlyWinter])
+        _ = try await library.importSongs(from: url)
+
+        // Noch nichts übernommen: Es wird nichts angelegt
+        let nothing = try library.restoreInfo(from: url)
+        XCTAssertEqual(nothing, InfoRestoreResult(matched: 0, missing: 2, playlists: 0, favorites: 0))
+        XCTAssertNil(library.playlists.first { $0.name == mix.name })
+
+        // Nur „Sommer“ übernehmen: Playlist und Herz kommen nur für dieses Lied
+        XCTAssertTrue(library.adoptImported(a.id))
+        let first = try library.restoreInfo(from: url)
+        XCTAssertEqual(first, InfoRestoreResult(matched: 1, missing: 1, playlists: 1, favorites: 1))
+        XCTAssertEqual(library.playlists.first { $0.name == mix.name }?.trackIDs, [a.id])
+        XCTAssertNil(library.playlists.first { $0.name == onlyWinter.name }, "keine leere Playlist")
+        XCTAssertTrue(library.favoriteIDs.contains(a.id))
+        XCTAssertFalse(library.favoriteIDs.contains(b.id))
+        XCTAssertNil(library.track(id: b.id), "es kommt kein Lied dazu")
+        XCTAssertNotNil(library.importedTracks.first { $0.id == b.id }, "das nicht ausgesuchte Lied wartet weiter")
+
+        // Später auch „Winter“ übernehmen und wiederholen: nichts doppelt, der Rest kommt dazu
+        XCTAssertTrue(library.adoptImported(b.id))
+        let second = try library.restoreInfo(from: url)
+        XCTAssertEqual(second, InfoRestoreResult(matched: 2, missing: 0, playlists: 2, favorites: 2))
+        XCTAssertEqual(library.playlists.first { $0.name == mix.name }?.trackIDs, [a.id, b.id])
+        XCTAssertEqual(library.playlists.first { $0.name == onlyWinter.name }?.trackIDs, [b.id])
+        XCTAssertEqual(library.favoriteIDs.filter { $0 == a.id || $0 == b.id }.count, 2)
+    }
+
+    func testFullRestoreTakesWaitingSongsFromTheImportedFolder() async throws {
+        let a = song("Sommer", artist: "Band A", duration: 3.03)
+        let b = song("Winter", artist: "Band B", duration: 2.04)
+        let mix = Playlist(id: UUID(), name: "Mix \(tag)", trackIDs: [a.id, b.id])
+        let url = try archive([Song(track: a, fixture: "tagged.mp3"), Song(track: b, fixture: "untagged.mp3")], playlists: [mix])
+        _ = try await library.importSongs(from: url)
+
+        // „Sicherung wiederherstellen“ mit derselben Datei: Die wartenden Lieder ziehen um, nichts liegt doppelt da
+        let result = try await library.restoreFull(from: url)
+        XCTAssertEqual(result.fromImported, 2)
+        XCTAssertEqual(result.restored, 0)
+        XCTAssertEqual(result.missing, 0)
+        XCTAssertNotNil(library.track(id: a.id))
+        XCTAssertNotNil(library.track(id: b.id))
+        XCTAssertEqual(library.tracks.filter { $0.title == a.title || $0.title == b.title }.count, 2)
+        XCTAssertNil(library.importedTracks.first { $0.id == a.id || $0.id == b.id })
+        XCTAssertEqual(Set(library.playlists.first { $0.name == mix.name }?.trackIDs ?? []), [a.id, b.id])
     }
 
     func testFolderIsKeptInSyncWithTheList() async throws {

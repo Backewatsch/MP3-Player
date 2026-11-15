@@ -100,6 +100,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 val r = context.contentResolver.openInputStream(uri)?.use { app.backup.restore(it) }
                     ?: throw IllegalStateException("Datei nicht lesbar.")
                 "✓ Wiederhergestellt: ${r.tracksAdded} Lieder neu, ${r.tracksMatched} schon vorhanden, ${r.playlists} Playlists" +
+                    (if (r.fromImported > 0) " · ${r.fromImported} aus „Importierte Lieder“ übernommen" else "") +
                     (if (r.tracksMissing > 0) " · ${r.tracksMissing} Lieder fehlen (Sicherung ohne Musik)." else ".")
             } catch (e: Exception) {
                 "Wiederherstellen fehlgeschlagen: ${e.message}"
@@ -143,6 +144,24 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 backupBusy = false
             }
             // Auch wenn die Einstellungen inzwischen geschlossen sind, soll das Ergebnis ankommen
+            transferStatus?.let { Notice.show(context, it) }
+        }
+    }
+    // Playlists, Herzen und Statistik für die Lieder holen, die schon in der Titel-Liste sind (keine neuen Lieder)
+    val infoRestorer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        backupBusy = true
+        transferStatus = "Lese die Datei …"
+        app.scope.launch {
+            transferStatus = try {
+                val r = context.contentResolver.openInputStream(uri)?.use { app.backup.restoreInfo(it) }
+                    ?: throw IllegalStateException("Datei nicht lesbar.")
+                infoRestoreSummary(r)
+            } catch (e: Exception) {
+                "Übernehmen fehlgeschlagen: ${e.message}"
+            } finally {
+                backupBusy = false
+            }
             transferStatus?.let { Notice.show(context, it) }
         }
     }
@@ -299,10 +318,14 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 ActionLine("Lieder importieren", Icons.Default.Download, "importSongs", enabled = !backupBusy) {
                     songImporter.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ActionLine("Playlists und Herzen übernehmen", Icons.Default.Restore, "restoreInfo", enabled = !backupBusy) {
+                    infoRestorer.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                }
                 if (backupBusy && transferStatus != null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp), color = Accent)
                 transferStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp).testTag("importStatus")) }
             }
-            Text("So ziehen deine Lieder um: Auf dem alten Handy „Alle Lieder exportieren“ antippen und die Datei aufs neue Handy bringen (Kabel, Cloud oder Quick Share). Auf dem neuen Handy „Lieder importieren“ wählen. Die Lieder landen in der Mediathek unter „Importierte Lieder“ – dort suchst du aus, welche in deine Titel-Liste kommen. Playlists und Herzen holt „Sicherung wiederherstellen“ zurück.",
+            Text("So ziehen deine Lieder um: Auf dem alten Handy „Alle Lieder exportieren“ antippen und die Datei aufs neue Handy bringen (Kabel, Cloud oder Quick Share). Auf dem neuen Handy „Lieder importieren“ wählen. Die Lieder landen in der Mediathek unter „Importierte Lieder“ – dort suchst du aus, welche in deine Titel-Liste kommen. Danach holt „Playlists und Herzen übernehmen“ mit derselben Datei Playlists, Herzen und Statistik für die ausgesuchten Lieder dazu – das kannst du wiederholen, wenn du später weitere Lieder übernimmst. „Sicherung wiederherstellen“ würde dagegen alle Lieder der Datei in die Titel-Liste holen.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
 
@@ -352,6 +375,22 @@ private fun InfoRow(text: String, icon: ImageVector?, tint: Color = MaterialThem
         if (icon != null) { Icon(icon, null, tint = tint); Spacer(Modifier.width(10.dp)) }
         Text(text, color = tint)
     }
+}
+
+/** Ergebnis von „Playlists und Herzen übernehmen“ in einem Satz */
+internal fun infoRestoreSummary(r: Library.RestoreResult): String {
+    if (r.tracksMatched == 0) {
+        return "In deiner Titel-Liste ist noch kein Lied aus dieser Datei. Übernimm zuerst Lieder aus „Importierte Lieder“."
+    }
+    val songs = if (r.tracksMatched == 1) "1 Lied" else "${r.tracksMatched} Lieder"
+    val lists = if (r.playlistsFilled == 1) "1 Playlist" else "${r.playlistsFilled} Playlists"
+    val hearts = if (r.favorites == 1) "1 Herz" else "${r.favorites} Herzen"
+    val rest = when (r.tracksMissing) {
+        0 -> ""
+        1 -> " 1 Lied der Datei ist nicht in deiner Titel-Liste."
+        else -> " ${r.tracksMissing} Lieder der Datei sind nicht in deiner Titel-Liste."
+    }
+    return "✓ Für $songs übernommen: $lists, $hearts und die Statistik.$rest"
 }
 
 /** Ergebnis von „Lieder importieren“ in einem Satz */

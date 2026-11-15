@@ -449,7 +449,8 @@ class UiFlowTest {
         rule.onNodeWithTag("settingsButton").performClick()
         rule.waitUntilAtLeastOneExists(hasTestTag("currentVersion"), 5_000)
         rule.onNodeWithTag("exportSongs").assertExists()
-        rule.onNodeWithTag("importSongs").performScrollTo()
+        rule.onNodeWithTag("importSongs").assertExists()
+        rule.onNodeWithTag("restoreInfo").performScrollTo()
         screenshot("a40-Neues-Handy")
         back() // Info-Blatt schließen
         backUntil("tab-library")

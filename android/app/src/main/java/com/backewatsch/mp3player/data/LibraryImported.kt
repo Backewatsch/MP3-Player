@@ -84,9 +84,9 @@ suspend fun Library.syncImportedFolder() {
 
 /**
  * Übernimmt importierte Lieder in die Titel-Liste: Die Datei wandert in den Musikordner, das Lied behält
- * Titel, Interpret und Cover. Liefert, wie viele übernommen wurden.
+ * Titel, Interpret und Cover. Liefert, wie viele übernommen wurden; [onAdopted] bekommt jedes übernommene Lied.
  */
-suspend fun Library.adoptImported(ids: Collection<String>): Int {
+suspend fun Library.adoptImported(ids: Collection<String>, onAdopted: (Track) -> Unit = {}): Int {
     var adopted = 0
     for (id in ids) {
         val staged = imported.firstOrNull { it.id == id } ?: continue
@@ -122,6 +122,7 @@ suspend fun Library.adoptImported(ids: Collection<String>): Int {
                 _state.update { s -> s.copy(tracks = s.tracks + track, imported = s.imported.filter { it.id != id }) }
             }
             adopted++
+            onAdopted(track)
             onTrackAdded?.invoke(track, null)
         } catch (e: Exception) {
             // z. B. Speicher voll: Das Lied bleibt bei den importierten; eine halbe Kopie wieder entfernen

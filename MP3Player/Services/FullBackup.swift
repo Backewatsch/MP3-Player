@@ -147,6 +147,34 @@ struct FullRestoreResult {
     /// Lieder, die weder vorhanden noch in der Sicherung enthalten sind
     var missing: Int
     var playlists: Int
+    /// Lieder, die unter „Importierte Lieder“ warteten und von dort in die Titel-Liste übernommen wurden
+    var fromImported = 0
+}
+
+/// Ergebnis von „Playlists und Herzen übernehmen“
+struct InfoRestoreResult: Equatable {
+    /// Lieder der Datei, die in der Titel-Liste sind
+    var matched = 0
+    /// Lieder der Datei, die nicht in der Titel-Liste sind
+    var missing = 0
+    /// Playlists, in die Lieder einsortiert wurden
+    var playlists = 0
+    /// Übernommene Herzen
+    var favorites = 0
+
+    /// Ergebnis in einem Satz (für die Anzeige)
+    var summary: String {
+        guard matched > 0 else {
+            return "In deiner Titel-Liste ist noch kein Lied aus dieser Datei. Übernimm zuerst Lieder aus „Importierte Lieder“."
+        }
+        let songs = matched == 1 ? "1 Lied" : "\(matched) Lieder"
+        let lists = playlists == 1 ? "1 Playlist" : "\(playlists) Playlists"
+        let hearts = favorites == 1 ? "1 Herz" : "\(favorites) Herzen"
+        var text = "✓ Für \(songs) übernommen: \(lists), \(hearts) und die Statistik."
+        if missing == 1 { text += " 1 Lied der Datei ist nicht in deiner Titel-Liste." }
+        if missing > 1 { text += " \(missing) Lieder der Datei sind nicht in deiner Titel-Liste." }
+        return text
+    }
 }
 
 extension Library {
@@ -192,10 +220,13 @@ extension Library {
         // Nur Lieder, die schon vor dem Wiederherstellen da waren, gelten als „vorhanden“ –
         // sonst würde ein gerade zurückgeholtes Lied ein zweites mit gleichem Dateinamen verschlucken
         var matcher = RestoreMatcher(existing: tracks)
+        // Lieder der Sicherung, die schon unter „Importierte Lieder“ warten: von dort übernehmen statt doppelt anlegen
+        var waiting = WaitingSongs(importedTracks)
         var idMap: [UUID: UUID] = [:]
         var restoredCovers: [UUID] = []
         var restored = 0
         var missing = 0
+        var fromImported = 0
         let folder = Storage.makeIncomingDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
 
@@ -210,6 +241,15 @@ extension Library {
                 idMap[saved.id] = existing.id
                 // Bei großen Mediatheken ab und zu Luft lassen, damit die Fortschrittsanzeige weiterläuft
                 if n % 200 == 199 { try? await Task.sleep(nanoseconds: 1_000_000) }
+                continue
+            }
+            if let staged = waiting.take(saved), let moved = adoptImportedTrack(staged.id) {
+                matcher.add(moved)
+                idMap[saved.id] = moved.id
+                fromImported += 1
+                if backup.customCovers.contains(saved.id), FileManager.default.fileExists(atPath: moved.artworkURL.path) {
+                    restoredCovers.append(moved.id)
+                }
                 continue
             }
             guard let entry else {
@@ -239,8 +279,88 @@ extension Library {
 
         applyRestore(backup: backup, map: { ids in ids.compactMap { idMap[$0] } })
         applyRestoreExtras(lyrics: backup.lyrics, map: { idMap[$0] }, restoredCovers: restoredCovers)
-        return FullRestoreResult(restored: restored, matched: idMap.count - restored, missing: missing,
-                                 playlists: backup.playlists.count)
+        return FullRestoreResult(restored: restored, matched: idMap.count - restored - fromImported, missing: missing,
+                                 playlists: backup.playlists.count, fromImported: fromImported)
+    }
+
+    /// „Playlists und Herzen übernehmen“: liest nur die Mediathek einer Sicherung (ZIP mit oder ohne Musik, auch aus der
+    /// Android-App, oder die kleine Sicherung) und übernimmt Playlists, Herzen, Kurzwahl, Statistik, Songtexte und eigene
+    /// Cover für die Lieder, die schon in der Titel-Liste sind. Es kommt kein Lied dazu – gedacht für danach, wenn man
+    /// unter „Importierte Lieder“ ausgesucht hat. Lässt sich beliebig oft wiederholen.
+    func restoreInfo(from url: URL) throws -> InfoRestoreResult {
+        let backup: LibraryState
+        var rawIDs: [UUID: String] = [:]
+        var zip: ZipReader?
+        if ZipReader.isZip(url) {
+            let reader = try ZipReader(url: url)
+            guard let indexEntry = reader.entry(named: PortableBackup.index),
+                  let decoded = PortableBackup.decode(try reader.data(of: indexEntry)) else { throw BackupError.notABackup }
+            backup = decoded.state
+            rawIDs = decoded.rawIDs
+            zip = reader
+        } else {
+            backup = try Self.decodeBackup(try Data(contentsOf: url))
+        }
+
+        var matcher = RestoreMatcher(existing: tracks)
+        var idMap: [UUID: UUID] = [:]
+        var result = InfoRestoreResult()
+        for saved in backup.tracks {
+            // Mit Musik in der Datei: Ein Treffer nur über den Dateinamen zählt erst, wenn auch die Größe stimmt
+            var archivedSize: UInt64?
+            if let zip {
+                let raw = rawIDs[saved.id] ?? saved.id.uuidString.lowercased()
+                archivedSize = (zip.entry(named: PortableBackup.music + raw + "__" + saved.fileName)
+                    ?? zip.entry(named: PortableBackup.music + saved.fileName))?.size
+            }
+            if let existing = matcher.match(saved, archivedSize: archivedSize) {
+                idMap[saved.id] = existing.id
+            } else {
+                result.missing += 1
+            }
+        }
+        result.matched = idMap.count
+        // Playlists, zu denen (noch) kein Lied in der Titel-Liste ist, werden nicht leer angelegt
+        var chosen = backup
+        chosen.playlists = backup.playlists.filter { list in list.trackIDs.contains { idMap[$0] != nil } }
+        result.playlists = chosen.playlists.count
+        result.favorites = Set(backup.favorites.compactMap { idMap[$0] }).count
+        guard result.matched > 0 else { return result }
+
+        applyRestore(backup: chosen, map: { ids in ids.compactMap { idMap[$0] } })
+        let fm = FileManager.default
+        let covers = backup.customCovers.compactMap { idMap[$0] }.filter { id in
+            guard let song = self.track(id: id) else { return false }
+            return fm.fileExists(atPath: song.artworkURL.path)
+        }
+        applyRestoreExtras(lyrics: backup.lyrics, map: { idMap[$0] }, restoredCovers: covers)
+        return result
+    }
+}
+
+/// Lieder unter „Importierte Lieder“, nachschlagbar über die Kennung oder über Titel + Interpret + Länge
+private struct WaitingSongs {
+    private var byID: [UUID: Track] = [:]
+    private var byTitle: [String: [Track]] = [:]
+
+    init(_ tracks: [Track]) {
+        for track in tracks {
+            byID[track.id] = track
+            byTitle[Self.key(track), default: []].append(track)
+        }
+    }
+
+    private static func key(_ track: Track) -> String {
+        track.title.lowercased() + "\u{1}" + track.artist.lowercased()
+    }
+
+    /// Das wartende Lied zu einem Lied der Sicherung – jedes höchstens einmal
+    mutating func take(_ saved: Track) -> Track? {
+        let match = byID[saved.id] ?? byTitle[Self.key(saved)]?.first(where: { abs($0.duration - saved.duration) < 2 })
+        guard let found = match else { return nil }
+        byID[found.id] = nil
+        byTitle[Self.key(found)]?.removeAll { $0.id == found.id }
+        return found
     }
 }
 
@@ -264,6 +384,12 @@ private struct RestoreMatcher {
 
     private static func key(_ track: Track) -> String {
         track.title.lowercased() + "\u{1}" + track.artist.lowercased()
+    }
+
+    /// Ein Lied, das während des Wiederherstellens in die Titel-Liste kam (z. B. aus „Importierte Lieder“)
+    mutating func add(_ track: Track) {
+        if byID[track.id] == nil { byID[track.id] = track }
+        byTitle[Self.key(track), default: []].append(track)
     }
 
     /// - Parameter archivedSize: Größe der Datei in der Sicherung (`nil`, wenn sie dort fehlt)

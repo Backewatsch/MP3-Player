@@ -542,8 +542,14 @@ class Library(
 
     // region Sicherung
 
-    /** Ergebnis einer Wiederherstellung */
-    data class RestoreResult(val tracksAdded: Int, val tracksMatched: Int, val tracksMissing: Int, val playlists: Int)
+    /**
+     * Ergebnis einer Wiederherstellung. [fromImported]: Lieder, die unter „Importierte Lieder“ warteten und von dort
+     * übernommen wurden; [playlistsFilled]: Playlists, in die Lieder einsortiert wurden; [favorites]: übernommene Herzen.
+     */
+    data class RestoreResult(
+        val tracksAdded: Int, val tracksMatched: Int, val tracksMissing: Int, val playlists: Int,
+        val fromImported: Int = 0, val playlistsFilled: Int = 0, val favorites: Int = 0,
+    )
 
     /** Aktueller Stand für eine Sicherung */
     fun snapshot(): LibraryState = _state.value

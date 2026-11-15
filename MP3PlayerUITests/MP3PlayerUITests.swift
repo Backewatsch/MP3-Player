@@ -311,6 +311,7 @@ final class MP3PlayerUITests: XCTestCase {
         // „Neues Handy“: alle Lieder exportieren bzw. in den Ordner „Importierte Lieder“ holen
         XCTAssertTrue(reveal(app.buttons["exportSongs"].firstMatch), "„Alle Lieder exportieren“ fehlt")
         XCTAssertTrue(reveal(app.buttons["importSongs"].firstMatch), "„Lieder importieren“ fehlt")
+        XCTAssertTrue(reveal(app.buttons["restoreInfo"].firstMatch), "„Playlists und Herzen übernehmen“ fehlt")
         screenshot("13d-Neues-Handy")
         XCTAssertTrue(reveal(app.buttons["convertAllButton"].firstMatch), "Konverter fehlt")
         // „Sicherung erstellen“ fragt: mit Musik oder nur die Listen

@@ -100,13 +100,39 @@ class Backup(private val library: Library) {
         }
     }
 
+    /**
+     * „Playlists und Herzen übernehmen“: liest nur „library.json“ einer Sicherung (mit oder ohne Musik, auch vom iPhone)
+     * und übernimmt Playlists, Herzen, Kurzwahl, Statistik, Songtexte und eigene Cover für die Lieder, die schon in der
+     * Titel-Liste sind. Es kommt kein Lied dazu – gedacht für danach, wenn man unter „Importierte Lieder“ ausgesucht hat.
+     * Lässt sich beliebig oft wiederholen.
+     */
+    suspend fun restoreInfo(input: InputStream): Library.RestoreResult {
+        val backup = withContext(Dispatchers.IO) {
+            var state: LibraryState? = null
+            ZipInputStream(input.buffered()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (!entry.isDirectory && entry.name == INDEX) {
+                        // Die Mediathek steht am Anfang der Datei – die Lieder dahinter werden gar nicht erst gelesen
+                        state = runCatching {
+                            json.decodeFromString(LibraryState.serializer(), zip.readBytes().decodeToString())
+                        }.getOrNull()
+                        break
+                    }
+                }
+            }
+            state
+        } ?: throw Library.LibraryException("Das ist keine Sicherung von ILLEGAL FREEDOM MUSIC.")
+        return library.restore(backup, emptyMap(), emptyMap(), addMissing = false)
+    }
+
     /** Ergebnis von „Lieder importieren“ */
     data class SongImportResult(val staged: Int, val alreadyThere: Int, val failed: Int)
 
     /**
      * „Lieder importieren“: liest eine Sicherung mit Musik (auch vom iPhone) und legt ihre Lieder im Ordner
      * „Importierte Lieder“ ab – nicht in der Titel-Liste. Lieder, die schon da sind, werden übersprungen.
-     * Playlists, Herzen und Statistik der Sicherung bleiben unberührt (dafür gibt es „Sicherung wiederherstellen“).
+     * Playlists, Herzen und Statistik der Sicherung bleiben unberührt (dafür gibt es [restoreInfo]).
      * Die Datei wird einmal der Reihe nach gelesen; jedes Lied geht direkt in den Ordner (keine zweite Kopie).
      */
     suspend fun importSongs(input: InputStream, onProgress: (Int, Int) -> Unit = { _, _ -> }): SongImportResult =
