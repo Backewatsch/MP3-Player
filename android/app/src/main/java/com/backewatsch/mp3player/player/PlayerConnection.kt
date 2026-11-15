@@ -104,6 +104,9 @@ class PlayerConnection(
         /** Datei fehlt, ist beschädigt oder nicht lesbar: Bescheid geben und mit dem nächsten Lied weitermachen */
         override fun onPlayerError(error: PlaybackException) {
             val c = controller ?: return
+            // Nur wenn gerade gespielt werden soll: Ein pausiertes Lied (z. B. während seine Datei neu geschrieben wird)
+            // springt nicht von selbst weiter – beim nächsten Tipper auf Play wird es erneut versucht
+            if (!c.playWhenReady) return
             val title = c.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty().ifEmpty { "Das Lied" }
             failedInRow++
             val skip = c.mediaItemCount > 1 && c.hasNextMediaItem() && failedInRow <= minOf(MAX_SKIPS, c.mediaItemCount - 1)

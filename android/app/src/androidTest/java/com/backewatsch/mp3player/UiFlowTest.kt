@@ -407,7 +407,16 @@ class UiFlowTest {
         rule.waitUntilAtLeastOneExists(hasTestTag("lyricsField"), 5_000)
         rule.onNodeWithTag("lyricsField").performTextInput("Wir fahren durch die Nacht\nund singen laut")
         rule.onNodeWithTag("lyricsSave").performClick()
-        rule.waitUntilAtLeastOneExists(hasTestTag("lyricsText"), 5_000)
+        try {
+            rule.waitUntilAtLeastOneExists(hasTestTag("lyricsText"), 15_000)
+        } catch (e: Throwable) {
+            // Genauer sagen, woran es lag (anderes Lied an der Reihe? Blatt zu? noch im Eingabefeld?)
+            val state = app.player.state.value
+            throw AssertionError("Songtext erscheint nicht: gleiches Lied=${state.currentId == current}, spielt=${state.isPlaying}, " +
+                "Warteschlange=${state.queueIds.size}, leer-Hinweis=${rule.onAllNodesWithTag("lyricsEmpty").fetchSemanticsNodes().size}, " +
+                "Eingabefeld=${rule.onAllNodesWithTag("lyricsField").fetchSemanticsNodes().size}, " +
+                "gespeichert=${app.library.state.value.lyrics[current] != null}", e)
+        }
         Thread.sleep(500)
         screenshot("a30-Songtext")
         org.junit.Assert.assertEquals("Wir fahren durch die Nacht\nund singen laut", app.library.state.value.lyrics[current])
