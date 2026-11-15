@@ -90,38 +90,57 @@ import com.backewatsch.mp3player.model.formatTime
 import com.backewatsch.mp3player.update.UpdateChecker
 import kotlinx.coroutines.launch
 
+/** „Titel hinzufügen“ einer Playlist: alle Lieder mit Suche; angehakt wird über die Suche hinweg gesammelt */
 @Composable
 internal fun AddTracksDialog(playlist: Playlist, onDismiss: () -> Unit) {
     val app = LocalApp.current
-    val selected = remember { mutableStateOf(setOf<String>()) }
-    val all = app.library.sortedTracks()
+    val context = LocalContext.current
+    val lib by app.library.state.collectAsState()
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var query by remember { mutableStateOf("") }
+    val all = remember(lib.tracks) { app.library.sortedTracks() }
+    val shown = remember(all, query) { com.backewatsch.mp3player.data.Search.filter(all, query) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Titel hinzufügen") },
         text = {
-            LazyColumn(Modifier.height(380.dp)) {
-                items(all, key = { it.id }) { track ->
-                    val already = track.id in playlist.trackIds
-                    val checked = already || track.id in selected.value
-                    Row(
-                        Modifier.fillMaxWidth().clickable(enabled = !already) {
-                            selected.value = if (track.id in selected.value) selected.value - track.id else selected.value + track.id
-                        }.padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = null, enabled = !already)
-                        Artwork(track, 36.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column {
+                SearchPill(query, { query = it }, "Titel oder Interpret suchen",
+                    Modifier.fillMaxWidth().testTag("addTracksSearch"), clearTag = "addTracksSearchClear")
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(Modifier.height(340.dp).testTag("addTracksList")) {
+                    if (shown.isEmpty()) item {
+                        Text("Nichts gefunden.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+                    }
+                    items(shown, key = { it.id }) { track ->
+                        val already = track.id in playlist.trackIds
+                        val checked = already || track.id in selected
+                        Row(
+                            Modifier.fillMaxWidth().clickable(enabled = !already) {
+                                selected = if (track.id in selected) selected - track.id else selected + track.id
+                            }.padding(vertical = 6.dp).testTag("addTrack-${track.title}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = null, enabled = !already)
+                            Artwork(track, 36.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (track.artist.isNotEmpty()) Text(track.artist, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
                     }
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                all.filter { it.id in selected.value }.forEach { app.library.add(it, playlist) }
+                val chosen = all.filter { it.id in selected }
+                app.library.addAll(chosen, playlist)
+                Notice.show(context, if (chosen.size == 1) "1 Lied hinzugefügt" else "${chosen.size} Lieder hinzugefügt")
                 onDismiss()
-            }, enabled = selected.value.isNotEmpty()) { Text("Hinzufügen (${selected.value.size})") }
+            }, enabled = selected.isNotEmpty(), modifier = Modifier.testTag("addTracksConfirm")) { Text("Hinzufügen (${selected.size})") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } },
     )

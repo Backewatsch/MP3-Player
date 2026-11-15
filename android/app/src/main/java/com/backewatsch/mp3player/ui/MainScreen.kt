@@ -196,6 +196,7 @@ fun MainScreen() {
                     }
                 }) {
                 // Tabs blenden weich ineinander über
+                val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
                 androidx.compose.animation.AnimatedContent(
                     targetState = if (nav.showSearch) TAB_SEARCH else nav.tab,
                     transitionSpec = {
@@ -207,8 +208,9 @@ fun MainScreen() {
                 ) { tab ->
                     when (tab) {
                         TAB_SEARCH -> SearchScreen()
-                        TAB_START -> StartScreen()
-                        TAB_LIBRARY -> LibraryHost()
+                        // Start-Seite und die Seiten der Mediathek merken sich, wie weit gescrollt wurde
+                        TAB_START -> pages.SaveableStateProvider("tab-start") { StartScreen() }
+                        TAB_LIBRARY -> LibraryHost(pages)
                         else -> EditorScreen()
                     }
                 }

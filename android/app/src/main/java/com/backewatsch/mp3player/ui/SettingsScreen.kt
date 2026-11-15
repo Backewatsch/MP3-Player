@@ -270,7 +270,7 @@ fun SettingsSheet(onDismiss: () -> Unit) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 DownloadWatcherRow()
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                val dupCount = remember(lib) { app.library.duplicateGroups().size }
+                val dupCount = remember(lib.tracks) { app.library.duplicateGroups().size }
                 ActionLine(if (dupCount > 0) "Doppelte Lieder aufräumen ($dupCount)" else "Doppelte Lieder suchen",
                     Icons.Default.CleaningServices, "openDuplicates") {
                     onDismiss(); nav.push(LibRoute.Duplicates)
@@ -450,6 +450,47 @@ internal fun DownloadWatcherRow() {
             )
         }
         androidx.compose.material3.Switch(checked = active, onCheckedChange = toggle)
+    }
+    if (active) {
+        val area by watcher.area.collectAsState()
+        var choose by remember { mutableStateOf(false) }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            Modifier.fillMaxWidth().clickable { choose = true }.padding(16.dp).testTag("watchArea"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Wo nach neuen Liedern geschaut wird")
+                Text(area.label, style = MaterialTheme.typography.bodySmall, color = Accent)
+            }
+        }
+        if (choose) AlertDialog(
+            onDismissRequest = { choose = false },
+            title = { Text("Neue Lieder übernehmen aus") },
+            text = {
+                Column {
+                    DownloadWatcher.Area.entries.forEach { option ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { watcher.setArea(option); choose = false }
+                                .padding(vertical = 10.dp).testTag("watchArea-${option.name}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(selected = option == area, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(option.label)
+                                Text(option.hint, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    Text("Es zählt, was ab jetzt neu dazukommt. Ältere Lieder holst du in der Mediathek über ＋ › „Von Samsung Music übertragen“.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp))
+                }
+            },
+            confirmButton = { TextButton(onClick = { choose = false }) { Text("Schließen") } },
+        )
     }
 }
 

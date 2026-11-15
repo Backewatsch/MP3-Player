@@ -27,7 +27,8 @@ import com.backewatsch.mp3player.model.Track
 
 /**
  * Übernimmt neue Lieder aus dem Download-Ordner des Handys automatisch in die Mediathek –
- * egal mit welcher App (Chrome, Samsung Internet …) sie geladen wurden.
+ * egal mit welcher App (Chrome, Samsung Internet …) sie geladen wurden. Auf Wunsch auch aus dem Ordner „Music“
+ * oder vom ganzen Handy ([Area]).
  * Gelöschte Lieder kommen nicht wieder: jede Datei wird nur einmal übernommen.
  */
 class DownloadWatcher(
@@ -43,6 +44,28 @@ class DownloadWatcher(
     /** Meldet neu übernommene Lieder (für einen kurzen Hinweis) */
     private val _imported = MutableSharedFlow<Track>(extraBufferCapacity = 16)
     val imported: SharedFlow<Track> = _imported.asSharedFlow()
+
+    /** Wo nach neuen Liedern geschaut wird */
+    enum class Area(val label: String, val hint: String) {
+        DOWNLOADS("Nur der Ordner „Download“", "Lieder, die du herunterlädst"),
+        MUSIC("„Download“ und „Music“", "auch Lieder, die du z. B. vom Computer in den Ordner „Music“ kopierst"),
+        ALL("Ganzes Handy", "alle neuen Musikdateien – ohne Klingeltöne, Aufnahmen und Sprachnachrichten"),
+    }
+
+    private val _area = MutableStateFlow(
+        runCatching { Area.valueOf(prefs.getString("area", null).orEmpty()) }.getOrDefault(Area.DOWNLOADS),
+    )
+    val area: StateFlow<Area> = _area
+
+    fun setArea(value: Area) {
+        val edit = prefs.edit().putString("area", value.name)
+        // In den neu dazugekommenen Ordnern zählt erst, was ab jetzt hinzukommt –
+        // ältere Lieder holt „Von Samsung Music übertragen“
+        if (value != Area.DOWNLOADS && !prefs.contains("sinceWide")) edit.putLong("sinceWide", System.currentTimeMillis() / 1000 - 60)
+        edit.apply()
+        _area.value = value
+        checkSoon(0)
+    }
 
     private val mutex = Mutex()
     private var pendingCheck: Job? = null
@@ -107,12 +130,14 @@ class DownloadWatcher(
     suspend fun check(): Int = mutex.withLock {
         if (!_enabled.value || !hasPermission()) return 0
         val since = sinceSeconds()
+        val area = _area.value
+        val sinceWide = if (area == Area.DOWNLOADS) Long.MAX_VALUE else prefs.getLong("sinceWide", Long.MAX_VALUE)
         val handled = prefs.getStringSet("handled", emptySet()).orEmpty().toMutableSet()
-        val candidates = withContext(Dispatchers.IO) { newDownloads(since) }.filter { it.sourceKey !in handled }
+        val candidates = withContext(Dispatchers.IO) { newSongs(since, sinceWide, area) }.filter { it.first.sourceKey !in handled }
         var count = 0
-        for (song in candidates) {
+        for ((song, downloaded) in candidates) {
             // Schlägt die Übernahme fehl (Datei z. B. noch unvollständig), wird es beim nächsten Mal erneut versucht
-            val result = runCatching { importer.importDownloaded(song) }
+            val result = runCatching { if (downloaded) importer.importDownloaded(song) else importer.importFound(song) }
                 .onFailure { android.util.Log.w("DownloadWatcher", "Übernahme fehlgeschlagen: ${song.displayName}", it) }
             if (result.isFailure) continue
             handled += song.sourceKey
@@ -124,20 +149,23 @@ class DownloadWatcher(
         count
     }
 
-    /** Audiodateien im Download-Ordner, die nach [sinceSeconds] hinzugekommen und fertig geschrieben sind */
-    private fun newDownloads(sinceSeconds: Long): List<DeviceMusicImporter.DeviceSong> {
+    /**
+     * Neue, fertig geschriebene Audiodateien: im Download-Ordner alles nach [sinceSeconds], in den übrigen Ordnern
+     * des gewählten Bereichs alles nach [sinceWide]. Das Paar sagt, ob die Datei ein Download ist.
+     */
+    private fun newSongs(sinceSeconds: Long, sinceWide: Long, area: Area): List<Pair<DeviceMusicImporter.DeviceSong, Boolean>> {
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         @Suppress("DEPRECATION")
         val projection = arrayOf(
             MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DISPLAY_NAME, MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.SIZE, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.IS_MUSIC,
         ) + (if (Build.VERSION.SDK_INT >= 29) arrayOf(MediaStore.Audio.Media.RELATIVE_PATH) else emptyArray())
         // Nur fertig geschriebene Dateien (IS_PENDING gibt es ab Android 10)
         val selection = "${MediaStore.Audio.Media.DATE_ADDED} > ?" +
             if (Build.VERSION.SDK_INT >= 29) " AND ${MediaStore.Audio.Media.IS_PENDING} = 0" else ""
-        val result = mutableListOf<DeviceMusicImporter.DeviceSong>()
-        context.contentResolver.query(collection, projection, selection, arrayOf(sinceSeconds.toString()),
+        val result = mutableListOf<Pair<DeviceMusicImporter.DeviceSong, Boolean>>()
+        context.contentResolver.query(collection, projection, selection, arrayOf(minOf(sinceSeconds, sinceWide).toString()),
             "${MediaStore.Audio.Media.DATE_ADDED} ASC")?.use { c ->
             val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val name = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
@@ -146,13 +174,19 @@ class DownloadWatcher(
             val title = c.getColumnIndex(MediaStore.Audio.Media.TITLE)
             val artist = c.getColumnIndex(MediaStore.Audio.Media.ARTIST)
             val duration = c.getColumnIndex(MediaStore.Audio.Media.DURATION)
+            val added = c.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+            val music = c.getColumnIndex(MediaStore.Audio.Media.IS_MUSIC)
             val rel = if (Build.VERSION.SDK_INT >= 29) c.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1
             while (c.moveToNext()) {
                 val fileName = c.getString(name) ?: continue
                 if (fileName.startsWith(".")) continue // versteckte Zwischendateien (z. B. beim Zuschneiden)
                 val relative = if (rel >= 0) c.getString(rel).orEmpty() else ""
                 val path = (if (data >= 0) c.getString(data) else null) ?: "media:${c.getLong(id)}:$fileName"
-                if (!isInDownloads(relative, path) || !FileNames.isImportable(fileName)) continue
+                if (!FileNames.isImportable(fileName)) continue
+                val length = if (duration >= 0) c.getLong(duration) else 0
+                val downloaded = accepts(area, relative, path, isMusic = music < 0 || c.getInt(music) != 0, durationMs = length)
+                    ?: continue
+                if (added >= 0 && c.getLong(added) <= (if (downloaded) sinceSeconds else sinceWide)) continue
                 if (c.getLong(size) <= 0) continue
                 result += DeviceMusicImporter.DeviceSong(
                     uri = ContentUris.withAppendedId(collection, c.getLong(id)),
@@ -161,8 +195,8 @@ class DownloadWatcher(
                     size = c.getLong(size),
                     title = (if (title >= 0) c.getString(title) else null).orEmpty(),
                     artist = (if (artist >= 0) c.getString(artist) else null).orEmpty(),
-                    durationMs = if (duration >= 0) c.getLong(duration) else 0,
-                )
+                    durationMs = length,
+                ) to downloaded
             }
         }
         return result
@@ -172,6 +206,31 @@ class DownloadWatcher(
         /** Erlaubnis, die zum Lesen der Musikdateien nötig ist */
         val permission: String
             get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+
+        /** Ordner mit Tönen, die keine Lieder sind */
+        private val noise = listOf(
+            "whatsapp voice notes", "recordings", "voice recorder", "sprachmemos", "ringtones", "notifications",
+            "alarms", "/call/", "/android/",
+        )
+
+        private fun isInMusicFolder(relativePath: String, path: String): Boolean =
+            relativePath.startsWith("Music/", ignoreCase = true) || relativePath.equals("Music", ignoreCase = true) ||
+                path.contains("/Music/", ignoreCase = true)
+
+        /**
+         * Soll diese Datei automatisch übernommen werden? null = nein, true = als Download (kommt auch in „Heruntergeladen“),
+         * false = als gefundenes Lied aus einem anderen Ordner.
+         */
+        fun accepts(area: Area, relativePath: String, path: String, isMusic: Boolean, durationMs: Long): Boolean? {
+            if (isInDownloads(relativePath, path)) return true
+            val where = (relativePath + "|" + path).lowercase()
+            return when (area) {
+                Area.DOWNLOADS -> null
+                Area.MUSIC -> if (isInMusicFolder(relativePath, path)) false else null
+                // Kurze Töne (unter 30 s) sind meist keine Lieder; Länge 0 heißt „unbekannt“
+                Area.ALL -> if (isMusic && noise.none { it in where } && (durationMs == 0L || durationMs >= 30_000)) false else null
+            }
+        }
 
         /** Liegt die Datei im Download-Ordner (oder einem Unterordner davon)? */
         fun isInDownloads(relativePath: String, path: String): Boolean =

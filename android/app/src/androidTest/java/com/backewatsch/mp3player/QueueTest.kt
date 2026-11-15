@@ -100,6 +100,40 @@ class QueueTest {
         assertEquals(a.id, currentId())
     }
 
+    @Test fun shuffleKeepsEverySongAndThePlayingOne() {
+        val all = listOf(a, b, c, d, x, y)
+        main { app.player.play(all, 2); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
+        waitFor("Start bei C") { queue() == all.map { it.id } && currentId() == c.id }
+        main { app.player.toggleShuffle() }
+        waitFor("Zufall an: bis zum laufenden Lied unverändert, dahinter dieselben Lieder") {
+            app.player.state.value.shuffle && currentId() == c.id && queue().take(3) == listOf(a.id, b.id, c.id) &&
+                queue().size == 6 && queue().drop(3).toSet() == setOf(d.id, x.id, y.id)
+        }
+        main { app.player.toggleShuffle() }
+        waitFor("Zufall aus → ursprüngliche Reihenfolge, C läuft weiter") {
+            !app.player.state.value.shuffle && queue() == all.map { it.id } && currentId() == c.id
+        }
+    }
+
+    @Test fun bigButtonPausesInsteadOfStartingOver() {
+        val list = listOf(a, b, c)
+        main { app.player.play(list, 1); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
+        waitFor("B läuft") { currentId() == b.id && app.player.state.value.isPlaying }
+        main { app.player.playOrPause(list) }
+        waitFor("Pause – B bleibt an der Reihe") { !app.player.state.value.isPlaying && currentId() == b.id && queue().size == 3 }
+        main { app.player.playOrPause(list) }
+        waitFor("weiter bei B, nicht von vorn") { app.player.state.value.isPlaying && currentId() == b.id }
+        // Eine andere Sammlung startet von vorn
+        main { app.player.playOrPause(listOf(x, y)) }
+        waitFor("X startet") { currentId() == x.id && queue() == listOf(x.id, y.id) }
+    }
+
+    @Test fun brokenSongIsSkipped() {
+        app.library.fileOf(b).writeText("kein Lied")
+        main { app.player.play(listOf(b, c), 0); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
+        waitFor("das kaputte Lied wird übersprungen, C spielt") { currentId() == c.id && app.player.state.value.isPlaying }
+    }
+
     @Test fun addToQueueGoesToTheEnd() {
         main { app.player.play(listOf(a, b), 0); app.player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_ONE) }
         waitFor("Start") { queue().size == 2 }

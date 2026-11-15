@@ -3,6 +3,7 @@ package com.backewatsch.mp3player.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.core.content.ContextCompat
 import com.backewatsch.mp3player.R
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 /** Das App-Logo (ILLEGAL FREEDOM MUSIC) als Bild – wird als Cover neben jedem Lied gezeigt */
 @Composable
@@ -33,6 +35,15 @@ fun LogoArt(size: Dp, shape: Shape) {
 /** Logo als PNG (für Benachrichtigung und Sperrbildschirm), einmal erzeugt und zwischengespeichert */
 object LogoBitmap {
     @Volatile private var cached: ByteArray? = null
+    @Volatile private var cachedUri: Uri? = null
+
+    /** Logo als Bilddatei (für die Einträge der Wiedergabeliste), einmal je App-Start geschrieben */
+    fun uri(context: Context): Uri {
+        cachedUri?.let { return it }
+        val file = File(context.filesDir, "logo-cover.png")
+        runCatching { file.writeBytes(png(context)) }
+        return Uri.fromFile(file).also { cachedUri = it }
+    }
 
     fun png(context: Context, size: Int = 512): ByteArray {
         cached?.let { return it }

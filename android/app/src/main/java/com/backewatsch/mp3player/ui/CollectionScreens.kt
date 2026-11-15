@@ -170,7 +170,7 @@ fun FavoritesScreen() {
                         }
                     },
                     playing = player.isPlaying && tracks.any { it.id == player.currentId },
-                    onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
+                    onPlay = { app.player.playOrPause(tracks) },
                     onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
                 )
             }
@@ -244,7 +244,7 @@ fun CollectionScreen(name: String, kind: String) {
                     colors = listOf(color, color),
                     art = { Artwork(tracks.firstOrNull(), 180.dp, 24.dp) },
                     playing = player.isPlaying && tracks.any { it.id == player.currentId },
-                    onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
+                    onPlay = { app.player.playOrPause(tracks) },
                     onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
                 )
             }
@@ -313,8 +313,12 @@ fun PlaylistScreen(id: String) {
                             coverPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }.testTag("playlistCover")) { PlaylistArtwork(playlist, tracks.firstOrNull(), 180.dp, 24.dp) }
                     },
+                    extra = {
+                        androidx.compose.material3.FilledTonalIconButton(onClick = { showAdd = true },
+                            modifier = Modifier.size(48.dp).testTag("playlistAdd")) { Icon(Icons.Default.Add, "Titel hinzufügen", tint = Accent) }
+                    },
                     playing = player.isPlaying && tracks.any { it.id == player.currentId },
-                    onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
+                    onPlay = { app.player.playOrPause(tracks) },
                     onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
                 )
             }

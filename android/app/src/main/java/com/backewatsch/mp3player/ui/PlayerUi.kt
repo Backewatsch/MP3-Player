@@ -321,8 +321,11 @@ fun QueueSheet(onDismiss: () -> Unit) {
     val app = LocalApp.current
     val state by app.player.state.collectAsState()
     val lib by app.library.state.collectAsState()
-    val byId = lib.tracks.associateBy { it.id }
+    val byId = remember(lib.tracks) { lib.tracks.associateBy { it.id } }
     val current = state.currentIndex
+    // Nur das laufende und die kommenden Lieder aufbauen – schon gespielte bremsen lange Listen unnötig
+    val first = current.coerceAtLeast(0)
+    val upcoming = remember(state.queueIds, first) { state.queueIds.drop(first) }
     var dragIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -330,13 +333,13 @@ fun QueueSheet(onDismiss: () -> Unit) {
         Text(if (state.shuffle) "Zufallswiedergabe an · am Griff ziehen zum Umsortieren" else "Am Griff ziehen zum Umsortieren", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
         LazyColumn(Modifier.fillMaxWidth().testTag("queueList")) {
-            itemsIndexed(state.queueIds) { index, id ->
+            itemsIndexed(upcoming) { offset, id ->
+                val index = first + offset
                 val track = byId[id] ?: return@itemsIndexed
                 when (index) {
                     current -> QueueHeader("Läuft gerade")
                     current + 1 -> QueueHeader("Als Nächstes")
                 }
-                if (index < current) return@itemsIndexed // bereits gespielt → ausblenden
                 Row(
                     Modifier.fillMaxWidth()
                         .then(if (dragIndex == index) Modifier.zIndex(1f).graphicsLayer { translationY = dragOffset }

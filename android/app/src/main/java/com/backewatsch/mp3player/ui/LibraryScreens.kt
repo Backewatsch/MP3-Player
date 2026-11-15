@@ -107,9 +107,25 @@ sealed interface LibRoute {
     data object Imported : LibRoute
 }
 
+/** Schlüssel einer Mediathek-Seite für den gemerkten Zustand (Tiefe im Stapel + Seite) */
+private fun pageKey(depth: Int, route: LibRoute) = "lib-$depth-$route"
+
+/**
+ * Seiten der Mediathek. [pages] merkt sich je Seite Scroll-Stelle und Suchtext, solange sie im Stapel liegt:
+ * Nach „Zurück“ steht die Liste wieder dort, wo man war.
+ */
 @Composable
-fun LibraryHost() {
+fun LibraryHost(pages: androidx.compose.runtime.saveable.SaveableStateHolder) {
     val nav = LocalNav.current
+    // Gemerktes von Seiten vergessen, die nicht mehr im Stapel sind (Zurück, erneutes Antippen des Tabs)
+    val live = nav.libraryStack.mapIndexed { i, route -> pageKey(i + 1, route) }
+    val known = remember { mutableSetOf<String>() }
+    androidx.compose.runtime.LaunchedEffect(live) {
+        val keep = live.toSet()
+        known.filter { it !in keep }.forEach { pages.removeState(it) }
+        known.retainAll(keep)
+        known.addAll(keep)
+    }
     // Vor und zurück gleitet die Seite in die passende Richtung
     androidx.compose.animation.AnimatedContent(
         targetState = nav.libraryStack.last() to nav.libraryStack.size,
@@ -122,6 +138,7 @@ fun LibraryHost() {
         },
         label = "library",
     ) { target ->
+      pages.SaveableStateProvider(pageKey(target.second, target.first)) {
         when (val route = target.first) {
             LibRoute.Root -> MediathekRoot()
             LibRoute.AllTracks -> AllTracksScreen()
@@ -138,6 +155,7 @@ fun LibraryHost() {
             is LibRoute.Genre -> CollectionScreen(route.name, "Genre")
             LibRoute.Imported -> ImportedScreen()
         }
+      }
     }
 }
 

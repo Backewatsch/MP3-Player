@@ -120,6 +120,12 @@ class DeviceMusicImporter(private val context: Context, private val library: Lib
         return importSong(song, addToDownloads = true)
     }
 
+    /** Neu gefundenes Lied aus einem anderen Ordner übernehmen (nur verknüpft, nicht in „Heruntergeladen“); null = war schon da */
+    suspend fun importFound(song: DeviceSong): Track? {
+        if (library.trackFromSource(song.sourceKey) != null) return null
+        return importSong(song)
+    }
+
     private suspend fun importSong(song: DeviceSong, addToDownloads: Boolean = false): Track {
         // Normalfall: nur verknüpfen – die Datei bleibt, wo sie ist, und belegt keinen zusätzlichen Speicher
         val original = song.path.takeIf { it.startsWith("/") }?.let { File(it) }

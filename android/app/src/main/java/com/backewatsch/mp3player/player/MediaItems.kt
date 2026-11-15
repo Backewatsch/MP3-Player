@@ -29,7 +29,9 @@ object MediaItems {
                     .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                     .apply {
                         if (artwork != null) setArtworkUri(Uri.fromFile(artwork))
-                        else setArtworkData(LogoBitmap.png(context), MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                        // Das Logo als Bilddatei, nicht als Bilddaten: Sonst hängt das System an jeden Eintrag der
+                        // Wiedergabeliste ein eigenes 1-MB-Bild – lange Listen kamen dadurch ins Stocken
+                        else setArtworkUri(LogoBitmap.uri(context))
                     }
                     .build(),
             )

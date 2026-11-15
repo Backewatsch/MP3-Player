@@ -13,9 +13,19 @@ object Duplicates {
         RegexOption.IGNORE_CASE,
     )
 
+    private val marks = Regex("\\p{M}+")
+    private val separators = Regex("[^\\p{L}\\p{N}]+")
+
+    /** Schon umgeformte Texte: Die Suche fragt bei jedem getippten Buchstaben alle Titel, Interpreten und Alben ab */
+    private val normalized = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     fun normalize(text: String): String {
-        val base = Normalizer.normalize(text.lowercase(Locale.ROOT), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-        return base.replace(noise, " ").replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        normalized[text]?.let { return it }
+        val base = Normalizer.normalize(text.lowercase(Locale.ROOT), Normalizer.Form.NFD).replace(marks, "")
+        val result = base.replace(noise, " ").replace(separators, " ").trim()
+        if (normalized.size > 60_000) normalized.clear()
+        normalized[text] = result
+        return result
     }
 
     /** Gruppen mit mindestens zwei gleichen Liedern */

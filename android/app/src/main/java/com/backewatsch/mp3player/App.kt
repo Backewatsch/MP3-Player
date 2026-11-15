@@ -116,6 +116,7 @@ class App : Application() {
         library = Library(storage, scope)
         downloads = DownloadRepository(library, storage, scope)
         player = PlayerConnection(this, library, scope)
+        player.onPlaybackProblem = { com.backewatsch.mp3player.ui.Notice.show(this, it) }
         updates = UpdateChecker(this, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         deviceImporter = com.backewatsch.mp3player.data.DeviceMusicImporter(this, library)
         backup = com.backewatsch.mp3player.data.Backup(library)

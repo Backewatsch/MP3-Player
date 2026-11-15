@@ -52,6 +52,8 @@ fun SearchScreen() {
     val recentSearches by app.recentSearches.collectAsState()
     val search = nav.searchQuery
     val focus = remember { FocusRequester() }
+    // Einmal je Eingabe rechnen – nicht bei jedem Neuaufbau der Liste
+    val results = remember(lib.tracks, lib.playlists, search) { com.backewatsch.mp3player.data.Search.run(lib, search) }
     // Beim Öffnen gleich lostippen können (nicht, wenn man aus einem Treffer zurückkommt)
     LaunchedEffect(Unit) { if (nav.searchQuery.isEmpty()) runCatching { focus.requestFocus() } }
 
@@ -83,7 +85,6 @@ fun SearchScreen() {
                 }
                 return@LazyColumn
             }
-            val results = com.backewatsch.mp3player.data.Search.run(lib, search)
             val saveQuery = { app.rememberSearch(search) }
             if (results.isEmpty) {
                 item { EmptyHint("Nichts gefunden", "Zu „${search.trim()}“ gibt es keine Treffer.") }

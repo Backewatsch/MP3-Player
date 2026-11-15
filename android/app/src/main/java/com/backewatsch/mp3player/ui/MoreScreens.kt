@@ -114,7 +114,7 @@ fun SmartPlaylistScreen(name: String) {
                         }
                     },
                     playing = player.isPlaying && tracks.any { it.id == player.currentId },
-                    onPlay = { if (tracks.isNotEmpty()) app.player.play(tracks, 0) },
+                    onPlay = { app.player.playOrPause(tracks) },
                     onShuffle = { if (tracks.isNotEmpty()) app.player.play(tracks, tracks.indices.random(), shuffle = true) },
                 )
             }
